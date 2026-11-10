@@ -34,6 +34,8 @@ Si se olvida el PIN de todos los administradores, se puede restaurar una copia d
 
 ## Licencia y activación
 
+> **Versión 1.6.1: la licencia está desactivada** para pruebas. El programa funciona sin código de activación y con todos los módulos. Se vuelve a activar cambiando `LICENCIA_ACTIVADA` a `true` en `js/app.js` y publicando una versión nueva.
+
 El programa necesita un **código de activación** para funcionar. Cada código:
 
 - vale para **una sola computadora** (la identifica el "código de esta computadora", por ejemplo `455J-G1Z5`);

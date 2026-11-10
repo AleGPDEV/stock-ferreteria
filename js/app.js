@@ -30,6 +30,10 @@ let sesion = null; // usuario que ingresó
 /* ---------- Licencia: código de activación ---------- */
 // Los códigos los firma el desarrollador con su clave privada (generador de licencias).
 // El programa solo tiene la clave pública: puede comprobar un código, pero no fabricarlo.
+// Interruptor de la licencia. En false, el programa funciona sin código de activación y con todos
+// los módulos (versión para pruebas). Para volver a pedir código, poner true y publicar una versión nueva.
+// Las licencias ya cargadas quedan guardadas y vuelven a valer al reactivarla.
+const LICENCIA_ACTIVADA = false;
 const CLAVE_PUBLICA = {"kty": "EC", "crv": "P-256", "x": "7cCSPwXrL4DSrLqcs0waLuRLAKV04mmpys210lZlxC0", "y": "VgKNwTqhPGtuyuHnRDt_LA9EdzSjvHTxqKTMpc9wfq0"};
 const PREFIJO_CODIGO = 'SF1';
 const PERMANENTE = '9999-12-31';
@@ -117,7 +121,7 @@ function mensajeMotivo(r) {
 }
 
 let licenciaActual = null;
-const modoDemo = () => typeof window !== 'undefined' && !!window.MODO_DEMO;
+const modoDemo = () => !LICENCIA_ACTIVADA || (typeof window !== 'undefined' && !!window.MODO_DEMO);
 function tieneModulo(clave) {
   if (modoDemo()) return true;
   const m = MODULOS.find((x) => x.clave === clave);
@@ -2277,7 +2281,7 @@ function renderDesarrollador() {
     permanente: '<span class="chip ok">Sin vencimiento</span>',
   }[est.estado];
   $('#dev-id').textContent = idEquipo();
-  $('#dev-lic').innerHTML = `
+  $('#dev-lic').innerHTML = (LICENCIA_ACTIVADA ? '' : '<li><span>Licencia</span><span class="chip warn">Desactivada en esta versión: funciona sin código</span></li>') + `
     <li><span>Estado</span>${chip}</li>
     <li><span>Válida hasta</span><strong>${lic ? fechaLarga(lic.h) : '—'}</strong></li>
     ${lic && lic.c ? `<li><span>Cliente</span><strong>${esc(lic.c)}</strong></li>` : ''}
