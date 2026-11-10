@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="es">
+<head>
+<title>Stock Ferretería</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2.5 27.7 9.25v13.5L16 29.5 4.3 22.75V9.25Z" fill="var(--accent)"/><circle cx="16" cy="16" r="5.2" fill="var(--surface)"/></svg>
+      <div>
+        <strong>Stock Ferretería</strong>
+        <small id="fecha-hoy"></small>
+      </div>
+    </div>
+    <nav class="nav" aria-label="Secciones">
+      <a href="#panel">Panel</a>
+      <a href="#caja">Caja</a>
+      <a href="#productos">Productos</a>
+      <a href="#movimientos">Movimientos</a>
+      <a href="#proveedores">Proveedores</a>
+      <a href="#reportes">Reportes <span id="badge-bajo" class="badge" hidden></span></a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div id="banner-ejemplo" class="banner" hidden>
+      <p>Estás viendo <strong>datos de ejemplo</strong> para probar el programa. Cuando quieras cargar tu ferretería, empezá de cero.</p>
+      <div class="banner-acc">
+        <button class="btn sm" id="btn-ocultar-ejemplo" type="button">Seguir con el ejemplo</button>
+        <button class="btn sm primary" id="btn-vaciar" type="button">Empezar de cero</button>
+      </div>
+    </div>
+
+    <!-- PANEL -->
+    <section id="v-panel" class="vista">
+      <header class="vh">
+        <div><h1>Panel</h1><p class="sub">Resumen del inventario y de las ventas de hoy.</p></div>
+        <div class="acciones"><a class="btn primary" href="#caja">Ir a la caja</a></div>
+      </header>
+      <div class="kpis" id="kpis"></div>
+      <div class="grid2">
+        <article class="card">
+          <header class="card-h"><h2>Para reponer</h2><a href="#reportes" class="link">Ver reporte</a></header>
+          <div id="panel-reponer"></div>
+        </article>
+        <article class="card">
+          <header class="card-h"><h2>Últimos movimientos</h2><a href="#movimientos" class="link">Ver todos</a></header>
+          <div id="panel-movs"></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- CAJA -->
+    <section id="v-caja" class="vista" hidden>
+      <header class="vh">
+        <div><h1>Caja</h1><p class="sub">Buscá o escaneá el producto, armá el ticket y cobrá. El stock se descuenta al cobrar.</p></div>
+      </header>
+      <div class="caja">
+        <div class="caja-izq">
+          <label class="f" for="caja-buscar">Producto
+            <input id="caja-buscar" type="search" autocomplete="off" placeholder="Código, nombre o lector de código de barras">
+          </label>
+          <p class="ayuda">Con lector de código de barras: escaneá y el producto se agrega solo. Con teclado: escribí el código y apretá Enter.</p>
+          <div id="caja-resultados" class="resultados"></div>
+        </div>
+        <aside class="card ticket" aria-label="Ticket">
+          <header class="card-h"><h2>Ticket <span class="mono muted" id="ticket-num"></span></h2><button class="btn sm ghost" type="button" id="ticket-vaciar">Vaciar</button></header>
+          <div id="ticket-items"></div>
+          <div class="ticket-total"><span>Total</span><strong id="ticket-total">$ 0</strong></div>
+          <fieldset class="medios">
+            <legend>Medio de pago</legend>
+            <div class="seg seg-wrap" id="medios">
+              <label><input type="radio" name="medio" value="Efectivo" checked><span>Efectivo</span></label>
+              <label><input type="radio" name="medio" value="Débito"><span>Débito</span></label>
+              <label><input type="radio" name="medio" value="Crédito"><span>Crédito</span></label>
+              <label><input type="radio" name="medio" value="Transferencia"><span>Transferencia</span></label>
+            </div>
+          </fieldset>
+          <div class="efectivo" id="bloque-efectivo">
+            <label class="f" for="caja-recibido">Recibido
+              <input id="caja-recibido" type="number" min="0" step="any" inputmode="decimal" placeholder="0">
+            </label>
+            <div class="vuelto"><span>Vuelto</span><strong id="caja-vuelto">—</strong></div>
+          </div>
+          <label class="f" for="caja-cliente">Cliente (opcional)
+            <input id="caja-cliente" type="text" placeholder="Nombre o RUT">
+          </label>
+          <p class="err" id="caja-err" role="alert"></p>
+          <button class="btn primary btn-cobrar" type="button" id="btn-cobrar">Cobrar</button>
+        </aside>
+      </div>
+
+      <article class="card ventas-hoy">
+        <header class="card-h"><div><h2>Ventas de hoy</h2><p class="sub" id="ventas-hoy-resumen"></p></div></header>
+        <div id="ventas-hoy"></div>
+      </article>
+    </section>
+
+    <!-- PRODUCTOS -->
+    <section id="v-productos" class="vista" hidden>
+      <header class="vh">
+        <div><h1>Productos</h1><p class="sub" id="prod-sub"></p></div>
+        <div class="acciones"><button class="btn primary" type="button" id="btn-nuevo-prod">Nuevo producto</button></div>
+      </header>
+      <div class="toolbar">
+        <input type="search" id="prod-buscar" placeholder="Buscar por código, nombre o ubicación" aria-label="Buscar productos">
+        <select id="prod-cat" aria-label="Categoría"></select>
+        <select id="prod-estado" aria-label="Estado de stock">
+          <option value="">Todos los estados</option>
+          <option value="bajo">Bajo mínimo</option>
+          <option value="sin">Sin stock</option>
+          <option value="ok">En stock</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table class="tabla">
+          <thead><tr><th>Código</th><th>Producto</th><th>Proveedor</th><th class="num">Stock</th><th class="num">Mín.</th><th>Estado</th><th class="num">Costo</th><th class="num">Precio</th><th class="num">Acciones</th></tr></thead>
+          <tbody id="tabla-prod"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- MOVIMIENTOS -->
+    <section id="v-movimientos" class="vista" hidden>
+      <header class="vh">
+        <div><h1>Movimientos</h1><p class="sub">Compras a proveedores, salidas que no pasan por la caja y ajustes por conteo.</p></div>
+      </header>
+      <form class="card form-mov" id="form-mov" novalidate>
+        <div class="seg" role="radiogroup" aria-label="Tipo de movimiento">
+          <label><input type="radio" name="tipo" value="entrada" checked><span>Entrada</span></label>
+          <label><input type="radio" name="tipo" value="salida"><span>Salida</span></label>
+          <label><input type="radio" name="tipo" value="ajuste"><span>Ajuste por conteo</span></label>
+        </div>
+        <div class="campos">
+          <label class="f f-wide" for="mov-prod">Producto<select id="mov-prod" required></select></label>
+          <label class="f" for="mov-cant"><span id="mov-cant-label">Cantidad</span><input id="mov-cant" type="number" step="any" min="0" inputmode="decimal" required><small id="mov-hint" class="muted"></small></label>
+          <label class="f solo-entrada" for="mov-costo">Costo unitario<input id="mov-costo" type="number" step="any" min="0" inputmode="decimal"></label>
+          <label class="f solo-entrada" for="mov-prov">Proveedor<select id="mov-prov"></select></label>
+          <label class="f f-wide" for="mov-nota">Nota<input id="mov-nota" type="text" placeholder="Ej.: Factura A-1234, rotura, uso interno"></label>
+        </div>
+        <div class="form-pie">
+          <p class="err" id="mov-err" role="alert"></p>
+          <button class="btn primary" type="submit" id="mov-submit">Registrar entrada</button>
+        </div>
+      </form>
+      <div class="toolbar">
+        <label class="f-inline" for="mov-desde">Desde <input type="date" id="mov-desde"></label>
+        <label class="f-inline" for="mov-hasta">Hasta <input type="date" id="mov-hasta"></label>
+        <select id="mov-tipo" aria-label="Tipo">
+          <option value="">Todos los tipos</option>
+          <option value="venta">Ventas (caja)</option>
+          <option value="entrada">Entradas</option>
+          <option value="salida">Salidas</option>
+          <option value="ajuste">Ajustes</option>
+        </select>
+        <input type="search" id="mov-buscar" placeholder="Buscar producto o nota" aria-label="Buscar movimientos">
+        <button class="btn" type="button" data-export="movimientos">Exportar Excel</button>
+      </div>
+      <div class="table-wrap">
+        <table class="tabla">
+          <thead><tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th class="num">Cantidad</th><th class="num">Stock</th><th>Detalle</th></tr></thead>
+          <tbody id="tabla-mov"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- PROVEEDORES -->
+    <section id="v-proveedores" class="vista" hidden>
+      <header class="vh">
+        <div><h1>Proveedores</h1><p class="sub" id="prov-sub"></p></div>
+        <div class="acciones"><button class="btn primary" type="button" id="btn-nuevo-prov">Nuevo proveedor</button></div>
+      </header>
+      <div class="table-wrap">
+        <table class="tabla">
+          <thead><tr><th>Proveedor</th><th>Contacto</th><th>Teléfono</th><th>Email</th><th class="num">Productos</th><th class="num">Para reponer</th><th class="num"></th></tr></thead>
+          <tbody id="tabla-prov"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- REPORTES -->
+    <section id="v-reportes" class="vista" hidden>
+      <header class="vh">
+        <div><h1>Reportes</h1><p class="sub">Cada reporte se puede descargar como planilla de Excel.</p></div>
+      </header>
+      <div class="reportes">
+        <article class="card">
+          <header class="card-h">
+            <div><h2>Ventas y movimientos del período</h2></div>
+            <button class="btn sm" type="button" data-export="ventas">Exportar ventas</button>
+          </header>
+          <div class="toolbar compacto">
+            <label class="f-inline" for="rep-desde">Desde <input type="date" id="rep-desde"></label>
+            <label class="f-inline" for="rep-hasta">Hasta <input type="date" id="rep-hasta"></label>
+          </div>
+          <div id="rep-periodo"></div>
+        </article>
+
+        <article class="card">
+          <header class="card-h">
+            <div><h2>Reposición</h2><p class="sub">Productos en el mínimo o por debajo. La cantidad sugerida lleva el stock al doble del mínimo.</p></div>
+            <button class="btn sm" type="button" data-export="reposicion">Exportar Excel</button>
+          </header>
+          <div id="rep-reposicion"></div>
+        </article>
+
+        <article class="card">
+          <header class="card-h">
+            <div><h2>Valor del inventario por categoría</h2></div>
+            <button class="btn sm" type="button" data-export="valorizacion">Exportar Excel</button>
+          </header>
+          <div id="rep-valorizacion"></div>
+        </article>
+
+        <article class="card">
+          <header class="card-h">
+            <div><h2>Inventario completo</h2><p class="sub">Todos los productos con stock, costos, precios y ubicación.</p></div>
+            <button class="btn sm" type="button" data-export="inventario">Exportar Excel</button>
+          </header>
+        </article>
+
+        <article class="card">
+          <header class="card-h">
+            <div><h2>Copia de seguridad</h2><p class="sub">Los datos se guardan en este navegador. Descargá una copia seguido y guardala en un pendrive o en la nube.</p></div>
+          </header>
+          <div class="botonera">
+            <button class="btn primary" type="button" id="btn-respaldo">Descargar copia</button>
+            <label class="btn" for="input-restaurar">Restaurar copia</label>
+            <input type="file" id="input-restaurar" accept="application/json,.json" hidden>
+            <button class="btn ghost" type="button" id="btn-cargar-ejemplo">Cargar datos de ejemplo</button>
+            <button class="btn danger" type="button" id="btn-borrar-todo">Borrar todos los datos</button>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Diálogo producto -->
+<dialog id="dlg-prod" aria-labelledby="prod-titulo">
+  <form id="form-prod" novalidate>
+    <header class="dlg-h"><h2 id="prod-titulo">Nuevo producto</h2></header>
+    <div class="dlg-b campos">
+      <label class="f" for="p-codigo">Código<input id="p-codigo" type="text" required autocomplete="off" placeholder="Ej.: TOR-0810 o código de barras"></label>
+      <label class="f f-wide" for="p-nombre">Nombre<input id="p-nombre" type="text" required placeholder="Ej.: Tornillo autoperforante 8 x 1&quot;"></label>
+      <label class="f" for="p-categoria">Categoría<input id="p-categoria" type="text" list="lista-cat" placeholder="Ej.: Tornillería"></label>
+      <label class="f" for="p-unidad">Unidad
+        <select id="p-unidad">
+          <option value="unidad">unidad</option><option value="kg">kg</option><option value="m">m</option><option value="litro">litro</option>
+          <option value="caja">caja</option><option value="paquete">paquete</option><option value="rollo">rollo</option><option value="par">par</option>
+        </select>
+      </label>
+      <label class="f" for="p-proveedor">Proveedor<select id="p-proveedor"></select></label>
+      <label class="f" for="p-ubicacion">Ubicación<input id="p-ubicacion" type="text" placeholder="Ej.: Estante A-01"></label>
+      <label class="f" for="p-costo">Costo<input id="p-costo" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="f" for="p-precio">Precio de venta<input id="p-precio" type="number" step="any" min="0" inputmode="decimal"><small class="muted" id="p-margen"></small></label>
+      <label class="f" for="p-minimo">Stock mínimo<input id="p-minimo" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="f" for="p-stock" id="p-stock-wrap">Stock inicial<input id="p-stock" type="number" step="any" min="0" inputmode="decimal" placeholder="0"></label>
+      <p class="muted f-wide nota-edit" id="p-stock-nota" hidden>Para cambiar el stock usá la caja, una entrada o un ajuste por conteo. Así queda registrado en los movimientos.</p>
+    </div>
+    <p class="err dlg-err" id="prod-err" role="alert"></p>
+    <footer class="dlg-f">
+      <button type="button" class="btn danger" id="prod-eliminar">Eliminar</button>
+      <span class="sp"></span>
+      <button type="button" class="btn" data-cerrar>Cancelar</button>
+      <button class="btn primary" type="submit">Guardar</button>
+    </footer>
+  </form>
+</dialog>
+<datalist id="lista-cat"></datalist>
+
+<!-- Diálogo movimiento rápido -->
+<dialog id="dlg-mov" aria-labelledby="qm-titulo">
+  <form id="form-qm" novalidate>
+    <header class="dlg-h"><h2 id="qm-titulo">Entrada</h2><p class="sub" id="qm-sub"></p></header>
+    <div class="dlg-b campos">
+      <label class="f" for="qm-cant">Cantidad<input id="qm-cant" type="number" step="any" min="0" inputmode="decimal" required></label>
+      <label class="f" for="qm-costo" id="qm-costo-wrap">Costo unitario<input id="qm-costo" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="f f-wide" for="qm-nota">Nota<input id="qm-nota" type="text" placeholder="Ej.: Factura A-1234"></label>
+    </div>
+    <p class="err dlg-err" id="qm-err" role="alert"></p>
+    <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" data-cerrar>Cancelar</button><button class="btn primary" type="submit" id="qm-ok">Registrar</button></footer>
+  </form>
+</dialog>
+
+<!-- Diálogo proveedor -->
+<dialog id="dlg-prov" aria-labelledby="prov-titulo">
+  <form id="form-prov" novalidate>
+    <header class="dlg-h"><h2 id="prov-titulo">Nuevo proveedor</h2></header>
+    <div class="dlg-b campos">
+      <label class="f f-wide" for="v-nombre">Razón social o nombre<input id="v-nombre" type="text" required></label>
+      <label class="f" for="v-contacto">Contacto<input id="v-contacto" type="text"></label>
+      <label class="f" for="v-telefono">Teléfono<input id="v-telefono" type="tel"></label>
+      <label class="f" for="v-email">Email<input id="v-email" type="email"></label>
+      <label class="f" for="v-rut">RUT<input id="v-rut" type="text" inputmode="numeric"></label>
+      <label class="f f-wide" for="v-notas">Notas<input id="v-notas" type="text" placeholder="Ej.: entrega los martes, pedido mínimo"></label>
+    </div>
+    <p class="err dlg-err" id="prov-err" role="alert"></p>
+    <footer class="dlg-f">
+      <button type="button" class="btn danger" id="prov-eliminar">Eliminar</button>
+      <span class="sp"></span>
+      <button type="button" class="btn" data-cerrar>Cancelar</button>
+      <button class="btn primary" type="submit">Guardar</button>
+    </footer>
+  </form>
+</dialog>
+
+<!-- Diálogo confirmación -->
+<dialog id="dlg-conf" class="dlg-chico" aria-labelledby="conf-texto">
+  <div class="dlg-b"><p id="conf-texto"></p></div>
+  <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" id="conf-cancel">Cancelar</button><button type="button" class="btn primary" id="conf-ok">Confirmar</button></footer>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
