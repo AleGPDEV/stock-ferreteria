@@ -325,9 +325,18 @@
             <button class="btn primary" type="button" id="btn-respaldo">Descargar copia</button>
             <button class="btn" type="button" id="btn-abrir-respaldos" hidden>Abrir carpeta de respaldos</button>
             <label class="btn" for="input-restaurar">Restaurar copia</label>
-            <input type="file" id="input-restaurar" accept="application/json,.json" hidden>
+            <input type="file" id="input-restaurar" accept=".json,.gz,application/json,application/gzip" hidden>
             <button class="btn ghost" type="button" id="btn-cargar-ejemplo">Cargar datos de ejemplo</button>
             <button class="btn rojo" type="button" id="btn-borrar-todo">Borrar todos los datos</button>
+          </div>
+          <div class="respaldo-extra" id="respaldo-extra" hidden>
+            <p class="subt">Copia extra en pendrive o en la nube</p>
+            <p class="sub" id="extra-estado"></p>
+            <div class="botonera">
+              <button class="btn" type="button" id="btn-extra-elegir">Elegir carpeta</button>
+              <button class="btn" type="button" id="btn-respaldar-ahora">Hacer una copia ahora</button>
+              <button class="btn danger" type="button" id="btn-extra-quitar" hidden>Dejar de copiar</button>
+            </div>
           </div>
         </article>
       </div>

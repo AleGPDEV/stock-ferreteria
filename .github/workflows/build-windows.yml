@@ -29,6 +29,9 @@ jobs:
       - name: Pruebas automáticas
         run: npm test
 
+      - name: Pruebas de la base de datos (SQLite)
+        run: npm run test:almacen
+
       - name: Leer versión
         id: ver
         shell: bash

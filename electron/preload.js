@@ -4,10 +4,14 @@ const { contextBridge, ipcRenderer, webFrame } = require('electron');
 contextBridge.exposeInMainWorld('almacen', {
   escritorio: true,
   leer: () => ipcRenderer.sendSync('almacen:leer'),
-  guardar: (texto) => ipcRenderer.sendSync('almacen:guardar', texto),
+  // Guarda solo lo que cambió (ver calcularCambios en js/app.js). Devuelve un error o null.
+  cambios: (c) => ipcRenderer.sendSync('almacen:cambios', c),
   info: () => ipcRenderer.sendSync('almacen:info'),
   idEquipo: () => ipcRenderer.sendSync('almacen:idEquipo'),
   abrirRespaldos: () => ipcRenderer.invoke('almacen:abrirRespaldos'),
+  elegirCarpetaExtra: () => ipcRenderer.invoke('almacen:elegirCarpetaExtra'),
+  quitarCarpetaExtra: () => ipcRenderer.invoke('almacen:quitarCarpetaExtra'),
+  respaldarAhora: () => ipcRenderer.invoke('almacen:respaldarAhora'),
   // Tamaño de letra: zoom real de la ventana, para que toda la pantalla se acomode
   zoom: (factor) => webFrame.setZoomFactor(Math.min(2, Math.max(0.8, Number(factor) || 1))),
 });

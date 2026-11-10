@@ -276,29 +276,100 @@ function baseVacia() {
 // En el navegador se usa localStorage.
 const escritorio = () => typeof window !== 'undefined' && window.almacen && window.almacen.escritorio;
 
+/* ---------- Guardado ----------
+ * En la versión de escritorio los datos van a una base SQLite. Para que una venta tarde lo mismo
+ * con un día o con años de historia, solo se manda lo que cambió desde el último guardado:
+ * productos, proveedores y usuarios se comparan fila por fila; ventas y movimientos solo se agregan
+ * (de una venta solo puede cambiar si está anulada).
+ */
+const TABLAS = ['productos', 'proveedores', 'usuarios', 'ventas', 'movimientos'];
+const TABLAS_COMPARADAS = ['productos', 'proveedores', 'usuarios'];
+const filasDe = (d, t) => (Array.isArray(d[t]) ? d[t] : []);
+
+function configDe(d) {
+  const config = {};
+  for (const [k, v] of Object.entries(d)) if (!TABLAS.includes(k)) config[k] = v;
+  return JSON.stringify(config);
+}
+
+/** Lo que hay guardado en el disco, para comparar en el próximo guardado. */
+function fotoDe(d) {
+  const foto = { config: configDe(d), ventas: new Map(), movimientos: new Set() };
+  TABLAS_COMPARADAS.forEach((t) => { foto[t] = new Map(filasDe(d, t).map((x) => [x.id, JSON.stringify(x)])); });
+  filasDe(d, 'ventas').forEach((v) => foto.ventas.set(v.id, !!v.anulada));
+  filasDe(d, 'movimientos').forEach((m) => foto.movimientos.add(m.id));
+  return foto;
+}
+
+/**
+ * Calcula qué hay que escribir. Devuelve null si no cambió nada, o { cambios, confirmar }:
+ * `cambios` va a la base y `confirmar()` actualiza la foto cuando se guardó bien.
+ */
+function calcularCambios(foto, d, completo = false) {
+  const filaFecha = (x) => ({ id: x.id, fecha: x.fecha || '', datos: JSON.stringify(x) });
+  if (!foto || completo || filasDe(d, 'ventas').length < foto.ventas.size || filasDe(d, 'movimientos').length < foto.movimientos.size) {
+    const upsert = {};
+    TABLAS_COMPARADAS.forEach((t) => { upsert[t] = filasDe(d, t).map((x) => ({ id: x.id, datos: JSON.stringify(x) })); });
+    upsert.ventas = filasDe(d, 'ventas').map(filaFecha);
+    upsert.movimientos = filasDe(d, 'movimientos').map(filaFecha);
+    return { cambios: { completo: true, config: configDe(d), upsert }, confirmar: () => fotoDe(d) };
+  }
+  const cambios = { upsert: {}, borrar: {} };
+  const tras = [];
+  let hay = false;
+  for (const t of TABLAS_COMPARADAS) {
+    const vistos = new Set();
+    const filas = [];
+    for (const x of filasDe(d, t)) {
+      vistos.add(x.id);
+      const j = JSON.stringify(x);
+      if (foto[t].get(x.id) !== j) filas.push({ id: x.id, datos: j });
+    }
+    const borrados = [...foto[t].keys()].filter((id) => !vistos.has(id));
+    if (filas.length) { cambios.upsert[t] = filas; hay = true; tras.push(() => filas.forEach((f) => foto[t].set(f.id, f.datos))); }
+    if (borrados.length) { cambios.borrar[t] = borrados; hay = true; tras.push(() => borrados.forEach((id) => foto[t].delete(id))); }
+  }
+  const ventas = filasDe(d, 'ventas').filter((v) => foto.ventas.get(v.id) !== !!v.anulada);
+  if (ventas.length) { cambios.upsert.ventas = ventas.map(filaFecha); hay = true; tras.push(() => ventas.forEach((v) => foto.ventas.set(v.id, !!v.anulada))); }
+  const movs = filasDe(d, 'movimientos').filter((m) => !foto.movimientos.has(m.id));
+  if (movs.length) { cambios.upsert.movimientos = movs.map(filaFecha); hay = true; tras.push(() => movs.forEach((m) => foto.movimientos.add(m.id))); }
+  const config = configDe(d);
+  if (config !== foto.config) { cambios.config = config; hay = true; tras.push(() => { foto.config = config; }); }
+  if (!hay) return null;
+  return { cambios, confirmar: () => { tras.forEach((f) => f()); return foto; } };
+}
+
+let fotoGuardada = null;
+const guardaEnBase = () => escritorio() && typeof window.almacen.cambios === 'function';
+
 function cargar() {
   try {
     const raw = escritorio() ? window.almacen.leer() : localStorage.getItem(CLAVE);
     if (raw) {
       db = Object.assign(baseVacia(), JSON.parse(raw));
+      fotoGuardada = guardaEnBase() ? fotoDe(db) : null;
       if (asegurarUsuarios(db)) guardar();
       return;
     }
   } catch (e) { /* sin almacenamiento: se usa el ejemplo en memoria */ }
   db = semilla();
+  fotoGuardada = null;
   asegurarUsuarios(db);
   guardar();
 }
 
 let avisoErrorGuardado = false;
-function guardar() {
+function guardar(opc = {}) {
   try {
-    const texto = JSON.stringify(db);
-    if (escritorio()) {
-      const err = window.almacen.guardar(texto);
-      if (err) throw new Error(err);
+    if (guardaEnBase()) {
+      const r = calcularCambios(fotoGuardada, db, !!opc.completo);
+      if (r) {
+        const err = window.almacen.cambios(r.cambios);
+        if (err) throw new Error(err);
+        fotoGuardada = r.confirmar();
+      }
     } else {
-      localStorage.setItem(CLAVE, texto);
+      localStorage.setItem(CLAVE, JSON.stringify(db));
     }
     avisoErrorGuardado = false;
   } catch (e) {
@@ -1551,6 +1622,7 @@ function ventasPeriodo() {
 
 function renderReportes() {
   renderUsuarios();
+  renderRespaldoExtra();
   if (!$('#form-negocio').contains(document.activeElement)) {
     ['nombre', 'direccion', 'telefono', 'rut', 'pie'].forEach((k) => { $('#n-' + k).value = (db.negocio || {})[k] || ''; });
   }
@@ -1711,36 +1783,72 @@ function reemplazarDatos(nuevo, conservarUsuarios = true) {
   asegurarUsuarios(db);
   if (!db.usuarios.some((u) => u.id === sesion.id)) sesion = null;
   else sesion = db.usuarios.find((u) => u.id === sesion.id);
-  guardar();
+  guardar({ completo: true });
   ticket = [];
   if (!sesion) mostrarLogin(); else { aplicarPermisos(); render(); }
+}
+
+/** Lee una copia: .json, o .json.gz (los respaldos automáticos diarios). */
+async function leerCopia(file) {
+  if (/\.gz$/i.test(file.name)) {
+    const flujo = file.stream().pipeThrough(new DecompressionStream('gzip'));
+    return new Response(flujo).text();
+  }
+  return file.text();
+}
+
+function renderRespaldoExtra(info) {
+  if (!escritorio() || !window.almacen.elegirCarpetaExtra) return;
+  const i = info && !info.error ? info : window.almacen.info();
+  const est = i.estadoExtra;
+  let texto;
+  if (!i.carpetaExtra) {
+    texto = 'Todavía no elegiste una carpeta. Elegí un pendrive o la carpeta de Google Drive u OneDrive, así hay una copia fuera de esta computadora.';
+  } else if (!est) {
+    texto = `Se copia a: ${esc(i.carpetaExtra)}.`;
+  } else if (est.ok) {
+    texto = `Se copia a: ${esc(i.carpetaExtra)}. <span class="chip ok">Última copia: ${fechaHora(est.fecha)}</span>`;
+  } else {
+    texto = `Se copia a: ${esc(i.carpetaExtra)}. <span class="chip warn">No se pudo copiar el ${fechaHora(est.fecha)}</span> ${esc(est.error || '')}`;
+  }
+  $('#extra-estado').innerHTML = texto;
+  $('#btn-extra-quitar').hidden = !i.carpetaExtra;
+  $('#btn-extra-elegir').textContent = i.carpetaExtra ? 'Cambiar carpeta' : 'Elegir carpeta';
 }
 
 function iniciarRespaldo() {
   if (escritorio()) {
     const info = window.almacen.info();
-    $('#respaldo-texto').textContent = `Los cambios se guardan solos en esta PC. Cada día se hace un respaldo automático en ${info.respaldos} (se guardan los últimos 60 días). Igual conviene copiar esa carpeta a un pendrive o a la nube de vez en cuando.`;
+    $('#respaldo-texto').textContent = `Los cambios se guardan solos en esta PC. Una vez por día se hace un respaldo comprimido en ${info.respaldos} y se guardan los últimos 60 días.`;
     $('#btn-abrir-respaldos').hidden = false;
     $('#btn-abrir-respaldos').addEventListener('click', () => window.almacen.abrirRespaldos());
+    if (window.almacen.elegirCarpetaExtra) {
+      $('#respaldo-extra').hidden = false;
+      const usar = async (accion, aviso) => {
+        $$('#respaldo-extra button').forEach((x) => { x.disabled = true; });
+        try { const r = await accion(); renderRespaldoExtra(r); if (aviso) toast(aviso(r)); } finally { $$('#respaldo-extra button').forEach((x) => { x.disabled = false; }); }
+      };
+      $('#btn-extra-elegir').addEventListener('click', () => usar(window.almacen.elegirCarpetaExtra, (r) => (r && r.estadoExtra && r.estadoExtra.ok ? 'Copia guardada en la carpeta elegida.' : '')));
+      $('#btn-extra-quitar').addEventListener('click', () => usar(window.almacen.quitarCarpetaExtra, () => 'Se dejó de copiar a la carpeta extra.'));
+      $('#btn-respaldar-ahora').addEventListener('click', () => usar(window.almacen.respaldarAhora, (r) => (r && r.error ? 'No se pudo hacer la copia.' : 'Copia de seguridad hecha.')));
+    }
   }
   $('#btn-respaldo').addEventListener('click', () => {
-    descargarBlob(JSON.stringify(db, null, 2), 'application/json', `respaldo_stock_${isoLocal()}.json`);
+    descargarBlob(JSON.stringify(db), 'application/json', `respaldo_stock_${isoLocal()}.json`);
     toast('Descargando la copia de seguridad.');
   });
   $('#input-restaurar').addEventListener('change', (e) => {
     const file = e.target.files[0];
     e.target.value = '';
     if (!file) return;
-    const lector = new FileReader();
-    lector.onload = async () => {
+    (async () => {
       let datos;
-      try { datos = JSON.parse(lector.result); } catch (err) { toast('El archivo no es una copia válida.'); return; }
+      try { datos = JSON.parse(await leerCopia(file)); } catch (err) { toast('El archivo no es una copia válida.'); return; }
       if (!datos || !Array.isArray(datos.productos) || !Array.isArray(datos.movimientos)) { toast('El archivo no es una copia de Stock Ferretería.'); return; }
       if (!(await confirmar(`¿Reemplazar los datos actuales por la copia (${datos.productos.length} productos)? Lo que no esté en la copia se pierde.`, 'Restaurar', true))) return;
       reemplazarDatos(Object.assign(baseVacia(), datos), !Array.isArray(datos.usuarios) || !datos.usuarios.length);
       toast('Copia restaurada.');
-    };
-    lector.readAsText(file);
+    })();
   });
   $('#btn-cargar-ejemplo').addEventListener('click', async () => {
     if (!(await confirmar('¿Reemplazar todos los datos por los de ejemplo?', 'Cargar ejemplo', true))) return;
@@ -2131,7 +2239,7 @@ function iniciarBloqueo() {
     arrancar();
   });
   $('#bloq-copiar').addEventListener('click', () => copiarTexto(idEquipo(), 'Código de la computadora copiado.'));
-  $('#bloq-respaldo').addEventListener('click', () => descargarBlob(JSON.stringify(db, null, 2), 'application/json', `respaldo_stock_${isoLocal()}.json`));
+  $('#bloq-respaldo').addEventListener('click', () => descargarBlob(JSON.stringify(db), 'application/json', `respaldo_stock_${isoLocal()}.json`));
   // Se vuelve a revisar cada media hora, por si el programa queda abierto varios días
   setInterval(async () => {
     if (!$('#bloqueo').hidden) return;
@@ -2289,7 +2397,7 @@ function iniciar() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, verificarCodigo, idDesdeHex, normalizarId, sumarMeses, estadoLicencia, aB64url, deB64url, MODULOS, PERMANENTE };
+  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, verificarCodigo, idDesdeHex, fotoDe, calcularCambios, normalizarId, sumarMeses, estadoLicencia, aB64url, deB64url, MODULOS, PERMANENTE };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

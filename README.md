@@ -58,10 +58,12 @@ Aparece para el administrador y se abre con una clave propia del desarrollador (
 
 ### Dónde se guardan los datos (versión Windows)
 
-- Los cambios se guardan solos en `%APPDATA%\Stock Ferretería\datos.json`.
-- Cada día se hace un **respaldo automático** en `Documentos\Stock Ferreteria\Respaldos` y se conservan los últimos 60 días. Se abre desde **Archivo → Abrir carpeta de respaldos** o desde **Reportes → Copia de seguridad**.
-- Conviene copiar esa carpeta a un pendrive o a la nube de vez en cuando.
-- Para pasar los datos a otra PC: **Reportes → Descargar copia** en la PC vieja y **Restaurar copia** en la nueva.
+- Los datos están en una base **SQLite** dentro de `%APPDATA%\Stock Ferreteria\datos.sqlite`. SQLite viene dentro del instalador: no hay que instalar nada aparte.
+- Cada cambio guarda solo lo que cambió, así una venta tarda unos 50 ms aunque haya años de historia. Con 8.000 productos y un año de ventas (43.800 ventas) la base pesa unos 115 MB y el programa abre en 3 segundos.
+- Una vez por día se hace un **respaldo comprimido** (`respaldo_AAAA-MM-DD.json.gz`) en `Documentos\Stock Ferreteria\Respaldos`, y se guardan los últimos 60 días. Se abre desde **Archivo → Abrir carpeta de respaldos**.
+- **Copia extra:** en **Reportes y copias → Copia de seguridad** se elige una carpeta en un pendrive o en Google Drive u OneDrive, y el respaldo del día se copia ahí también. Si el pendrive no está enchufado, el programa lo avisa y vuelve a intentar más tarde.
+- Para pasar los datos a otra PC: **Descargar copia** en la vieja y **Restaurar copia** en la nueva. También se puede restaurar directamente un respaldo diario `.json.gz`.
+- Al actualizar desde una versión anterior a la 1.6, los datos de `datos.json` se pasan solos a la base nueva, y queda una copia como `datos-antes-de-sqlite.json`.
 
 ## Usarlo desde el navegador
 
@@ -80,9 +82,10 @@ Un lector USB funciona como un teclado: no hay que configurar nada en el program
 Requiere [Node.js](https://nodejs.org) 20 o más nuevo.
 
 ```bash
-npm install        # instala Electron y electron-builder
+npm install        # instala Electron, electron-builder y SQLite (compilado para Electron)
 npm start          # abre el programa en modo desarrollo
-npm test           # corre las pruebas automáticas
+npm test           # corre las pruebas automáticas de la lógica
+npm run test:almacen  # pruebas de la base SQLite (usan el Node de Electron)
 npm run dist       # genera el instalador y la versión portable en dist/ (en Windows)
 ```
 
@@ -107,10 +110,12 @@ index.html                Pantallas y formularios
 css/styles.css            Estilos (tema claro y oscuro automático)
 js/app.js                 Lógica: stock, caja, reportes, exportación y respaldo
 vendor/xlsx.full.min.js   SheetJS para exportar a Excel sin conexión
-electron/main.js          Ventana de escritorio, guardado en archivo y respaldo diario
+electron/main.js          Ventana de escritorio, respaldos diarios y carpeta extra
+electron/datos.js         Base SQLite: guarda solo lo que cambió
 electron/preload.js       Puente entre la página y el disco
 build/icon.*              Ícono del programa
-tests/logica.test.js      Pruebas automáticas
+tests/logica.test.js      Pruebas automáticas de la lógica
+tests/almacen.test.js     Pruebas de la base SQLite
 ```
 
 ## Ideas para más adelante

@@ -407,6 +407,9 @@ textarea { width: 100%; resize: vertical; }
 .modulos .mod-no { color: var(--muted); text-decoration: line-through; }
 .modulos .mod-no::before { border: 2px solid var(--line); }
 
+.respaldo-extra { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.respaldo-extra .sub { max-width: none; overflow-wrap: anywhere; }
+
 /* Permisos: lo marcado como solo-admin no se muestra al empleado */
 .rol-empleado .solo-admin { display: none !important; }
 
