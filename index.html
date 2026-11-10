@@ -24,10 +24,16 @@
       <a href="#caja"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20 8H6.2"/><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/></svg><span class="txt">Vender</span></a>
       <a href="#productos"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg><span class="txt">Productos</span></a>
       <a href="#movimientos"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h11V6H3zM14 10h4l3 3v4h-7"/><circle cx="7" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg><span class="txt">Cargar mercadería</span></a>
-      <a href="#panel"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="txt">Resumen del día</span></a>
+      <a href="#panel" class="solo-admin"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="txt">Resumen del día</span></a>
       <a href="#proveedores"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span class="txt">Proveedores</span></a>
-      <a href="#reportes"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/></svg><span class="txt">Reportes y copias</span><span id="badge-bajo" class="badge" hidden></span></a>
+      <a href="#reportes" class="solo-admin"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/></svg><span class="txt">Reportes y copias</span><span id="badge-bajo" class="badge" hidden></span></a>
     </nav>
+    <div class="sesion">
+      <span class="sesion-lbl">Usuario</span>
+      <strong id="sesion-nombre"></strong>
+      <span class="sesion-lbl" id="sesion-rol"></span>
+      <button class="btn sm" type="button" id="btn-salir">Cerrar sesión</button>
+    </div>
     <div class="letra" role="group" aria-label="Tamaño de la letra">
       <span>Tamaño de letra</span>
       <div class="letra-btns">
@@ -39,7 +45,11 @@
   </aside>
 
   <main class="main">
-    <div id="banner-ejemplo" class="banner" hidden>
+    <div id="banner-pin" class="banner" hidden>
+      <p>Hay usuarios con el <strong>PIN inicial</strong>. Cambialos para que nadie pueda entrar como administrador.</p>
+      <div class="banner-acc"><button class="btn sm primary" id="banner-pin-ir" type="button">Cambiar los PIN</button></div>
+    </div>
+    <div id="banner-ejemplo" class="banner solo-admin" hidden>
       <p>Estás viendo <strong>datos de ejemplo</strong> para probar el programa. Cuando quieras cargar tu ferretería, empezá de cero.</p>
       <div class="banner-acc">
         <button class="btn sm" id="btn-ocultar-ejemplo" type="button">Seguir con el ejemplo</button>
@@ -129,10 +139,10 @@
 
       <article class="card ventas-hoy">
         <header class="card-h">
-          <div><h2>Ventas del día</h2><p class="sub" id="ventas-hoy-resumen"></p></div>
+          <div><h2>Ventas del día</h2><p class="sub solo-admin" id="ventas-hoy-resumen"></p></div>
           <div class="acciones">
-            <label class="f-inline" for="ventas-fecha">Día <input type="date" id="ventas-fecha"></label>
-            <button class="btn sm" type="button" id="btn-cierre" data-imprime>Imprimir cierre de caja</button>
+            <label class="f-inline solo-admin" for="ventas-fecha">Día <input type="date" id="ventas-fecha"></label>
+            <button class="btn sm solo-admin" type="button" id="btn-cierre" data-imprime>Imprimir cierre de caja</button>
           </div>
         </header>
         <div id="ventas-hoy"></div>
@@ -144,8 +154,8 @@
       <header class="vh">
         <div><h1>Productos</h1><p class="sub" id="prod-sub"></p></div>
         <div class="acciones">
-          <button class="btn" type="button" id="btn-importar">Importar desde Excel</button>
-          <button class="btn" type="button" id="btn-precios">Actualizar precios</button>
+          <button class="btn solo-admin" type="button" id="btn-importar">Importar desde Excel</button>
+          <button class="btn solo-admin" type="button" id="btn-precios">Actualizar precios</button>
           <button class="btn primary" type="button" id="btn-nuevo-prod">Nuevo producto</button>
         </div>
       </header>
@@ -161,7 +171,7 @@
       </div>
       <div class="table-wrap">
         <table class="tabla">
-          <thead><tr><th>Código</th><th>Producto</th><th>Proveedor</th><th class="num">Stock</th><th class="num">Mín.</th><th>Estado</th><th class="num">Costo</th><th class="num">Precio</th><th class="num">Acciones</th></tr></thead>
+          <thead><tr><th>Código</th><th>Producto</th><th>Proveedor</th><th class="num">Stock</th><th class="num">Mín.</th><th>Estado</th><th class="num solo-admin">Costo</th><th class="num">Precio</th><th class="num">Acciones</th></tr></thead>
           <tbody id="tabla-prod"></tbody>
         </table>
       </div>
@@ -204,7 +214,7 @@
           <option value="ajuste">Correcciones</option>
         </select>
         <input type="search" id="mov-buscar" placeholder="Buscar producto o nota" aria-label="Buscar movimientos">
-        <button class="btn" type="button" data-export="movimientos">Exportar Excel</button>
+        <button class="btn solo-admin" type="button" data-export="movimientos">Exportar Excel</button>
       </div>
       <div class="table-wrap">
         <table class="tabla">
@@ -269,6 +279,17 @@
           </header>
         </article>
 
+        <article class="card" id="card-usuarios">
+          <header class="card-h">
+            <div><h2>Usuarios</h2><p class="sub">Quién puede entrar al programa. El empleado vende, carga mercadería y productos; el administrador además ve el resumen, los reportes y las copias.</p></div>
+            <button class="btn sm primary" type="button" id="btn-nuevo-usuario">Nuevo usuario</button>
+          </header>
+          <div class="table-wrap"><table class="tabla">
+            <thead><tr><th>Nombre</th><th>Tipo</th><th>PIN</th><th class="num"></th></tr></thead>
+            <tbody id="tabla-usuarios"></tbody>
+          </table></div>
+        </article>
+
         <article class="card">
           <header class="card-h">
             <div><h2>Datos del negocio</h2><p class="sub">Aparecen en el ticket impreso y en el cierre de caja.</p></div>
@@ -317,7 +338,7 @@
       </label>
       <label class="f" for="p-proveedor">Proveedor<select id="p-proveedor"></select></label>
       <label class="f" for="p-ubicacion">Ubicación<input id="p-ubicacion" type="text" placeholder="Ej.: Estante A-01"></label>
-      <label class="f" for="p-costo">Costo<input id="p-costo" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="f solo-admin" for="p-costo">Costo<input id="p-costo" type="number" step="any" min="0" inputmode="decimal"></label>
       <label class="f" for="p-precio">Precio de venta<input id="p-precio" type="number" step="any" min="0" inputmode="decimal"><small class="muted" id="p-margen"></small></label>
       <label class="f" for="p-minimo">Stock mínimo<input id="p-minimo" type="number" step="any" min="0" inputmode="decimal"></label>
       <label class="f" for="p-stock" id="p-stock-wrap">Stock inicial<input id="p-stock" type="number" step="any" min="0" inputmode="decimal" placeholder="0"></label>
@@ -325,7 +346,7 @@
     </div>
     <p class="err dlg-err" id="prod-err" role="alert"></p>
     <footer class="dlg-f">
-      <button type="button" class="btn danger" id="prod-eliminar">Eliminar</button>
+      <button type="button" class="btn danger solo-admin" id="prod-eliminar">Eliminar</button>
       <span class="sp"></span>
       <button type="button" class="btn" data-cerrar>Cancelar</button>
       <button class="btn primary" type="submit">Guardar</button>
@@ -363,6 +384,31 @@
     <p class="err dlg-err" id="prov-err" role="alert"></p>
     <footer class="dlg-f">
       <button type="button" class="btn danger" id="prov-eliminar">Eliminar</button>
+      <span class="sp"></span>
+      <button type="button" class="btn" data-cerrar>Cancelar</button>
+      <button class="btn primary" type="submit">Guardar</button>
+    </footer>
+  </form>
+</dialog>
+
+<!-- Usuario -->
+<dialog id="dlg-usuario" class="dlg-chico" aria-labelledby="usr-titulo">
+  <form id="form-usuario" novalidate>
+    <header class="dlg-h"><h2 id="usr-titulo">Nuevo usuario</h2></header>
+    <div class="dlg-b campos-col">
+      <label class="f" for="u-nombre">Nombre<input id="u-nombre" type="text" autocomplete="off" placeholder="Ej.: Carlos"></label>
+      <label class="f" for="u-rol">Tipo
+        <select id="u-rol">
+          <option value="empleado">Empleado: vende y carga mercadería</option>
+          <option value="admin">Administrador: además ve reportes y copias</option>
+        </select>
+      </label>
+      <label class="f" for="u-pin"><span id="u-pin-label">PIN</span><input id="u-pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6"><small>De 4 a 6 números.</small></label>
+      <label class="f" for="u-pin2">Repetí el PIN<input id="u-pin2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6"></label>
+    </div>
+    <p class="err dlg-err" id="usr-err" role="alert"></p>
+    <footer class="dlg-f">
+      <button type="button" class="btn danger" id="usr-eliminar">Eliminar</button>
       <span class="sp"></span>
       <button type="button" class="btn" data-cerrar>Cancelar</button>
       <button class="btn primary" type="submit">Guardar</button>
@@ -450,6 +496,27 @@
 </dialog>
 
 <div id="impresion" class="solo-impresion" aria-hidden="true"></div>
+
+<!-- Ingreso -->
+<div id="login" class="login">
+  <div class="login-caja">
+    <svg class="login-logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2.5 27.7 9.25v13.5L16 29.5 4.3 22.75V9.25Z" fill="var(--accent)"/><circle cx="16" cy="16" r="5.2" fill="var(--surface)"/></svg>
+    <h1 id="login-negocio">Stock Ferretería</h1>
+    <div id="login-paso1" class="login-paso">
+      <p class="paso">¿Quién sos? Tocá tu nombre</p>
+      <div id="login-usuarios" class="login-usuarios"></div>
+    </div>
+    <form id="login-paso2" class="login-paso" novalidate hidden>
+      <label class="paso" for="login-pin">Hola, <span id="login-nombre"></span>. Escribí tu PIN</label>
+      <input id="login-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6">
+      <p class="err" id="login-err" role="alert"></p>
+      <div class="login-acc">
+        <button type="button" class="btn btn-grande" id="login-volver">Volver</button>
+        <button class="btn primary btn-grande" type="submit">Entrar</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 

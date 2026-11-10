@@ -25,6 +25,102 @@ const finDia = (s) => new Date(s + 'T23:59:59.999').getTime();
 const normal = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 let db;
+let sesion = null; // usuario que ingresó
+
+/* ---------- Usuarios y PIN ---------- */
+
+// SHA-256 en JavaScript puro (sirve en la versión de escritorio, en el navegador y en las pruebas).
+function sha256(texto) {
+  const rot = (v, n) => (v >>> n) | (v << (32 - n));
+  const max = 2 ** 32;
+  let h = [];
+  const k = [];
+  const compuesto = {};
+  for (let c = 2, cuenta = 0; cuenta < 64; c++) {
+    if (compuesto[c]) continue;
+    for (let i = 0; i < 313; i += c) compuesto[i] = c;
+    h[cuenta] = (Math.pow(c, 0.5) * max) | 0;
+    k[cuenta++] = (Math.pow(c, 1 / 3) * max) | 0;
+  }
+  const bytes = Array.from(unescape(encodeURIComponent(texto)), (ch) => ch.charCodeAt(0));
+  const largoBits = bytes.length * 8;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+  const w = [];
+  for (let i = 0; i < bytes.length; i++) w[i >> 2] |= bytes[i] << ((3 - (i % 4)) * 8);
+  w.push((largoBits / max) | 0, largoBits | 0);
+  for (let j = 0; j < w.length; j += 16) {
+    const m = w.slice(j, j + 16);
+    const previo = h;
+    h = h.slice(0, 8);
+    for (let i = 0; i < 64; i++) {
+      if (i >= 16) {
+        const a15 = m[i - 15], a2 = m[i - 2];
+        m[i] = (m[i - 16] + (rot(a15, 7) ^ rot(a15, 18) ^ (a15 >>> 3)) + m[i - 7] + (rot(a2, 17) ^ rot(a2, 19) ^ (a2 >>> 10))) | 0;
+      }
+      const a = h[0], e = h[4];
+      const t1 = h[7] + (rot(e, 6) ^ rot(e, 11) ^ rot(e, 25)) + ((e & h[5]) ^ (~e & h[6])) + k[i] + m[i];
+      const t2 = (rot(a, 2) ^ rot(a, 13) ^ rot(a, 22)) + ((a & h[1]) ^ (a & h[2]) ^ (h[1] & h[2]));
+      h = [(t1 + t2) | 0].concat(h);
+      h[4] = (h[4] + t1) | 0;
+    }
+    for (let i = 0; i < 8; i++) h[i] = (h[i] + previo[i]) | 0;
+  }
+  return h.slice(0, 8).map((x) => (x >>> 0).toString(16).padStart(8, '0')).join('');
+}
+
+const ROLES = { admin: 'Administrador', empleado: 'Empleado' };
+const pinValido = (p) => /^\d{4,6}$/.test(String(p));
+const hashPin = (pin, sal) => sha256(`${sal}:${pin}`);
+const verificarPin = (u, pin) => !!u && hashPin(String(pin), u.sal) === u.pin;
+
+function crearUsuario(nombre, rol, pin, porDefecto = false) {
+  const sal = uid();
+  return { id: uid(), nombre, rol, sal, pin: hashPin(pin, sal), pinPorDefecto: porDefecto };
+}
+
+/** La primera vez crea «Administrador» (PIN 1234) y «Empleado» (PIN 0000). Siempre deja al menos un administrador. */
+function asegurarUsuarios(d) {
+  if (!Array.isArray(d.usuarios) || !d.usuarios.length) {
+    d.usuarios = [crearUsuario('Administrador', 'admin', '1234', true), crearUsuario('Empleado', 'empleado', '0000', true)];
+    return true;
+  }
+  if (!d.usuarios.some((u) => u.rol === 'admin')) {
+    d.usuarios.unshift(crearUsuario('Administrador', 'admin', '1234', true));
+    return true;
+  }
+  return false;
+}
+
+/** Crea o modifica un usuario. datos: { nombre, rol, pin }. Al editar, el PIN vacío no cambia. */
+function guardarUsuario(d, datos, id) {
+  const nombre = String(datos.nombre || '').trim();
+  const rol = datos.rol;
+  const pin = String(datos.pin || '');
+  if (!nombre) return { error: 'Escribí el nombre.' };
+  if (!ROLES[rol]) return { error: 'Elegí si es administrador o empleado.' };
+  if (d.usuarios.some((u) => u.id !== id && normal(u.nombre) === normal(nombre))) return { error: `Ya hay un usuario que se llama ${nombre}.` };
+  if ((!id || pin) && !pinValido(pin)) return { error: 'El PIN tiene que tener de 4 a 6 números.' };
+  let u = id ? d.usuarios.find((x) => x.id === id) : null;
+  if (id && !u) return { error: 'El usuario ya no existe.' };
+  if (u && u.rol === 'admin' && rol !== 'admin' && !d.usuarios.some((x) => x.id !== id && x.rol === 'admin')) {
+    return { error: 'Tiene que quedar al menos un administrador.' };
+  }
+  if (!u) { u = crearUsuario(nombre, rol, pin); d.usuarios.push(u); return { usuario: u }; }
+  u.nombre = nombre;
+  u.rol = rol;
+  if (pin) { u.sal = uid(); u.pin = hashPin(pin, u.sal); u.pinPorDefecto = false; }
+  return { usuario: u };
+}
+
+function eliminarUsuario(d, id, idActual) {
+  const u = d.usuarios.find((x) => x.id === id);
+  if (!u) return 'El usuario ya no existe.';
+  if (id === idActual) return 'No podés eliminar el usuario con el que estás adentro.';
+  if (u.rol === 'admin' && !d.usuarios.some((x) => x.id !== id && x.rol === 'admin')) return 'Tiene que quedar al menos un administrador.';
+  d.usuarios = d.usuarios.filter((x) => x.id !== id);
+  return null;
+}
 
 /* ---------- Datos ---------- */
 
@@ -41,10 +137,12 @@ function cargar() {
     const raw = escritorio() ? window.almacen.leer() : localStorage.getItem(CLAVE);
     if (raw) {
       db = Object.assign(baseVacia(), JSON.parse(raw));
+      if (asegurarUsuarios(db)) guardar();
       return;
     }
   } catch (e) { /* sin almacenamiento: se usa el ejemplo en memoria */ }
   db = semilla();
+  asegurarUsuarios(db);
   guardar();
 }
 
@@ -121,6 +219,7 @@ function registrar(d, m) {
     proveedorId: m.proveedorId || '',
     nota: m.nota || '',
     ventaId: m.ventaId || '',
+    usuario: m.usuario || (sesion ? sesion.nombre : ''),
     stockAntes: antes,
     stockDespues: p.stock,
   });
@@ -164,6 +263,7 @@ function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0) {
     recibido: medio === 'Efectivo' && recibido !== '' && recibido != null ? Number(recibido) : null,
     vuelto: medio === 'Efectivo' && recibido !== '' && recibido != null ? red(Number(recibido) - total) : null,
     cliente: cliente || '',
+    usuario: sesion ? sesion.nombre : '',
     anulada: false,
   };
   for (const it of venta.items) {
@@ -407,13 +507,20 @@ function confirmar(texto, okTexto = 'Confirmar') {
   });
 }
 
+const VISTAS_ADMIN = ['panel', 'reportes'];
+const esAdmin = () => !!sesion && sesion.rol === 'admin';
+
 function vistaActual() {
   const h = location.hash.slice(1);
-  return VISTAS.includes(h) ? h : 'caja';
+  if (!VISTAS.includes(h)) return 'caja';
+  if (VISTAS_ADMIN.includes(h) && !esAdmin()) return 'caja';
+  return h;
 }
 
 function mostrarVista() {
+  if (!sesion) return;
   const v = vistaActual();
+  if (location.hash && location.hash.slice(1) !== v) history.replaceState(null, '', '#' + v);
   $$('.vista').forEach((s) => { s.hidden = s.id !== 'v-' + v; });
   $$('.nav a').forEach((a) => a.setAttribute('aria-current', a.getAttribute('href') === '#' + v ? 'page' : 'false'));
   render();
@@ -421,7 +528,9 @@ function mostrarVista() {
 }
 
 function render() {
+  if (!sesion) return;
   $('#banner-ejemplo').hidden = !db.ejemplo;
+  $('#banner-pin').hidden = !(esAdmin() && db.usuarios.some((u) => u.pinPorDefecto));
   $('#marca-nombre').textContent = (db.negocio && db.negocio.nombre) || 'Stock Ferretería';
   const bajos = db.productos.filter((p) => estado(p) !== 'ok').length;
   const b = $('#badge-bajo');
@@ -622,7 +731,7 @@ function actualizarVuelto() {
   v.style.color = dif >= 0 ? '' : 'var(--danger)';
 }
 
-function fechaVentas() { return $('#ventas-fecha').value || isoLocal(); }
+function fechaVentas() { return (esAdmin() && $('#ventas-fecha').value) || isoLocal(); }
 
 function renderVentasHoy() {
   const dia = fechaVentas();
@@ -642,11 +751,11 @@ function renderVentasHoy() {
         <tbody>${lista.map((v) => `
           <tr${v.anulada ? ' class="muted"' : ''}>
             <td class="mono">${String(v.numero).padStart(4, '0')}</td>
-            <td class="num">${hora(v.fecha)}</td>
+            <td class="num">${hora(v.fecha)}${v.usuario ? `<div class="meta">${esc(v.usuario)}</div>` : ''}</td>
             <td><div>${v.items.map((it) => `${n(it.cantidad)} × ${esc(it.nombre)}`).join('<br>')}</div>${v.cliente ? `<div class="meta">${esc(v.cliente)}</div>` : ''}</td>
             <td>${esc(v.medio)}${v.vuelto != null ? `<div class="meta">Vuelto ${$u(v.vuelto)}</div>` : ''}</td>
             <td class="num"><strong>${$u(v.total)}</strong>${v.descuento ? `<div class="meta">Descuento ${n(v.descuentoPct)} %</div>` : ''}</td>
-            <td class="acc">${puedeImprimir() ? `<button class="btn sm" type="button" data-ticket="${v.id}">Imprimir</button>` : ''}${v.anulada ? '<span class="chip neutro">Anulada</span>' : `<button class="btn sm danger" type="button" data-anular="${v.id}">Anular</button>`}</td>
+            <td class="acc">${puedeImprimir() ? `<button class="btn sm" type="button" data-ticket="${v.id}">Imprimir</button>` : ''}${v.anulada ? '<span class="chip neutro">Anulada</span>' : (esAdmin() ? `<button class="btn sm danger" type="button" data-anular="${v.id}">Anular</button>` : '')}</td>
           </tr>`).join('')}</tbody>
       </table></div>`
     : '';
@@ -668,6 +777,7 @@ function htmlTicket(v) {
   return `${encabezadoNegocio()}<hr>
     ${fila(`Venta N.º ${String(v.numero).padStart(4, '0')}`, fechaHora(v.fecha))}
     ${v.cliente ? `<div>Cliente: ${esc(v.cliente)}</div>` : ''}
+    ${v.usuario ? `<div>Atendió: ${esc(v.usuario)}</div>` : ''}
     ${v.anulada ? '<div class="t-c"><strong>VENTA ANULADA</strong></div>' : ''}<hr>
     ${v.items.map((it) => `<div>${esc(it.nombre)}</div>${fila(`${n(it.cantidad)} ${esc(it.unidad)} × ${$u(it.precio)}`, $u(it.subtotal))}`).join('')}<hr>
     ${v.descuento ? fila('Subtotal', $u(v.subtotal)) + fila(`Descuento ${n(v.descuentoPct)} %`, '−' + $u(v.descuento)) : ''}
@@ -819,7 +929,7 @@ function iniciarCaja() {
   });
   // Si el lector de códigos escribe sin que el cursor esté en el buscador, se lleva el cursor ahí
   document.addEventListener('keydown', (e) => {
-    if (vistaActual() !== 'caja' || e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1 || e.key === ' ') return;
+    if (!sesion || vistaActual() !== 'caja' || e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1 || e.key === ' ') return;
     if (document.querySelector('dialog[open]')) return;
     const a = document.activeElement;
     if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'radio') return;
@@ -845,7 +955,7 @@ function iniciarCaja() {
 
   $('#ventas-hoy').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-anular]');
-    if (!b) return;
+    if (!b || !esAdmin()) return;
     const v = db.ventas.find((x) => x.id === b.dataset.anular);
     if (!(await confirmar(`¿Anular la venta N.º ${v.numero} por ${$u(v.total)}? Los productos vuelven al stock.`, 'Anular venta'))) return;
     const err = anularVenta(db, v.id);
@@ -885,7 +995,7 @@ function renderProductos() {
         <td class="num"><strong>${n(p.stock)}</strong> <span class="u">${esc(p.unidad)}</span></td>
         <td class="num">${n(p.minimo)}</td>
         <td>${chipEstado(p)}</td>
-        <td class="num">${$u(p.costo)}</td>
+        <td class="num solo-admin">${$u(p.costo)}</td>
         <td class="num">${$u(p.precio)}</td>
         <td class="acc">
           <button class="btn sm" type="button" data-accion="entrada" data-id="${p.id}">+ Sumar stock</button>
@@ -1066,7 +1176,7 @@ function renderMovimientos() {
         <td><div class="nom">${esc(m.producto)}</div><div class="meta mono">${esc(m.codigo)}</div></td>
         <td class="num ${m.cantidad >= 0 ? 'mas' : 'menos'}">${m.cantidad >= 0 ? '+' : '−'}${n(Math.abs(m.cantidad))} <span class="u">${esc(m.unidad)}</span></td>
         <td class="num">${n(m.stockAntes)} → <strong>${n(m.stockDespues)}</strong></td>
-        <td>${esc(m.nota)}${m.proveedorId ? `<div class="meta">${esc(nombreProv(m.proveedorId))}</div>` : ''}</td>
+        <td>${esc(m.nota)}${m.proveedorId ? `<div class="meta">${esc(nombreProv(m.proveedorId))}</div>` : ''}${m.usuario ? `<div class="meta">Por ${esc(m.usuario)}</div>` : ''}</td>
       </tr>`).join('') + (lista.length > mostrar.length ? `<tr><td colspan="6" class="vacio">Se muestran los últimos ${mostrar.length} de ${lista.length}. Exportá a Excel para verlos todos.</td></tr>` : '')
     : '<tr><td colspan="6" class="vacio">No hay movimientos en el período elegido.</td></tr>';
 }
@@ -1189,6 +1299,7 @@ function ventasPeriodo() {
 }
 
 function renderReportes() {
+  renderUsuarios();
   if (!$('#form-negocio').contains(document.activeElement)) {
     ['nombre', 'direccion', 'telefono', 'rut', 'pie'].forEach((k) => { $('#n-' + k).value = (db.negocio || {})[k] || ''; });
   }
@@ -1324,12 +1435,12 @@ function exportar(tipo) {
   } else if (tipo === 'movimientos') {
     descargarExcel(movimientosFiltrados().map((m) => ({
       'Fecha': f(m.fecha), 'Tipo': etiquetaTipo(m), 'Código': m.codigo, 'Producto': m.producto, 'Cantidad': m.cantidad, 'Unidad': m.unidad,
-      'Stock antes': m.stockAntes, 'Stock después': m.stockDespues, 'Costo unitario': m.costoUnit, 'Proveedor': nombreProv(m.proveedorId), 'Nota': m.nota,
+      'Stock antes': m.stockAntes, 'Stock después': m.stockDespues, 'Costo unitario': m.costoUnit, 'Proveedor': nombreProv(m.proveedorId), 'Usuario': m.usuario || '', 'Nota': m.nota,
     })), 'Movimientos', 'movimientos');
   } else if (tipo === 'ventas') {
     const filas = [];
     ventasPeriodo().forEach((v) => v.items.forEach((it) => filas.push({
-      'Venta N.º': v.numero, 'Fecha': f(v.fecha), 'Estado': v.anulada ? 'Anulada' : 'Cobrada', 'Medio de pago': v.medio, 'Cliente': v.cliente,
+      'Venta N.º': v.numero, 'Fecha': f(v.fecha), 'Estado': v.anulada ? 'Anulada' : 'Cobrada', 'Medio de pago': v.medio, 'Vendedor': v.usuario || '', 'Cliente': v.cliente,
       'Código': it.codigo, 'Producto': it.nombre, 'Cantidad': it.cantidad, 'Unidad': it.unidad, 'Precio': it.precio, 'Subtotal': it.subtotal, 'Descuento %': v.descuentoPct || 0, 'Total venta': v.total,
     })));
     descargarExcel(filas, 'Ventas', 'ventas');
@@ -1337,6 +1448,20 @@ function exportar(tipo) {
 }
 
 /* ---------- Respaldo ---------- */
+
+/** Cambia todos los datos. Los usuarios y los datos del negocio se mantienen salvo que el archivo nuevo traiga los suyos. */
+function reemplazarDatos(nuevo, conservarUsuarios = true) {
+  const usuarios = db.usuarios, negocio = db.negocio;
+  db = nuevo;
+  if (conservarUsuarios) db.usuarios = usuarios;
+  if (!db.negocio || !db.negocio.nombre) db.negocio = negocio;
+  asegurarUsuarios(db);
+  if (!db.usuarios.some((u) => u.id === sesion.id)) sesion = null;
+  else sesion = db.usuarios.find((u) => u.id === sesion.id);
+  guardar();
+  ticket = [];
+  if (!sesion) mostrarLogin(); else { aplicarPermisos(); render(); }
+}
 
 function iniciarRespaldo() {
   if (escritorio()) {
@@ -1359,25 +1484,22 @@ function iniciarRespaldo() {
       try { datos = JSON.parse(lector.result); } catch (err) { toast('El archivo no es una copia válida.'); return; }
       if (!datos || !Array.isArray(datos.productos) || !Array.isArray(datos.movimientos)) { toast('El archivo no es una copia de Stock Ferretería.'); return; }
       if (!(await confirmar(`¿Reemplazar los datos actuales por la copia (${datos.productos.length} productos)? Lo que no esté en la copia se pierde.`, 'Restaurar'))) return;
-      db = Object.assign(baseVacia(), datos);
-      guardar();
-      ticket = [];
-      render();
+      reemplazarDatos(Object.assign(baseVacia(), datos), !Array.isArray(datos.usuarios) || !datos.usuarios.length);
       toast('Copia restaurada.');
     };
     lector.readAsText(file);
   });
   $('#btn-cargar-ejemplo').addEventListener('click', async () => {
     if (!(await confirmar('¿Reemplazar todos los datos por los de ejemplo?', 'Cargar ejemplo'))) return;
-    db = semilla(); guardar(); ticket = []; render(); toast('Datos de ejemplo cargados.');
+    reemplazarDatos(semilla()); toast('Datos de ejemplo cargados.');
   });
   $('#btn-borrar-todo').addEventListener('click', async () => {
     if (!(await confirmar('¿Borrar todos los productos, proveedores, ventas y movimientos? Descargá una copia antes si la vas a necesitar.', 'Borrar todo'))) return;
-    db = baseVacia(); guardar(); ticket = []; render(); toast('Se borraron todos los datos.');
+    reemplazarDatos(baseVacia()); toast('Se borraron todos los datos. Los usuarios se conservan.');
   });
   $('#btn-vaciar').addEventListener('click', async () => {
     if (!(await confirmar('¿Borrar los datos de ejemplo y empezar con tu ferretería?', 'Empezar de cero'))) return;
-    db = baseVacia(); guardar(); ticket = []; render(); location.hash = '#productos';
+    reemplazarDatos(baseVacia()); location.hash = '#productos';
     toast('Listo. Empezá cargando tus proveedores y productos.');
   });
   $('#btn-ocultar-ejemplo').addEventListener('click', () => { db.ejemplo = false; guardar(); render(); });
@@ -1550,7 +1672,150 @@ function iniciarNegocio() {
   });
 }
 
+/* ---------- Ingreso ---------- */
+
+let loginUsuario = null;
+
+function mostrarLogin() {
+  sesion = null;
+  document.body.classList.remove('rol-empleado', 'rol-admin');
+  $$('dialog[open]').forEach((d) => d.close());
+  $('#login-negocio').textContent = (db.negocio && db.negocio.nombre) || 'Stock Ferretería';
+  const lista = [...db.usuarios].sort((a, b) => (a.rol === 'admin') - (b.rol === 'admin') || a.nombre.localeCompare(b.nombre));
+  $('#login-usuarios').innerHTML = lista.map((u) => `
+    <button type="button" class="login-user" data-usuario="${u.id}">
+      <span>${esc(u.nombre)}</span><small>${ROLES[u.rol]}</small>
+    </button>`).join('');
+  $('#login-paso1').hidden = false;
+  $('#login-paso2').hidden = true;
+  $('#login').hidden = false;
+  const primero = $('#login-usuarios .login-user');
+  if (primero) primero.focus();
+}
+
+function elegirUsuario(id) {
+  loginUsuario = db.usuarios.find((u) => u.id === id);
+  if (!loginUsuario) return;
+  $('#login-nombre').textContent = loginUsuario.nombre;
+  $('#login-pin').value = '';
+  $('#login-err').textContent = '';
+  $('#login-paso1').hidden = true;
+  $('#login-paso2').hidden = false;
+  $('#login-pin').focus();
+}
+
+function aplicarPermisos() {
+  document.body.classList.toggle('rol-admin', esAdmin());
+  document.body.classList.toggle('rol-empleado', !esAdmin());
+  $('#sesion-nombre').textContent = sesion.nombre;
+  $('#sesion-rol').textContent = ROLES[sesion.rol];
+}
+
+function entrar(u) {
+  sesion = u;
+  loginUsuario = null;
+  $('#login').hidden = true;
+  aplicarPermisos();
+  if (!esAdmin()) $('#ventas-fecha').value = isoLocal();
+  if (location.hash !== '#caja') location.hash = '#caja';
+  mostrarVista();
+}
+
+function iniciarLogin() {
+  $('#login-usuarios').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-usuario]');
+    if (b) elegirUsuario(b.dataset.usuario);
+  });
+  $('#login-volver').addEventListener('click', mostrarLogin);
+  $('#login-pin').addEventListener('input', () => {
+    const i = $('#login-pin');
+    i.value = i.value.replace(/\D/g, '').slice(0, 6);
+    $('#login-err').textContent = '';
+  });
+  $('#login-paso2').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const pin = $('#login-pin').value;
+    if (!pin) { $('#login-err').textContent = 'Escribí tu PIN.'; return; }
+    if (!verificarPin(loginUsuario, pin)) {
+      $('#login-err').textContent = 'El PIN no es correcto. Probá de nuevo.';
+      $('#login-pin').value = '';
+      $('#login-pin').focus();
+      return;
+    }
+    entrar(loginUsuario);
+  });
+  $('#btn-salir').addEventListener('click', mostrarLogin);
+  $('#banner-pin-ir').addEventListener('click', () => {
+    location.hash = '#reportes';
+    setTimeout(() => $('#card-usuarios').scrollIntoView({ block: 'start' }), 50);
+  });
+}
+
+/* ---------- Usuarios (solo administrador) ---------- */
+
+let editandoUsuario = null;
+
+function renderUsuarios() {
+  const lista = [...db.usuarios].sort((a, b) => (b.rol === 'admin') - (a.rol === 'admin') || a.nombre.localeCompare(b.nombre));
+  $('#tabla-usuarios').innerHTML = lista.map((u) => `
+    <tr>
+      <td><div class="nom">${esc(u.nombre)}${sesion && u.id === sesion.id ? ' <span class="muted">(vos)</span>' : ''}</div></td>
+      <td>${u.rol === 'admin' ? '<span class="chip info">Administrador</span>' : '<span class="chip neutro">Empleado</span>'}</td>
+      <td>${u.pinPorDefecto ? '<span class="chip warn">PIN inicial, cambialo</span>' : '<span class="chip ok">PIN propio</span>'}</td>
+      <td class="acc"><button class="btn sm ghost" type="button" data-editar-usuario="${u.id}">Editar</button></td>
+    </tr>`).join('');
+}
+
+function abrirUsuario(id) {
+  editandoUsuario = id || null;
+  const u = id ? db.usuarios.find((x) => x.id === id) : { nombre: '', rol: 'empleado' };
+  $('#usr-titulo').textContent = id ? 'Editar usuario' : 'Nuevo usuario';
+  $('#u-nombre').value = u.nombre;
+  $('#u-rol').value = u.rol;
+  $('#u-pin').value = '';
+  $('#u-pin2').value = '';
+  $('#u-pin-label').textContent = id ? 'PIN nuevo (dejalo vacío para no cambiarlo)' : 'PIN';
+  $('#usr-err').textContent = '';
+  $('#usr-eliminar').hidden = !id || id === sesion.id;
+  $('#dlg-usuario').showModal();
+  $(id ? '#u-pin' : '#u-nombre').focus();
+}
+
+function iniciarUsuarios() {
+  $('#btn-nuevo-usuario').addEventListener('click', () => abrirUsuario());
+  $('#tabla-usuarios').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-editar-usuario]');
+    if (b) abrirUsuario(b.dataset.editarUsuario);
+  });
+  ['#u-pin', '#u-pin2'].forEach((sel) => $(sel).addEventListener('input', () => { $(sel).value = $(sel).value.replace(/\D/g, '').slice(0, 6); }));
+  $('#form-usuario').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!esAdmin()) return;
+    const pin = $('#u-pin').value;
+    if (pin !== $('#u-pin2').value) { $('#usr-err').textContent = 'Los dos PIN no coinciden.'; return; }
+    const r = guardarUsuario(db, { nombre: $('#u-nombre').value, rol: $('#u-rol').value, pin }, editandoUsuario);
+    if (r.error) { $('#usr-err').textContent = r.error; return; }
+    guardar();
+    $('#dlg-usuario').close();
+    if (r.usuario.id === sesion.id) { sesion = r.usuario; aplicarPermisos(); }
+    mostrarVista();
+    toast(editandoUsuario ? 'Usuario guardado.' : `Usuario ${r.usuario.nombre} creado.`);
+  });
+  $('#usr-eliminar').addEventListener('click', async () => {
+    const u = db.usuarios.find((x) => x.id === editandoUsuario);
+    if (!u || !(await confirmar(`¿Eliminar el usuario ${u.nombre}? Ya no va a poder entrar al programa.`, 'Eliminar'))) return;
+    const err = eliminarUsuario(db, u.id, sesion.id);
+    if (err) { $('#usr-err').textContent = err; $('#dlg-usuario').showModal(); return; }
+    guardar();
+    $('#dlg-usuario').close();
+    render();
+    toast('Usuario eliminado.');
+  });
+}
+
 function iniciar() {
+  iniciarLogin();
+  iniciarUsuarios();
   iniciarLetra();
   iniciarImportacion();
   iniciarPrecios();
@@ -1574,11 +1839,11 @@ function iniciar() {
   iniciarRespaldo();
   window.addEventListener('hashchange', mostrarVista);
   window.addEventListener('storage', (e) => { if (e.key === CLAVE) { cargar(); render(); } });
-  mostrarVista();
+  mostrarLogin();
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio };
+  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

@@ -170,3 +170,53 @@ test('los datos de ejemplo quedan consistentes', () => {
   }
   assert.equal(d.ventas.length, 3);
 });
+
+test('sha256 coincide con el de Node', () => {
+  const { createHash } = require('node:crypto');
+  for (const t of ['', 'abc', 'sal-123:1234', 'x'.repeat(200), 'ñandú']) {
+    assert.equal(app.sha256(t), createHash('sha256').update(t, 'utf8').digest('hex'), t);
+  }
+});
+
+test('la primera vez se crean administrador y empleado con PIN inicial', () => {
+  const d = app.baseVacia();
+  assert.equal(app.asegurarUsuarios(d), true);
+  const [admin, emp] = d.usuarios;
+  assert.equal(admin.rol, 'admin');
+  assert.equal(emp.rol, 'empleado');
+  assert.ok(app.verificarPin(admin, '1234'));
+  assert.ok(app.verificarPin(emp, '0000'));
+  assert.ok(!app.verificarPin(emp, '1234'));
+  assert.ok(!JSON.stringify(d.usuarios).includes('"1234"'), 'el PIN no se guarda tal cual');
+  assert.equal(app.asegurarUsuarios(d), false);
+});
+
+test('crear, editar y validar usuarios', () => {
+  const d = app.baseVacia();
+  app.asegurarUsuarios(d);
+  const admin = d.usuarios[0];
+  assert.match(app.guardarUsuario(d, { nombre: 'Carlos', rol: 'empleado', pin: '12' }).error, /4 a 6/);
+  assert.match(app.guardarUsuario(d, { nombre: 'empleado', rol: 'empleado', pin: '5555' }).error, /Ya hay/);
+  const { usuario } = app.guardarUsuario(d, { nombre: 'Carlos', rol: 'empleado', pin: '4321' });
+  assert.ok(app.verificarPin(usuario, '4321'));
+  // editar sin PIN no lo cambia
+  app.guardarUsuario(d, { nombre: 'Carlos P.', rol: 'empleado', pin: '' }, usuario.id);
+  assert.equal(usuario.nombre, 'Carlos P.');
+  assert.ok(app.verificarPin(usuario, '4321'));
+  // cambiar el PIN del admin saca la marca de PIN inicial
+  app.guardarUsuario(d, { nombre: 'Administrador', rol: 'admin', pin: '908070' }, admin.id);
+  assert.ok(app.verificarPin(admin, '908070'));
+  assert.equal(admin.pinPorDefecto, false);
+  // no puede quedar sin administrador
+  assert.match(app.guardarUsuario(d, { nombre: 'Administrador', rol: 'empleado', pin: '' }, admin.id).error, /al menos un administrador/);
+});
+
+test('eliminar usuarios', () => {
+  const d = app.baseVacia();
+  app.asegurarUsuarios(d);
+  const [admin, emp] = d.usuarios;
+  assert.match(app.eliminarUsuario(d, admin.id, admin.id), /estás adentro/);
+  assert.match(app.eliminarUsuario(d, admin.id, emp.id), /al menos un administrador/);
+  assert.equal(app.eliminarUsuario(d, emp.id, admin.id), null);
+  assert.equal(d.usuarios.length, 1);
+});

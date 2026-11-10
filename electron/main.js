@@ -82,6 +82,8 @@ function crearVentana() {
       nodeIntegration: false,
       sandbox: false,
       spellcheck: false,
+      // En el programa instalado no se pueden abrir las herramientas de desarrollo
+      devTools: !app.isPackaged,
     },
   });
   ventana.once('ready-to-show', () => { ventana.maximize(); ventana.show(); });
@@ -125,13 +127,11 @@ if (!app.requestSingleInstanceLock()) {
       {
         label: 'Ver',
         submenu: [
-          { role: 'reload', label: 'Recargar' },
           { role: 'zoomIn', label: 'Agrandar' },
           { role: 'zoomOut', label: 'Achicar' },
           { role: 'resetZoom', label: 'Tamaño normal' },
           { type: 'separator' },
           { role: 'togglefullscreen', label: 'Pantalla completa' },
-          { role: 'toggleDevTools', label: 'Herramientas de desarrollo' },
         ],
       },
     ]));

@@ -17,6 +17,21 @@ Programa para controlar el stock de una ferretería y cobrar en el mostrador. Se
 
 El ticket impreso es un comprobante interno: no reemplaza a la factura ni al e-ticket de DGI.
 
+## Usuarios: administrador y empleado
+
+Al abrir el programa, cada persona toca su nombre y escribe su PIN (de 4 a 6 números).
+
+| Usuario | PIN inicial | Qué puede hacer |
+|---|---|---|
+| Administrador | `1234` | Todo, incluido Resumen del día, Reportes y copias, usuarios, anular ventas y cambiar precios en bloque |
+| Empleado | `0000` | Vender, cargar mercadería, productos y proveedores. No ve totales de ventas, costos ni reportes |
+
+**Lo primero que hay que hacer** es entrar como Administrador e ir a **Reportes y copias → Usuarios** para cambiar los dos PIN. Mientras sigan con el PIN inicial, el programa lo recuerda con un aviso. Ahí mismo se crean más usuarios (uno por cada empleado) y se puede renombrar a "Empleado" con su nombre real.
+
+Cada venta y cada movimiento de stock queda registrado con el nombre de quien lo hizo.
+
+Si se olvida el PIN de todos los administradores, se puede restaurar una copia de seguridad anterior; pedí ayuda a quien instaló el programa.
+
 ## Instalar en Windows
 
 1. Entrá a la pestaña **Releases** del repositorio y descargá la última versión:
