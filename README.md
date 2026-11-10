@@ -32,6 +32,22 @@ Cada venta y cada movimiento de stock queda registrado con el nombre de quien lo
 
 Si se olvida el PIN de todos los administradores, se puede restaurar una copia de seguridad anterior; pedí ayuda a quien instaló el programa.
 
+## Licencia y activación
+
+El programa necesita un **código de activación** para funcionar. Cada código:
+
+- vale para **una sola computadora** (la identifica el "código de esta computadora", por ejemplo `455J-G1Z5`);
+- tiene una **fecha de vencimiento** (o ninguna, si es una venta definitiva);
+- dice qué **módulos** están habilitados: Caja y ventas, Usuarios y permisos, Resumen y reportes, Importar y actualizar precios, Ticket y cierre impresos. Stock, productos y proveedores vienen siempre.
+
+Cuando falta poco para el vencimiento, el administrador ve un aviso. Al vencer, el programa se bloquea y muestra los datos de contacto del proveedor, el código de la computadora y un campo para pegar el código nuevo. Los datos no se borran, y desde esa pantalla se puede descargar una copia. Si alguien atrasa la fecha de Windows para seguir usándolo, el programa lo detecta y pide corregirla.
+
+Los códigos están firmados con una clave privada que tiene solo el desarrollador, en un generador aparte que **no está en este repositorio**. El programa trae únicamente la clave pública, con la que puede comprobar un código pero no fabricarlo.
+
+### Pestaña Desarrollador
+
+Aparece para el administrador y se abre con una clave propia del desarrollador (se crea la primera vez que se entra). Ahí se ve el estado de la licencia y los módulos, se carga un código nuevo y se configuran los datos de contacto que ve el cliente al vencer, y cuántos días antes avisar. Si se olvida la clave, se borra pegando un código de activación válido para esa computadora.
+
 ## Instalar en Windows
 
 1. Entrá a la pestaña **Releases** del repositorio y descargá la última versión:

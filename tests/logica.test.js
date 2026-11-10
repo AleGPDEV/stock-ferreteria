@@ -220,3 +220,77 @@ test('eliminar usuarios', () => {
   assert.equal(app.eliminarUsuario(d, emp.id, admin.id), null);
   assert.equal(d.usuarios.length, 1);
 });
+
+// ---------- Licencias ----------
+async function clavesDePrueba() {
+  const k = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const pub = await crypto.subtle.exportKey('jwk', k.publicKey);
+  return { privada: k.privateKey, publica: { kty: pub.kty, crv: pub.crv, x: pub.x, y: pub.y } };
+}
+async function firmar(privada, datos) {
+  const cuerpo = new TextEncoder().encode(JSON.stringify(datos));
+  const firma = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privada, cuerpo));
+  return `SF1.${app.aB64url(cuerpo)}.${app.aB64url(firma)}`;
+}
+
+test('sumar meses respeta los fines de mes', () => {
+  assert.equal(app.sumarMeses('2026-11-10', 1), '2026-12-10');
+  assert.equal(app.sumarMeses('2026-01-31', 1), '2026-02-28');
+  assert.equal(app.sumarMeses('2026-11-30', 3), '2027-02-28');
+  assert.equal(app.sumarMeses('2026-05-15', 12), '2027-05-15');
+});
+
+test('el código de la computadora es corto y estable', () => {
+  const id = app.idDesdeHex('a3f1c09b7e22d4');
+  assert.match(id, /^[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+  assert.equal(app.idDesdeHex('a3f1c09b7e22d4'), id);
+  assert.equal(app.normalizarId(id.toLowerCase()), id.replace('-', ''));
+  assert.equal(app.normalizarId('0O1I-LL23'), '00111123');
+});
+
+test('estado de la licencia', () => {
+  assert.equal(app.estadoLicencia(null, '2026-11-10').estado, 'sin');
+  assert.deepEqual(app.estadoLicencia({ h: '2026-12-10' }, '2026-11-10'), { estado: 'activa', dias: 30 });
+  assert.deepEqual(app.estadoLicencia({ h: '2026-11-15' }, '2026-11-10'), { estado: 'por-vencer', dias: 5 });
+  assert.deepEqual(app.estadoLicencia({ h: '2026-11-10' }, '2026-11-10'), { estado: 'por-vencer', dias: 0 });
+  assert.equal(app.estadoLicencia({ h: '2026-11-09' }, '2026-11-10').estado, 'vencida');
+  assert.equal(app.estadoLicencia({ h: app.PERMANENTE }, '2030-01-01').estado, 'permanente');
+});
+
+test('un código bien firmado activa; uno alterado, de otra PC o vencido no', async () => {
+  const { privada, publica } = await clavesDePrueba();
+  const id = 'K7Q2-9XMA';
+  const codigo = await firmar(privada, { v: 1, i: id, h: '2026-12-10', m: 19, f: '2026-11-10', c: 'Ferretería Ñandú' });
+  const ok = await app.verificarCodigo(codigo, 'k7q29xma', '2026-11-10', publica);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.lic.m, 19);
+  assert.equal(ok.lic.c, 'Ferretería Ñandú');
+  // pegado con espacios y saltos de línea (como llega por WhatsApp)
+  assert.equal((await app.verificarCodigo(codigo.slice(0, 40) + '\n ' + codigo.slice(40), id, '2026-11-10', publica)).ok, true);
+  // otra computadora
+  assert.equal((await app.verificarCodigo(codigo, 'AAAA-BBBB', '2026-11-10', publica)).motivo, 'equipo');
+  // vencido
+  assert.equal((await app.verificarCodigo(codigo, id, '2026-12-11', publica)).motivo, 'vencido');
+  // alguien cambia la fecha dentro del código
+  const [p, cuerpo, firma] = codigo.split('.');
+  const datos = JSON.parse(new TextDecoder().decode(app.deB64url(cuerpo)));
+  datos.h = '2099-12-31';
+  const trucho = `${p}.${app.aB64url(new TextEncoder().encode(JSON.stringify(datos)))}.${firma}`;
+  assert.equal((await app.verificarCodigo(trucho, id, '2026-11-10', publica)).motivo, 'firma');
+  // firmado con otra clave
+  const otra = await clavesDePrueba();
+  assert.equal((await app.verificarCodigo(codigo, id, '2026-11-10', otra.publica)).motivo, 'firma');
+  // basura
+  assert.equal((await app.verificarCodigo('hola', id, '2026-11-10', publica)).motivo, 'formato');
+  assert.equal((await app.verificarCodigo('SF1.xxx.yyy', id, '2026-11-10', publica)).motivo, 'formato');
+});
+
+test('la clave pública del programa corresponde a la privada del generador', async () => {
+  const fs = require('node:fs');
+  const ruta = process.env.CLAVE_PRIVADA_PRUEBA;
+  if (!ruta || !fs.existsSync(ruta)) return; // la clave privada no está en el repositorio
+  const jwk = JSON.parse(fs.readFileSync(ruta, 'utf8'));
+  const privada = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const codigo = await firmar(privada, { v: 1, i: 'ABCD-EFGH', h: app.PERMANENTE, m: 31, f: '2026-11-10' });
+  assert.equal((await app.verificarCodigo(codigo, 'ABCD-EFGH', '2026-11-10')).ok, true);
+});

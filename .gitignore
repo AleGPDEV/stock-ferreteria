@@ -3,3 +3,8 @@ Thumbs.db
 *.zip
 node_modules/
 dist/
+
+# Nunca subir la clave privada ni el generador de licencias
+Generador-de-licencias*.html
+*privada*.json
+claves/

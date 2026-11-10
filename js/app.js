@@ -4,7 +4,7 @@
 'use strict';
 
 const CLAVE = 'ferreteria-stock-v1';
-const VISTAS = ['panel', 'caja', 'productos', 'movimientos', 'proveedores', 'reportes'];
+const VISTAS = ['panel', 'caja', 'productos', 'movimientos', 'proveedores', 'reportes', 'desarrollador'];
 const DIA = 864e5;
 
 const $ = (s) => document.querySelector(s);
@@ -26,6 +26,150 @@ const normal = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[�
 
 let db;
 let sesion = null; // usuario que ingresó
+
+/* ---------- Licencia: código de activación ---------- */
+// Los códigos los firma el desarrollador con su clave privada (generador de licencias).
+// El programa solo tiene la clave pública: puede comprobar un código, pero no fabricarlo.
+const CLAVE_PUBLICA = {"kty": "EC", "crv": "P-256", "x": "7cCSPwXrL4DSrLqcs0waLuRLAKV04mmpys210lZlxC0", "y": "VgKNwTqhPGtuyuHnRDt_LA9EdzSjvHTxqKTMpc9wfq0"};
+const PREFIJO_CODIGO = 'SF1';
+const PERMANENTE = '9999-12-31';
+const MODULOS = [
+  { bit: 1, clave: 'caja', nombre: 'Caja y ventas' },
+  { bit: 2, clave: 'usuarios', nombre: 'Usuarios y permisos' },
+  { bit: 4, clave: 'reportes', nombre: 'Resumen y reportes' },
+  { bit: 8, clave: 'masiva', nombre: 'Importar y actualizar precios' },
+  { bit: 16, clave: 'impresion', nombre: 'Ticket y cierre impresos' },
+];
+const BASE32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+function aB64url(bytes) {
+  let t = '';
+  bytes.forEach((x) => { t += String.fromCharCode(x); });
+  return btoa(t).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function deB64url(t) {
+  const s = t.replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(s + '='.repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
+}
+
+/** Código corto de la computadora (8 letras y números) a partir de un hash. */
+function idDesdeHex(hex) {
+  let bits = BigInt('0x' + hex.slice(0, 10));
+  let t = '';
+  for (let i = 0; i < 8; i++) { t = BASE32[Number(bits & 31n)] + t; bits >>= 5n; }
+  return t.slice(0, 4) + '-' + t.slice(4);
+}
+const normalizarId = (t) => String(t || '').toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1').replace(/[^0-9A-Z]/g, '');
+
+function sumarMeses(fecha, meses) {
+  const [y, m, d] = fecha.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1 + Number(meses), 1));
+  const ultimo = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+  t.setUTCDate(Math.min(d, ultimo));
+  return t.toISOString().slice(0, 10);
+}
+const diasEntre = (a, b) => Math.round((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / DIA);
+const fechaLarga = (iso) => (iso === PERMANENTE ? 'sin vencimiento'
+  : new Date(iso + 'T12:00:00').toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric' }));
+
+function estadoLicencia(lic, hoy, aviso = 7) {
+  if (!lic) return { estado: 'sin' };
+  if (lic.h === PERMANENTE) return { estado: 'permanente' };
+  const dias = diasEntre(hoy, lic.h);
+  if (dias < 0) return { estado: 'vencida', dias };
+  return { estado: dias < aviso ? 'por-vencer' : 'activa', dias };
+}
+
+/** Comprueba la firma, la computadora y la fecha de un código. No guarda nada. */
+async function verificarCodigo(codigo, id, hoy, clave = CLAVE_PUBLICA) {
+  const limpio = String(codigo || '').replace(/\s+/g, '');
+  const partes = limpio.split('.');
+  if (partes.length !== 3 || partes[0] !== PREFIJO_CODIGO) return { ok: false, motivo: 'formato' };
+  let cuerpo, firma, datos;
+  try {
+    cuerpo = deB64url(partes[1]);
+    firma = deB64url(partes[2]);
+    datos = JSON.parse(new TextDecoder().decode(cuerpo));
+  } catch (e) { return { ok: false, motivo: 'formato' }; }
+  if (!datos || datos.v !== 1 || typeof datos.i !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(String(datos.h))) return { ok: false, motivo: 'formato' };
+  const sutil = globalThis.crypto && globalThis.crypto.subtle;
+  if (!sutil) return { ok: false, motivo: 'sin-cripto' };
+  let valida = false;
+  try {
+    const k = await sutil.importKey('jwk', clave, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    valida = await sutil.verify({ name: 'ECDSA', hash: 'SHA-256' }, k, firma, cuerpo);
+  } catch (e) { valida = false; }
+  if (!valida) return { ok: false, motivo: 'firma' };
+  const lic = { i: datos.i, h: datos.h, m: Number(datos.m) || 0, f: datos.f || '', c: datos.c || '', codigo: limpio };
+  if (normalizarId(lic.i) !== normalizarId(id)) return { ok: false, motivo: 'equipo', lic };
+  if (estadoLicencia(lic, hoy).estado === 'vencida') return { ok: false, motivo: 'vencido', lic };
+  return { ok: true, lic };
+}
+
+function mensajeMotivo(r) {
+  return ({
+    formato: 'El código está incompleto o tiene un error. Copialo de nuevo, entero.',
+    firma: 'Ese código no es válido.',
+    equipo: `Ese código es para otra computadora (${r.lic ? r.lic.i : ''}). Esta computadora es ${idEquipo()}.`,
+    vencido: `Ese código ya venció el ${r.lic ? fechaLarga(r.lic.h) : ''}.`,
+    'sin-cripto': 'Esta computadora no puede comprobar el código. Probá con la versión instalada del programa.',
+  })[r.motivo] || 'No se pudo activar.';
+}
+
+let licenciaActual = null;
+const modoDemo = () => typeof window !== 'undefined' && !!window.MODO_DEMO;
+function tieneModulo(clave) {
+  if (modoDemo()) return true;
+  const m = MODULOS.find((x) => x.clave === clave);
+  return !!licenciaActual && !!m && (licenciaActual.m & m.bit) !== 0;
+}
+
+let idEquipoCache = '';
+function idEquipo() {
+  if (idEquipoCache) return idEquipoCache;
+  let hex = '';
+  if (escritorio() && window.almacen.idEquipo) { try { hex = window.almacen.idEquipo() || ''; } catch (e) { hex = ''; } }
+  if (!hex) {
+    try { hex = localStorage.getItem('ferreteria-equipo') || ''; } catch (e) { hex = ''; }
+    if (!hex) hex = db.equipoNavegador || '';
+    if (!hex) {
+      hex = sha256(uid() + Date.now());
+      try { localStorage.setItem('ferreteria-equipo', hex); } catch (e) { /* sin almacenamiento */ }
+      db.equipoNavegador = hex;
+      guardar();
+    }
+  }
+  idEquipoCache = idDesdeHex(hex);
+  return idEquipoCache;
+}
+
+const diasAviso = () => Number((db.desarrollador || {}).diasAviso) || 7;
+
+/** Revisa la licencia guardada y que la fecha de la computadora no se haya atrasado. */
+async function comprobarLicencia() {
+  if (modoDemo()) { licenciaActual = { m: 31, h: PERMANENTE }; return { ok: true }; }
+  const hoy = isoLocal();
+  if (db.licUltimaFecha && diasEntre(hoy, db.licUltimaFecha) > 1) return { ok: false, motivo: 'reloj', ultima: db.licUltimaFecha };
+  if (!db.licUltimaFecha || hoy > db.licUltimaFecha) { db.licUltimaFecha = hoy; guardar(); }
+  if (!db.licencia || !db.licencia.codigo) { licenciaActual = null; return { ok: false, motivo: 'sin' }; }
+  const r = await verificarCodigo(db.licencia.codigo, idEquipo(), hoy);
+  licenciaActual = r.ok ? r.lic : null;
+  return r;
+}
+
+async function activarCodigo(codigo) {
+  const r = await verificarCodigo(codigo, idEquipo(), isoLocal());
+  if (!r.ok) return { error: mensajeMotivo(r) };
+  db.licencia = { codigo: r.lic.codigo, activada: new Date().toISOString() };
+  licenciaActual = r.lic;
+  guardar();
+  return { lic: r.lic };
+}
+
+function aplicarModulos() {
+  MODULOS.forEach((m) => document.body.classList.toggle('sin-' + m.clave, !tieneModulo(m.clave)));
+}
+const vistaInicio = () => (tieneModulo('caja') ? 'caja' : 'productos');
 
 /* ---------- Usuarios y PIN ---------- */
 
@@ -508,13 +652,15 @@ function confirmar(texto, okTexto = 'Confirmar', peligro = false) {
   });
 }
 
-const VISTAS_ADMIN = ['panel', 'reportes'];
+const VISTAS_ADMIN = ['panel', 'reportes', 'desarrollador'];
 const esAdmin = () => !!sesion && sesion.rol === 'admin';
 
 function vistaActual() {
   const h = location.hash.slice(1);
-  if (!VISTAS.includes(h)) return 'caja';
-  if (VISTAS_ADMIN.includes(h) && !esAdmin()) return 'caja';
+  const inicio = vistaInicio();
+  if (!VISTAS.includes(h)) return inicio;
+  if (VISTAS_ADMIN.includes(h) && !esAdmin()) return inicio;
+  if ((h === 'caja' && !tieneModulo('caja')) || (h === 'panel' && !tieneModulo('reportes'))) return inicio;
   return h;
 }
 
@@ -532,6 +678,12 @@ function render() {
   if (!sesion) return;
   $('#banner-ejemplo').hidden = !db.ejemplo;
   $('#banner-pin').hidden = !(esAdmin() && db.usuarios.some((u) => u.pinPorDefecto));
+  const est = licenciaActual && !modoDemo() ? estadoLicencia(licenciaActual, isoLocal(), diasAviso()) : null;
+  $('#banner-licencia').hidden = !(esAdmin() && est && est.estado === 'por-vencer');
+  if (!$('#banner-licencia').hidden) {
+    const cuando = est.dias === 0 ? '<strong>hoy</strong>' : est.dias === 1 ? '<strong>mañana</strong>' : `en <strong>${est.dias} días</strong>`;
+    $('#banner-licencia-texto').innerHTML = `La licencia del programa vence ${cuando} (${fechaLarga(licenciaActual.h)}). Para renovarla, comunicate con ${contactoCorto()}.`;
+  }
   $('#marca-nombre').textContent = (db.negocio && db.negocio.nombre) || 'Stock Ferretería';
   const bajos = db.productos.filter((p) => estado(p) !== 'ok').length;
   const b = $('#badge-bajo');
@@ -539,7 +691,7 @@ function render() {
   b.textContent = bajos;
   b.title = `${bajos} productos para reponer`;
   // Solo se dibuja la pantalla que se está viendo
-  ({ panel: renderPanel, caja: renderCaja, productos: renderProductos, movimientos: renderMovimientos, proveedores: renderProveedores, reportes: renderReportes })[vistaActual()]();
+  ({ panel: renderPanel, caja: renderCaja, productos: renderProductos, movimientos: renderMovimientos, proveedores: renderProveedores, reportes: renderReportes, desarrollador: renderDesarrollador })[vistaActual()]();
 }
 
 function opcionesProv(sel, vacio = 'Sin proveedor') {
@@ -764,7 +916,7 @@ function renderVentasHoy() {
 
 /* ---------- Impresión de ticket y cierre ---------- */
 
-const puedeImprimir = () => typeof window !== 'undefined' && typeof window.print === 'function' && !window.SIN_IMPRESION;
+const puedeImprimir = () => typeof window !== 'undefined' && typeof window.print === 'function' && !window.SIN_IMPRESION && tieneModulo('impresion');
 
 function encabezadoNegocio() {
   const g = db.negocio || {};
@@ -1551,7 +1703,9 @@ function exportar(tipo) {
 /** Cambia todos los datos. Los usuarios y los datos del negocio se mantienen salvo que el archivo nuevo traiga los suyos. */
 function reemplazarDatos(nuevo, conservarUsuarios = true) {
   const usuarios = db.usuarios, negocio = db.negocio;
+  const propio = { licencia: db.licencia, licUltimaFecha: db.licUltimaFecha, desarrollador: db.desarrollador, equipoNavegador: db.equipoNavegador };
   db = nuevo;
+  Object.assign(db, propio);
   if (conservarUsuarios) db.usuarios = usuarios;
   if (!db.negocio || !db.negocio.nombre) db.negocio = negocio;
   asegurarUsuarios(db);
@@ -1816,7 +1970,8 @@ function entrar(u) {
   $('#login').hidden = true;
   aplicarPermisos();
   if (!esAdmin()) $('#ventas-fecha').value = isoLocal();
-  if (location.hash !== '#caja') location.hash = '#caja';
+  devAbierto = false;
+  if (location.hash !== '#' + vistaInicio()) location.hash = '#' + vistaInicio();
   mostrarVista();
 }
 
@@ -1843,7 +1998,7 @@ function iniciarLogin() {
     }
     entrar(loginUsuario);
   });
-  $('#btn-salir').addEventListener('click', mostrarLogin);
+  $('#btn-salir').addEventListener('click', () => { devAbierto = false; arrancar(); });
   $('#banner-pin-ir').addEventListener('click', () => {
     location.hash = '#reportes';
     setTimeout(() => $('#card-usuarios').scrollIntoView({ block: 'start' }), 50);
@@ -1912,14 +2067,206 @@ function iniciarUsuarios() {
   });
 }
 
+/* ---------- Bloqueo por licencia ---------- */
+
+function contactoCorto() {
+  const d = db.desarrollador || {};
+  if (d.nombre && d.telefono) return `${esc(d.nombre)} al ${esc(d.telefono)}`;
+  if (d.telefono) return `tu proveedor al ${esc(d.telefono)}`;
+  return d.nombre ? esc(d.nombre) : 'tu proveedor';
+}
+
+function contactoHtml() {
+  const d = db.desarrollador || {};
+  if (!d.nombre && !d.telefono && !d.email) return '<p>Comunicate con la persona que te instaló el programa.</p>';
+  return `${d.nombre ? `<strong class="ct-nombre">${esc(d.nombre)}</strong>` : ''}
+    ${d.telefono ? `<span class="ct-tel">${esc(d.telefono)}</span>` : ''}
+    ${d.email ? `<span>${esc(d.email)}</span>` : ''}
+    ${d.mensaje ? `<p class="ct-msg">${esc(d.mensaje)}</p>` : ''}`;
+}
+
+function mostrarBloqueo(r) {
+  sesion = null;
+  devAbierto = false;
+  $$('dialog[open]').forEach((d) => d.close());
+  $('#login').hidden = true;
+  const textos = {
+    sin: ['Activá el programa', 'Para empezar a usarlo hace falta un código de activación. Pedíselo a tu proveedor y pasale el código de esta computadora.'],
+    vencido: ['La licencia venció', `La licencia venció el ${r.lic ? fechaLarga(r.lic.h) : ''}. Para seguir usando el programa, comunicate con tu proveedor.`],
+    equipo: ['Licencia de otra computadora', 'El código guardado es de otra computadora. Pedile a tu proveedor un código nuevo con el código de esta computadora.'],
+    reloj: ['La fecha de la computadora está mal', `La computadora dice que hoy es ${fechaLarga(isoLocal())}, pero el programa ya se usó el ${fechaLarga(r.ultima || isoLocal())}. Corregí la fecha y la hora de Windows y volvé a abrir el programa.`],
+  };
+  const [titulo, texto] = textos[r.motivo] || ['Licencia no válida', 'El código guardado no es válido. Comunicate con tu proveedor.'];
+  $('#bloq-titulo').textContent = titulo;
+  $('#bloq-texto').textContent = texto;
+  $('#bloq-contacto').innerHTML = contactoHtml();
+  $('#bloq-id').textContent = idEquipo();
+  $('#bloq-form').hidden = r.motivo === 'reloj';
+  $('#bloq-codigo').value = '';
+  $('#bloq-err').textContent = '';
+  $('#bloq-respaldo').hidden = !db.productos.length && !db.ventas.length;
+  $('#bloqueo').hidden = false;
+}
+
+async function arrancar() {
+  const r = await comprobarLicencia();
+  if (!r.ok) { mostrarBloqueo(r); return; }
+  $('#bloqueo').hidden = true;
+  aplicarModulos();
+  if (!tieneModulo('usuarios')) entrar(db.usuarios.find((u) => u.rol === 'admin'));
+  else mostrarLogin();
+}
+
+function copiarTexto(texto, aviso) {
+  const ok = () => toast(aviso || 'Copiado.');
+  try { navigator.clipboard.writeText(texto).then(ok, () => toast(`No se pudo copiar. Anotalo: ${texto}`)); } catch (e) { toast(`Anotalo: ${texto}`); }
+}
+
+function iniciarBloqueo() {
+  $('#bloq-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const r = await activarCodigo($('#bloq-codigo').value);
+    if (r.error) { $('#bloq-err').textContent = r.error; return; }
+    toast(r.lic.h === PERMANENTE ? 'Programa activado sin vencimiento.' : `Programa activado hasta el ${fechaLarga(r.lic.h)}.`);
+    arrancar();
+  });
+  $('#bloq-copiar').addEventListener('click', () => copiarTexto(idEquipo(), 'Código de la computadora copiado.'));
+  $('#bloq-respaldo').addEventListener('click', () => descargarBlob(JSON.stringify(db, null, 2), 'application/json', `respaldo_stock_${isoLocal()}.json`));
+  // Se vuelve a revisar cada media hora, por si el programa queda abierto varios días
+  setInterval(async () => {
+    if (!$('#bloqueo').hidden) return;
+    const r = await comprobarLicencia();
+    if (!r.ok) mostrarBloqueo(r);
+    else if (sesion) { aplicarModulos(); render(); }
+  }, 30 * 60 * 1000);
+}
+
+/* ---------- Pestaña Desarrollador ---------- */
+
+let devAbierto = false;
+
+function renderDesarrollador() {
+  const d = db.desarrollador || {};
+  const tieneClave = !!d.claveHash;
+  $('#dev-cerrado').hidden = devAbierto;
+  $('#dev-abierto').hidden = !devAbierto;
+  if (!devAbierto) {
+    $('#dev-clave-titulo').textContent = tieneClave ? 'Escribí tu clave de desarrollador' : 'Creá tu clave de desarrollador';
+    $('#dev-clave-sub').textContent = tieneClave
+      ? 'Esta parte es solo para quien instaló el programa.'
+      : 'Es la primera vez que entrás. Elegí una clave de al menos 6 letras o números; el cliente no tiene que saberla.';
+    $('#dev-clave2-wrap').hidden = tieneClave;
+    $('#dev-olvide').hidden = !tieneClave;
+    return;
+  }
+  const lic = licenciaActual;
+  const est = estadoLicencia(lic, isoLocal(), diasAviso());
+  const chip = {
+    sin: '<span class="chip danger">Sin activar</span>',
+    activa: `<span class="chip ok">Activa, faltan ${est.dias} días</span>`,
+    'por-vencer': `<span class="chip warn">Vence en ${est.dias} días</span>`,
+    vencida: '<span class="chip danger">Vencida</span>',
+    permanente: '<span class="chip ok">Sin vencimiento</span>',
+  }[est.estado];
+  $('#dev-id').textContent = idEquipo();
+  $('#dev-lic').innerHTML = `
+    <li><span>Estado</span>${chip}</li>
+    <li><span>Válida hasta</span><strong>${lic ? fechaLarga(lic.h) : '—'}</strong></li>
+    ${lic && lic.c ? `<li><span>Cliente</span><strong>${esc(lic.c)}</strong></li>` : ''}
+    ${lic && lic.f ? `<li><span>Código generado el</span><span>${fechaLarga(lic.f)}</span></li>` : ''}
+    ${db.licencia && db.licencia.activada ? `<li><span>Activado en esta computadora</span><span>${fechaHora(db.licencia.activada)}</span></li>` : ''}`;
+  $('#dev-modulos').innerHTML = `<li class="mod-si">Stock, productos y proveedores (siempre)</li>`
+    + MODULOS.map((m) => `<li class="${tieneModulo(m.clave) ? 'mod-si' : 'mod-no'}">${esc(m.nombre)}</li>`).join('');
+  if (!$('#form-dev-contacto').contains(document.activeElement)) {
+    ['nombre', 'telefono', 'email', 'mensaje'].forEach((k) => { $('#dc-' + k).value = d[k] || ''; });
+    $('#dc-aviso').value = diasAviso();
+  }
+}
+
+function iniciarDesarrollador() {
+  $('#form-dev-clave').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const d = db.desarrollador || (db.desarrollador = {});
+    const clave = $('#dev-clave').value;
+    const err = (t) => { $('#dev-clave-err').textContent = t; };
+    if (!d.claveHash) {
+      if (clave.length < 6) return err('La clave tiene que tener al menos 6 letras o números.');
+      if (clave !== $('#dev-clave2').value) return err('Las dos claves no coinciden.');
+      d.claveSal = uid();
+      d.claveHash = hashPin(clave, d.claveSal);
+      guardar();
+      toast('Clave de desarrollador creada.');
+    } else if (hashPin(clave, d.claveSal) !== d.claveHash) {
+      $('#dev-clave').value = '';
+      return err('La clave no es correcta.');
+    }
+    err('');
+    $('#dev-clave').value = '';
+    $('#dev-clave2').value = '';
+    devAbierto = true;
+    render();
+  });
+  $('#dev-olvide').addEventListener('click', () => { $('#form-dev-olvide').hidden = false; $('#dev-olvide-codigo').focus(); });
+  $('#form-dev-olvide').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const r = await verificarCodigo($('#dev-olvide-codigo').value, idEquipo(), isoLocal());
+    if (!r.ok && r.motivo !== 'vencido') { $('#dev-olvide-err').textContent = mensajeMotivo(r); return; }
+    db.desarrollador.claveHash = '';
+    db.desarrollador.claveSal = '';
+    guardar();
+    $('#form-dev-olvide').hidden = true;
+    $('#dev-olvide-codigo').value = '';
+    $('#dev-olvide-err').textContent = '';
+    toast('Se borró la clave. Creá una nueva.');
+    render();
+  });
+  $('#form-dev-codigo').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const r = await activarCodigo($('#dev-codigo').value);
+    if (r.error) { $('#dev-codigo-err').textContent = r.error; return; }
+    $('#dev-codigo').value = '';
+    $('#dev-codigo-err').textContent = '';
+    aplicarModulos();
+    render();
+    toast(r.lic.h === PERMANENTE ? 'Licencia activada sin vencimiento.' : `Licencia activada hasta el ${fechaLarga(r.lic.h)}.`);
+  });
+  $('#dev-copiar').addEventListener('click', () => copiarTexto(idEquipo(), 'Código de la computadora copiado.'));
+  $('#form-dev-contacto').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const d = db.desarrollador || (db.desarrollador = {});
+    ['nombre', 'telefono', 'email', 'mensaje'].forEach((k) => { d[k] = $('#dc-' + k).value.trim(); });
+    d.diasAviso = Math.min(60, Math.max(1, Number($('#dc-aviso').value) || 7));
+    guardar();
+    render();
+    toast('Datos de contacto guardados.');
+  });
+  $('#form-dev-nueva').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const c1 = $('#dn-clave').value, c2 = $('#dn-clave2').value;
+    if (c1.length < 6) { $('#dn-err').textContent = 'La clave tiene que tener al menos 6 letras o números.'; return; }
+    if (c1 !== c2) { $('#dn-err').textContent = 'Las dos claves no coinciden.'; return; }
+    db.desarrollador.claveSal = uid();
+    db.desarrollador.claveHash = hashPin(c1, db.desarrollador.claveSal);
+    guardar();
+    $('#dn-clave').value = '';
+    $('#dn-clave2').value = '';
+    $('#dn-err').textContent = '';
+    toast('Clave de desarrollador cambiada.');
+  });
+  $('#dev-salir').addEventListener('click', () => { devAbierto = false; render(); });
+  $('#banner-licencia-ir').addEventListener('click', () => { location.hash = '#desarrollador'; });
+}
+
 function iniciar() {
+  iniciarBloqueo();
+  iniciarDesarrollador();
   iniciarLogin();
   iniciarUsuarios();
   iniciarLetra();
   iniciarImportacion();
   iniciarPrecios();
   iniciarNegocio();
-  if (!puedeImprimir()) $$('[data-imprime]').forEach((b) => { b.hidden = true; });
+  if (typeof window.print !== 'function' || window.SIN_IMPRESION) $$('[data-imprime]').forEach((b) => { b.hidden = true; });
   $('#venta-imprimir').addEventListener('click', () => { if (ultimaVenta) imprimir(htmlTicket(ultimaVenta)); });
   $('#dlg-venta').addEventListener('close', () => $('#caja-buscar').focus());
   $('#venta-nueva').addEventListener('click', () => $('#dlg-venta').close());
@@ -1938,11 +2285,11 @@ function iniciar() {
   iniciarRespaldo();
   window.addEventListener('hashchange', mostrarVista);
   window.addEventListener('storage', (e) => { if (e.key === CLAVE) { cargar(); render(); } });
-  mostrarLogin();
+  arrancar();
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario };
+  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, verificarCodigo, idDesdeHex, normalizarId, sumarMeses, estadoLicencia, aB64url, deB64url, MODULOS, PERMANENTE };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

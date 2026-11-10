@@ -3,6 +3,9 @@
 const { app, BrowserWindow, ipcMain, shell, Menu, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const crypto = require('crypto');
+const { execSync } = require('child_process');
 
 const RESPALDOS_A_CONSERVAR = 60;
 
@@ -55,6 +58,23 @@ function respaldoDiario(texto) {
   }
 }
 
+// Identificador de la computadora: el MachineGuid de Windows (cambia solo si se reinstala Windows)
+let idEquipo = '';
+function calcularIdEquipo() {
+  if (idEquipo) return idEquipo;
+  let base = '';
+  if (process.platform === 'win32') {
+    try {
+      const salida = execSync('reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid', { encoding: 'utf8', windowsHide: true, timeout: 5000 });
+      const m = salida.match(/MachineGuid\s+REG_SZ\s+([\w-]+)/i);
+      if (m) base = m[1];
+    } catch (e) { /* se usa el respaldo de abajo */ }
+  }
+  if (!base) base = [os.hostname(), os.platform(), (os.cpus()[0] || {}).model || ''].join('|');
+  idEquipo = crypto.createHash('sha256').update('stock-ferreteria|' + base.toLowerCase()).digest('hex');
+  return idEquipo;
+}
+ipcMain.on('almacen:idEquipo', (e) => { e.returnValue = calcularIdEquipo(); });
 ipcMain.on('almacen:leer', (e) => { e.returnValue = leerDatos(); });
 ipcMain.on('almacen:guardar', (e, texto) => {
   try { guardarDatos(texto); e.returnValue = null; } catch (err) { e.returnValue = String(err.message || err); }

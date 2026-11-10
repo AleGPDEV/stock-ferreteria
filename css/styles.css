@@ -374,6 +374,39 @@ dialog::backdrop { background: var(--backdrop); }
 .combo-op[aria-selected="true"] { background: var(--accent-soft); }
 .combo-vacio { padding: 11px 12px; color: var(--muted); font-size: 15px; }
 
+/* Módulos no incluidos en la licencia */
+.sin-caja .mod-caja, .sin-usuarios .mod-usuarios, .sin-reportes .mod-reportes,
+.sin-masiva .mod-masiva, .sin-impresion .mod-impresion { display: none !important; }
+
+/* Licencia */
+.bloqueo { z-index: 45; }
+.bloq-texto { font-size: 16px; text-align: center; }
+.bloq-contacto {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center;
+  background: var(--box); border: 1px solid var(--line); border-radius: 10px; padding: 14px;
+}
+.bloq-contacto:empty { display: none; }
+.ct-nombre { font-size: 17px; }
+.ct-tel { font-family: var(--f-mono); font-size: 24px; font-weight: 600; user-select: all; }
+.ct-msg { color: var(--muted); font-size: 14.5px; margin-top: 4px; }
+.id-box {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 12px;
+  border: 1px dashed var(--line); border-radius: 8px; font-size: 14px; color: var(--muted);
+}
+.id-box strong { font-size: 20px; color: var(--fg); letter-spacing: .06em; user-select: all; margin-right: auto; }
+textarea { width: 100%; resize: vertical; }
+#bloq-codigo, #dev-codigo, #dev-olvide-codigo { font-family: var(--f-mono); font-size: 13.5px; word-break: break-all; }
+.nav-dev { margin-top: 8px; }
+.dev-cerrado { display: flex; flex-direction: column; gap: 16px; max-width: 520px; }
+.dev-cerrado .card { gap: 12px; }
+.dev-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 16px; align-items: start; }
+.modulos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.modulos li { display: flex; align-items: center; gap: 8px; }
+.modulos li::before { content: ""; width: 18px; height: 18px; border-radius: 50%; flex: none; }
+.modulos .mod-si::before { background: var(--verde); box-shadow: inset 0 0 0 5px var(--ok-bg); }
+.modulos .mod-no { color: var(--muted); text-decoration: line-through; }
+.modulos .mod-no::before { border: 2px solid var(--line); }
+
 /* Permisos: lo marcado como solo-admin no se muestra al empleado */
 .rol-empleado .solo-admin { display: none !important; }
 
