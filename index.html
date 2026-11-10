@@ -21,13 +21,21 @@
       </div>
     </div>
     <nav class="nav" aria-label="Secciones">
-      <a href="#panel">Panel</a>
-      <a href="#caja">Caja</a>
-      <a href="#productos">Productos</a>
-      <a href="#movimientos">Movimientos</a>
-      <a href="#proveedores">Proveedores</a>
-      <a href="#reportes">Reportes <span id="badge-bajo" class="badge" hidden></span></a>
+      <a href="#caja"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20 8H6.2"/><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/></svg><span class="txt">Vender</span></a>
+      <a href="#productos"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg><span class="txt">Productos</span></a>
+      <a href="#movimientos"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h11V6H3zM14 10h4l3 3v4h-7"/><circle cx="7" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg><span class="txt">Cargar mercadería</span></a>
+      <a href="#panel"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="txt">Resumen del día</span></a>
+      <a href="#proveedores"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span class="txt">Proveedores</span></a>
+      <a href="#reportes"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/></svg><span class="txt">Reportes y copias</span><span id="badge-bajo" class="badge" hidden></span></a>
     </nav>
+    <div class="letra" role="group" aria-label="Tamaño de la letra">
+      <span>Tamaño de letra</span>
+      <div class="letra-btns">
+        <button type="button" data-letra="1" aria-label="Letra normal">A</button>
+        <button type="button" data-letra="1.15" aria-label="Letra grande" style="font-size:1.15em">A</button>
+        <button type="button" data-letra="1.3" aria-label="Letra muy grande" style="font-size:1.3em">A</button>
+      </div>
+    </div>
   </aside>
 
   <main class="main">
@@ -40,10 +48,10 @@
     </div>
 
     <!-- PANEL -->
-    <section id="v-panel" class="vista">
+    <section id="v-panel" class="vista" hidden>
       <header class="vh">
-        <div><h1>Panel</h1><p class="sub">Resumen del inventario y de las ventas de hoy.</p></div>
-        <div class="acciones"><a class="btn primary" href="#caja">Ir a la caja</a></div>
+        <div><h1>Resumen del día</h1><p class="sub">Cuánto se vendió hoy, qué hay que reponer y los últimos cambios de stock.</p></div>
+        <div class="acciones"><a class="btn primary" href="#caja">Ir a vender</a></div>
       </header>
       <div class="kpis" id="kpis"></div>
       <div class="grid2">
@@ -61,22 +69,22 @@
     <!-- CAJA -->
     <section id="v-caja" class="vista" hidden>
       <header class="vh">
-        <div><h1>Caja</h1><p class="sub">Buscá o escaneá el producto, armá el ticket y cobrá. El stock se descuenta al cobrar.</p></div>
+        <div><h1>Vender</h1><p class="sub">Al cobrar, los productos se descuentan solos del stock.</p></div>
       </header>
       <div class="caja">
         <div class="caja-izq">
-          <label class="f" for="caja-buscar">Producto
-            <input id="caja-buscar" type="search" autocomplete="off" placeholder="Código, nombre o lector de código de barras">
-          </label>
-          <p class="ayuda">Con lector de código de barras: escaneá y el producto se agrega solo. Con teclado: escribí el código y apretá Enter.</p>
+          <label class="paso" for="caja-buscar"><span class="paso-n">1</span> Buscá el producto y tocalo para agregarlo</label>
+          <input id="caja-buscar" type="search" autocomplete="off" placeholder="Escribí el nombre o el código, o pasá el lector">
+          <p class="ayuda">También podés escanear el código de barras: se agrega solo.</p>
           <div id="caja-resultados" class="resultados"></div>
         </div>
         <aside class="card ticket" aria-label="Ticket">
-          <header class="card-h"><h2>Ticket <span class="mono muted" id="ticket-num"></span></h2><button class="btn sm ghost" type="button" id="ticket-vaciar">Vaciar</button></header>
+          <header class="card-h"><p class="paso"><span class="paso-n">2</span> Revisá lo que lleva el cliente</p><button class="btn sm ghost" type="button" id="ticket-vaciar">Borrar todo</button></header>
+          <p class="muted ticket-num">Venta <span class="mono" id="ticket-num"></span></p>
           <div id="ticket-items"></div>
           <div class="ticket-total"><span>Total</span><strong id="ticket-total">$ 0</strong></div>
           <fieldset class="medios">
-            <legend>Medio de pago</legend>
+            <legend class="paso"><span class="paso-n">3</span> ¿Cómo paga?</legend>
             <div class="seg seg-wrap" id="medios">
               <label><input type="radio" name="medio" value="Efectivo" checked><span>Efectivo</span></label>
               <label><input type="radio" name="medio" value="Débito"><span>Débito</span></label>
@@ -85,7 +93,7 @@
             </div>
           </fieldset>
           <div class="efectivo" id="bloque-efectivo">
-            <label class="f" for="caja-recibido">Recibido
+            <label class="f" for="caja-recibido">¿Con cuánto paga? (opcional)
               <input id="caja-recibido" type="number" min="0" step="any" inputmode="decimal" placeholder="0">
             </label>
             <div class="vuelto"><span>Vuelto</span><strong id="caja-vuelto">—</strong></div>
@@ -131,14 +139,16 @@
     <!-- MOVIMIENTOS -->
     <section id="v-movimientos" class="vista" hidden>
       <header class="vh">
-        <div><h1>Movimientos</h1><p class="sub">Compras a proveedores, salidas que no pasan por la caja y ajustes por conteo.</p></div>
+        <div><h1>Cargar mercadería</h1><p class="sub">Usá esta pantalla cuando llega mercadería del proveedor, cuando algo se rompe o se usa en el local, o para corregir el stock después de contar.</p></div>
       </header>
       <form class="card form-mov" id="form-mov" novalidate>
-        <div class="seg" role="radiogroup" aria-label="Tipo de movimiento">
-          <label><input type="radio" name="tipo" value="entrada" checked><span>Entrada</span></label>
-          <label><input type="radio" name="tipo" value="salida"><span>Salida</span></label>
-          <label><input type="radio" name="tipo" value="ajuste"><span>Ajuste por conteo</span></label>
+        <p class="paso">¿Qué querés hacer?</p>
+        <div class="seg seg-wrap" role="radiogroup" aria-label="Qué querés hacer">
+          <label><input type="radio" name="tipo" value="entrada" checked><span>Llegó mercadería</span></label>
+          <label><input type="radio" name="tipo" value="salida"><span>Sacar del stock</span></label>
+          <label><input type="radio" name="tipo" value="ajuste"><span>Corregir después de contar</span></label>
         </div>
+        <p class="ayuda" id="mov-explica"></p>
         <div class="campos">
           <label class="f f-wide" for="mov-prod">Producto<select id="mov-prod" required></select></label>
           <label class="f" for="mov-cant"><span id="mov-cant-label">Cantidad</span><input id="mov-cant" type="number" step="any" min="0" inputmode="decimal" required><small id="mov-hint" class="muted"></small></label>
@@ -151,15 +161,16 @@
           <button class="btn primary" type="submit" id="mov-submit">Registrar entrada</button>
         </div>
       </form>
+      <h2 class="titulo-sec">Historial de cambios de stock</h2>
       <div class="toolbar">
         <label class="f-inline" for="mov-desde">Desde <input type="date" id="mov-desde"></label>
         <label class="f-inline" for="mov-hasta">Hasta <input type="date" id="mov-hasta"></label>
         <select id="mov-tipo" aria-label="Tipo">
           <option value="">Todos los tipos</option>
           <option value="venta">Ventas (caja)</option>
-          <option value="entrada">Entradas</option>
-          <option value="salida">Salidas</option>
-          <option value="ajuste">Ajustes</option>
+          <option value="entrada">Mercadería que llegó</option>
+          <option value="salida">Sacado del stock</option>
+          <option value="ajuste">Correcciones</option>
         </select>
         <input type="search" id="mov-buscar" placeholder="Buscar producto o nota" aria-label="Buscar movimientos">
         <button class="btn" type="button" data-export="movimientos">Exportar Excel</button>
@@ -312,6 +323,19 @@
       <button class="btn primary" type="submit">Guardar</button>
     </footer>
   </form>
+</dialog>
+
+<!-- Venta cobrada -->
+<dialog id="dlg-venta" class="dlg-chico dlg-venta" aria-labelledby="venta-titulo">
+  <div class="dlg-b venta-ok">
+    <svg class="venta-check" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="22"/><path d="M14 24.5l7 7 13-14"/></svg>
+    <h2 id="venta-titulo">Venta cobrada</h2>
+    <p class="venta-total" id="venta-total"></p>
+    <p class="venta-medio" id="venta-medio"></p>
+    <div class="venta-vuelto" id="venta-vuelto-box"><span>Darle de vuelto</span><strong id="venta-vuelto"></strong></div>
+    <p class="muted">El stock ya se actualizó.</p>
+  </div>
+  <footer class="dlg-f"><button type="button" class="btn primary btn-grande" id="venta-nueva">Nueva venta</button></footer>
 </dialog>
 
 <!-- Diálogo confirmación -->

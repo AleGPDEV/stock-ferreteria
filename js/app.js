@@ -241,7 +241,7 @@ function toast(msg) {
   t.textContent = msg;
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 6000);
 }
 
 function confirmar(texto, okTexto = 'Confirmar') {
@@ -260,7 +260,7 @@ function confirmar(texto, okTexto = 'Confirmar') {
 
 function vistaActual() {
   const h = location.hash.slice(1);
-  return VISTAS.includes(h) ? h : 'panel';
+  return VISTAS.includes(h) ? h : 'caja';
 }
 
 function mostrarVista() {
@@ -318,7 +318,7 @@ function renderPanel() {
         <li>
           <div class="izq"><div class="nom">${esc(p.nombre)}</div>
           <div class="meta">${n(p.stock)} de mín. ${n(p.minimo)} ${esc(p.unidad)} · ${esc(nombreProv(p.proveedorId) || 'Sin proveedor')}</div></div>
-          <button class="btn sm" type="button" data-accion="entrada" data-id="${p.id}">+ Entrada</button>
+          <button class="btn sm" type="button" data-accion="entrada" data-id="${p.id}">+ Sumar stock</button>
         </li>`).join('')}</ul>`
     : '<p class="vacio">Todo el stock está por encima del mínimo.</p>';
 
@@ -500,8 +500,7 @@ function iniciarCaja() {
     $('#caja-err').textContent = '';
     render();
     const v = r.venta;
-    toast(`Venta N.º ${v.numero} cobrada: ${$u(v.total)}${v.vuelto != null ? ` · Vuelto ${$u(v.vuelto)}` : ''}. Stock actualizado.`);
-    $('#caja-buscar').focus();
+    mostrarVentaCobrada(v);
   });
 
   $('#ventas-hoy').addEventListener('click', async (e) => {
@@ -548,8 +547,8 @@ function renderProductos() {
         <td class="num">${$u(p.costo)}</td>
         <td class="num">${$u(p.precio)}</td>
         <td class="acc">
-          <button class="btn sm" type="button" data-accion="entrada" data-id="${p.id}">+ Entrada</button>
-          <button class="btn sm" type="button" data-accion="salida" data-id="${p.id}">− Salida</button>
+          <button class="btn sm" type="button" data-accion="entrada" data-id="${p.id}">+ Sumar stock</button>
+          <button class="btn sm" type="button" data-accion="salida" data-id="${p.id}">− Restar</button>
           <button class="btn sm ghost" type="button" data-accion="editar" data-id="${p.id}">Editar</button>
         </td>
       </tr>`).join('')
@@ -648,14 +647,14 @@ function abrirMovRapido(tipo, id) {
   const p = producto(id);
   if (!p) return;
   movRapido = { tipo, id };
-  $('#qm-titulo').textContent = tipo === 'entrada' ? 'Registrar entrada' : 'Registrar salida';
+  $('#qm-titulo').textContent = tipo === 'entrada' ? 'Llegó mercadería' : 'Sacar del stock';
   $('#qm-sub').textContent = `${p.nombre} · stock actual ${n(p.stock)} ${p.unidad}`;
   $('#qm-cant').value = tipo === 'entrada' && p.stock <= p.minimo ? red(Math.max(p.minimo * 2 - p.stock, 1)) : '';
   $('#qm-costo').value = p.costo;
   $('#qm-costo-wrap').hidden = tipo !== 'entrada';
   $('#qm-nota').value = '';
   $('#qm-nota').placeholder = tipo === 'entrada' ? 'Ej.: Factura A-1234' : 'Ej.: Rotura, uso interno';
-  $('#qm-ok').textContent = tipo === 'entrada' ? 'Registrar entrada' : 'Registrar salida';
+  $('#qm-ok').textContent = tipo === 'entrada' ? 'Sumar al stock' : 'Restar del stock';
   $('#qm-err').textContent = '';
   $('#dlg-mov').showModal();
   $('#qm-cant').focus();
@@ -682,11 +681,11 @@ function iniciarMovRapido() {
 function etiquetaTipo(m) {
   if (m.ventaId && m.tipo === 'salida') return 'Venta';
   if (m.ventaId && m.tipo === 'entrada') return 'Anulación';
-  return { entrada: 'Entrada', salida: 'Salida', ajuste: 'Ajuste' }[m.tipo] || m.tipo;
+  return { entrada: 'Llegó', salida: 'Sacado', ajuste: 'Corrección' }[m.tipo] || m.tipo;
 }
 function chipTipo(m) {
   const t = etiquetaTipo(m);
-  const cls = { Venta: 'info', Entrada: 'ok', Salida: 'neutro', Ajuste: 'warn', Anulación: 'neutro' }[t] || 'neutro';
+  const cls = { Venta: 'info', 'Llegó': 'ok', Sacado: 'neutro', 'Corrección': 'warn', Anulación: 'neutro' }[t] || 'neutro';
   return `<span class="chip ${cls}">${t}</span>`;
 }
 
@@ -695,8 +694,13 @@ function tipoForm() { return ($('input[name="tipo"]:checked') || {}).value || 'e
 function actualizarFormMov() {
   const t = tipoForm();
   $$('.solo-entrada').forEach((el) => { el.hidden = t !== 'entrada'; });
-  $('#mov-cant-label').textContent = t === 'ajuste' ? 'Stock contado' : 'Cantidad';
-  $('#mov-submit').textContent = { entrada: 'Registrar entrada', salida: 'Registrar salida', ajuste: 'Guardar ajuste' }[t];
+  $('#mov-cant-label').textContent = { entrada: '¿Cuántos llegaron?', salida: '¿Cuántos sacás?', ajuste: '¿Cuántos contaste?' }[t];
+  $('#mov-submit').textContent = { entrada: 'Sumar al stock', salida: 'Restar del stock', ajuste: 'Corregir el stock' }[t];
+  $('#mov-explica').textContent = {
+    entrada: 'Elegí el producto y anotá cuántos llegaron. Se suman al stock.',
+    salida: 'Para productos que se rompieron, se usaron en el local o se devolvieron al proveedor. Las ventas no van acá: se hacen en Vender.',
+    ajuste: 'Contá cuántos hay en el estante y anotá ese número. El programa corrige el stock a esa cantidad.',
+  }[t];
   const p = producto($('#mov-prod').value);
   $('#mov-hint').textContent = p ? `Stock actual: ${n(p.stock)} ${p.unidad}` : '';
 }
@@ -1037,7 +1041,35 @@ function iniciarRespaldo() {
 
 /* ---------- Arranque ---------- */
 
+function mostrarVentaCobrada(v) {
+  $('#venta-total').textContent = $u(v.total);
+  $('#venta-medio').textContent = `Pagó con ${v.medio.toLowerCase()} · Venta N.º ${String(v.numero).padStart(4, '0')}`;
+  $('#venta-vuelto-box').hidden = v.vuelto == null;
+  $('#venta-vuelto').textContent = $u(v.vuelto);
+  $('#dlg-venta').showModal();
+  $('#venta-nueva').focus();
+}
+
+/* Tamaño de letra, recordado en esta PC */
+const CLAVE_LETRA = 'ferreteria-letra';
+function aplicarLetra(f) {
+  document.body.style.zoom = f;
+  $$('[data-letra]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.letra === String(f))));
+}
+function iniciarLetra() {
+  let f = '1';
+  try { f = localStorage.getItem(CLAVE_LETRA) || '1'; } catch (e) { /* sin almacenamiento */ }
+  aplicarLetra(f);
+  $$('[data-letra]').forEach((b) => b.addEventListener('click', () => {
+    aplicarLetra(b.dataset.letra);
+    try { localStorage.setItem(CLAVE_LETRA, b.dataset.letra); } catch (e) { /* sin almacenamiento */ }
+  }));
+}
+
 function iniciar() {
+  iniciarLetra();
+  $('#dlg-venta').addEventListener('close', () => $('#caja-buscar').focus());
+  $('#venta-nueva').addEventListener('click', () => $('#dlg-venta').close());
   cargar();
   $('#fecha-hoy').textContent = new Date().toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long' });
   $('#rep-desde').value = isoLocal(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
