@@ -16,7 +16,7 @@
     <div class="brand">
       <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2.5 27.7 9.25v13.5L16 29.5 4.3 22.75V9.25Z" fill="var(--accent)"/><circle cx="16" cy="16" r="5.2" fill="var(--surface)"/></svg>
       <div>
-        <strong>Stock Ferretería</strong>
+        <strong id="marca-nombre">Stock Ferretería</strong>
         <small id="fecha-hoy"></small>
       </div>
     </div>
@@ -31,9 +31,9 @@
     <div class="letra" role="group" aria-label="Tamaño de la letra">
       <span>Tamaño de letra</span>
       <div class="letra-btns">
-        <button type="button" data-letra="1" aria-label="Letra normal">A</button>
-        <button type="button" data-letra="1.15" aria-label="Letra grande" style="font-size:1.15em">A</button>
-        <button type="button" data-letra="1.3" aria-label="Letra muy grande" style="font-size:1.3em">A</button>
+        <button type="button" data-letra="1" aria-label="Letra normal" style="font-size:15px">A</button>
+        <button type="button" data-letra="1.15" aria-label="Letra grande" style="font-size:19px">A</button>
+        <button type="button" data-letra="1.3" aria-label="Letra muy grande" style="font-size:23px">A</button>
       </div>
     </div>
   </aside>
@@ -74,7 +74,7 @@
       <div class="caja">
         <div class="caja-izq">
           <label class="paso" for="caja-buscar"><span class="paso-n">1</span> Buscá el producto y tocalo para agregarlo</label>
-          <input id="caja-buscar" type="search" autocomplete="off" placeholder="Escribí el nombre o el código, o pasá el lector">
+          <input id="caja-buscar" type="search" autocomplete="off" placeholder="Nombre o código del producto">
           <p class="ayuda">También podés escanear el código de barras: se agrega solo.</p>
           <div id="caja-resultados" class="resultados"></div>
         </div>
@@ -82,6 +82,8 @@
           <header class="card-h"><p class="paso"><span class="paso-n">2</span> Revisá lo que lleva el cliente</p><button class="btn sm ghost" type="button" id="ticket-vaciar">Borrar todo</button></header>
           <p class="muted ticket-num">Venta <span class="mono" id="ticket-num"></span></p>
           <div id="ticket-items"></div>
+          <label class="desc-f" for="caja-desc"><span>Descuento (opcional)</span><span class="desc-in"><input id="caja-desc" type="number" min="0" max="100" step="any" inputmode="decimal" placeholder="0"> %</span></label>
+          <p class="muted desc-det" id="ticket-desc-det" hidden></p>
           <div class="ticket-total"><span>Total</span><strong id="ticket-total">$ 0</strong></div>
           <fieldset class="medios">
             <legend class="paso"><span class="paso-n">3</span> ¿Cómo paga?</legend>
@@ -107,7 +109,13 @@
       </div>
 
       <article class="card ventas-hoy">
-        <header class="card-h"><div><h2>Ventas de hoy</h2><p class="sub" id="ventas-hoy-resumen"></p></div></header>
+        <header class="card-h">
+          <div><h2>Ventas del día</h2><p class="sub" id="ventas-hoy-resumen"></p></div>
+          <div class="acciones">
+            <label class="f-inline" for="ventas-fecha">Día <input type="date" id="ventas-fecha"></label>
+            <button class="btn sm" type="button" id="btn-cierre" data-imprime>Imprimir cierre de caja</button>
+          </div>
+        </header>
         <div id="ventas-hoy"></div>
       </article>
     </section>
@@ -116,7 +124,11 @@
     <section id="v-productos" class="vista" hidden>
       <header class="vh">
         <div><h1>Productos</h1><p class="sub" id="prod-sub"></p></div>
-        <div class="acciones"><button class="btn primary" type="button" id="btn-nuevo-prod">Nuevo producto</button></div>
+        <div class="acciones">
+          <button class="btn" type="button" id="btn-importar">Importar desde Excel</button>
+          <button class="btn" type="button" id="btn-precios">Actualizar precios</button>
+          <button class="btn primary" type="button" id="btn-nuevo-prod">Nuevo producto</button>
+        </div>
       </header>
       <div class="toolbar">
         <input type="search" id="prod-buscar" placeholder="Buscar por código, nombre o ubicación" aria-label="Buscar productos">
@@ -240,6 +252,20 @@
 
         <article class="card">
           <header class="card-h">
+            <div><h2>Datos del negocio</h2><p class="sub">Aparecen en el ticket impreso y en el cierre de caja.</p></div>
+          </header>
+          <form id="form-negocio" class="campos" novalidate>
+            <label class="f f-wide" for="n-nombre">Nombre del negocio<input id="n-nombre" type="text" placeholder="Ej.: Ferretería El Tornillo"></label>
+            <label class="f f-wide" for="n-direccion">Dirección<input id="n-direccion" type="text"></label>
+            <label class="f" for="n-telefono">Teléfono<input id="n-telefono" type="tel"></label>
+            <label class="f" for="n-rut">RUT<input id="n-rut" type="text" inputmode="numeric"></label>
+            <label class="f f-wide" for="n-pie">Mensaje al pie del ticket<input id="n-pie" type="text" placeholder="¡Gracias por su compra!"></label>
+            <div class="f-wide"><button class="btn primary" type="submit">Guardar datos</button></div>
+          </form>
+        </article>
+
+        <article class="card">
+          <header class="card-h">
             <div><h2>Copia de seguridad</h2><p class="sub" id="respaldo-texto">Los datos se guardan en este navegador. Descargá una copia seguido y guardala en un pendrive o en la nube.</p></div>
           </header>
           <div class="botonera">
@@ -335,7 +361,51 @@
     <div class="venta-vuelto" id="venta-vuelto-box"><span>Darle de vuelto</span><strong id="venta-vuelto"></strong></div>
     <p class="muted">El stock ya se actualizó.</p>
   </div>
-  <footer class="dlg-f"><button type="button" class="btn primary btn-grande" id="venta-nueva">Nueva venta</button></footer>
+  <footer class="dlg-f"><button type="button" class="btn btn-grande" id="venta-imprimir" data-imprime>Imprimir ticket</button><button type="button" class="btn primary btn-grande" id="venta-nueva">Nueva venta</button></footer>
+</dialog>
+
+<!-- Importar productos -->
+<dialog id="dlg-import" aria-labelledby="imp-titulo">
+  <header class="dlg-h">
+    <h2 id="imp-titulo">Importar productos desde Excel</h2>
+    <p class="sub">Sirve para cargar muchos productos de una vez. La planilla lleva un producto por fila y estas columnas: Código, Producto, Categoría, Unidad, Proveedor, Ubicación, Stock, Stock mínimo, Costo y Precio. La única obligatoria es Producto.</p>
+  </header>
+  <div class="dlg-b imp-b">
+    <div class="botonera">
+      <button class="btn" type="button" id="imp-modelo">Descargar planilla modelo</button>
+      <label class="btn primary" for="imp-archivo">Elegir la planilla</label>
+      <input type="file" id="imp-archivo" accept=".xlsx,.xls,.csv" hidden>
+    </div>
+    <div id="imp-resumen" class="imp-resumen"></div>
+  </div>
+  <p class="err dlg-err" id="imp-err" role="alert"></p>
+  <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" data-cerrar>Cancelar</button><button type="button" class="btn primary" id="imp-ok" disabled>Importar</button></footer>
+</dialog>
+
+<!-- Actualizar precios -->
+<dialog id="dlg-precios" aria-labelledby="precios-titulo">
+  <form id="form-precios" novalidate>
+    <header class="dlg-h">
+      <h2 id="precios-titulo">Actualizar precios</h2>
+      <p class="sub">Sube o baja el precio de muchos productos a la vez. Para bajar, escribí el número con un menos adelante, por ejemplo -5.</p>
+    </header>
+    <div class="dlg-b campos">
+      <label class="f f-wide" for="pr-filtro">¿A qué productos?<select id="pr-filtro"></select></label>
+      <label class="f" for="pr-pct">Porcentaje (%)<input id="pr-pct" type="number" step="any" inputmode="decimal" placeholder="Ej.: 10"></label>
+      <label class="f" for="pr-red">Redondear el precio
+        <select id="pr-red">
+          <option value="0">Sin redondear</option>
+          <option value="1">Al peso</option>
+          <option value="5">De a $ 5</option>
+          <option value="10">De a $ 10</option>
+        </select>
+      </label>
+      <label class="check f-wide" for="pr-costo"><input type="checkbox" id="pr-costo"> Cambiar también el costo en el mismo porcentaje</label>
+      <p class="nota-edit f-wide" id="pr-prev"></p>
+    </div>
+    <p class="err dlg-err" id="precios-err" role="alert"></p>
+    <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" data-cerrar>Cancelar</button><button class="btn primary" type="submit">Actualizar precios</button></footer>
+  </form>
 </dialog>
 
 <!-- Diálogo confirmación -->
@@ -343,6 +413,8 @@
   <div class="dlg-b"><p id="conf-texto"></p></div>
   <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" id="conf-cancel">Cancelar</button><button type="button" class="btn primary" id="conf-ok">Confirmar</button></footer>
 </dialog>
+
+<div id="impresion" class="solo-impresion" aria-hidden="true"></div>
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 

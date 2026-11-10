@@ -12,6 +12,7 @@ const $$ = (s) => [...document.querySelectorAll(s)];
 const uid = () => (globalThis.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const red = (n) => Math.round(Number(n) * 1000) / 1000;
+const red2 = (n) => Math.round(Number(n) * 100) / 100;
 const dinero = new Intl.NumberFormat('es-UY', { style: 'currency', currency: 'UYU', maximumFractionDigits: 2 });
 const numero = new Intl.NumberFormat('es-UY', { maximumFractionDigits: 3 });
 const $u = (n) => dinero.format(Number(n) || 0);
@@ -28,7 +29,7 @@ let db;
 /* ---------- Datos ---------- */
 
 function baseVacia() {
-  return { productos: [], proveedores: [], movimientos: [], ventas: [], numVenta: 0, ejemplo: false };
+  return { productos: [], proveedores: [], movimientos: [], ventas: [], numVenta: 0, ejemplo: false, negocio: { nombre: '', direccion: '', telefono: '', rut: '', pie: '' } };
 }
 
 // En la versión de escritorio (Electron) existe window.almacen y los datos van a un archivo.
@@ -127,7 +128,7 @@ function registrar(d, m) {
 }
 
 /** Cobra un ticket: valida stock, descuenta cada línea y guarda la venta. */
-function cobrar(d, items, medio, recibido, cliente, fecha) {
+function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0) {
   if (!items.length) return { error: 'El ticket está vacío.' };
   // Validar todo antes de tocar el stock
   const porProducto = {};
@@ -138,7 +139,11 @@ function cobrar(d, items, medio, recibido, cliente, fecha) {
     if (!(q > 0)) return { error: `Revisá la cantidad de ${p.nombre}.` };
     if (q > p.stock + 1e-9) return { error: `No alcanza el stock de ${p.nombre}: hay ${n(p.stock)} ${p.unidad}.` };
   }
-  const total = red(items.reduce((s, it) => s + it.cantidad * it.precio, 0));
+  const pct = Number(descuentoPct) || 0;
+  if (pct < 0 || pct > 100) return { error: 'El descuento tiene que estar entre 0 y 100.' };
+  const subtotal = red2(items.reduce((s, it) => s + it.cantidad * it.precio, 0));
+  const descuento = red2(subtotal * pct / 100);
+  const total = red2(subtotal - descuento);
   if (medio === 'Efectivo' && recibido !== '' && recibido != null && Number(recibido) < total) {
     return { error: `El efectivo recibido no alcanza: faltan ${$u(total - Number(recibido))}.` };
   }
@@ -151,6 +156,9 @@ function cobrar(d, items, medio, recibido, cliente, fecha) {
       const p = d.productos.find((x) => x.id === it.productoId);
       return { productoId: p.id, codigo: p.codigo, nombre: p.nombre, unidad: p.unidad, cantidad: red(it.cantidad), precio: it.precio, costo: p.costo, subtotal: red(it.cantidad * it.precio) };
     }),
+    subtotal,
+    descuentoPct: pct,
+    descuento,
     total,
     medio,
     recibido: medio === 'Efectivo' && recibido !== '' && recibido != null ? Number(recibido) : null,
@@ -176,6 +184,147 @@ function anularVenta(d, ventaId) {
   v.anulada = true;
   v.anuladaEl = new Date().toISOString();
   return null;
+}
+
+
+/* ---------- Actualizar precios por porcentaje ---------- */
+
+function productosDeFiltro(d, filtro) {
+  if (!filtro) return d.productos;
+  const tipo = filtro[0], valor = filtro.slice(2);
+  return d.productos.filter((p) => (tipo === 'c' ? (p.categoria || '') === valor : p.proveedorId === valor));
+}
+
+function redondearPrecio(x, paso) {
+  if (!(x > 0)) return 0;
+  return paso > 0 ? Math.max(paso, Math.round(x / paso) * paso) : red2(x);
+}
+
+/** Sube o baja precios. op: { redondeo: 0|1|5|10, costo: true para cambiar también el costo }. */
+function actualizarPrecios(d, filtro, pct, op = {}) {
+  const f = 1 + Number(pct) / 100;
+  if (!Number.isFinite(f) || Number(pct) === 0) return { error: 'Escribí un porcentaje, por ejemplo 10.' };
+  if (f <= 0) return { error: 'No se puede bajar un 100 % o más.' };
+  const lista = productosDeFiltro(d, filtro);
+  if (!lista.length) return { error: 'No hay productos en ese grupo.' };
+  lista.forEach((p) => {
+    p.precio = redondearPrecio(p.precio * f, op.redondeo || 0);
+    if (op.costo) p.costo = red2(p.costo * f);
+  });
+  return { cantidad: lista.length };
+}
+
+/* ---------- Importar productos desde una planilla ---------- */
+
+const COLUMNAS = {
+  codigo: ['codigo', 'cod', 'codigo de barras', 'sku', 'code'],
+  nombre: ['producto', 'nombre', 'descripcion', 'articulo', 'detalle'],
+  categoria: ['categoria', 'rubro', 'familia'],
+  unidad: ['unidad', 'um', 'unidad de medida'],
+  proveedor: ['proveedor'],
+  ubicacion: ['ubicacion', 'estante', 'lugar'],
+  stock: ['stock', 'cantidad', 'existencia', 'existencias'],
+  minimo: ['stock minimo', 'minimo', 'stock min', 'min'],
+  costo: ['costo', 'precio de costo', 'costo unitario', 'precio costo'],
+  precio: ['precio', 'precio de venta', 'precio venta', 'pvp', 'venta'],
+};
+const UNIDADES = ['unidad', 'kg', 'm', 'litro', 'caja', 'paquete', 'rollo', 'par'];
+const ALIAS_UNIDAD = { u: 'unidad', un: 'unidad', und: 'unidad', unid: 'unidad', unidades: 'unidad', kilo: 'kg', kilos: 'kg', kgs: 'kg', metro: 'm', metros: 'm', mt: 'm', mts: 'm', l: 'litro', lt: 'litro', lts: 'litro', litros: 'litro', cajas: 'caja', paq: 'paquete', paquetes: 'paquete', rollos: 'rollo', pares: 'par' };
+
+const normCol = (k) => normal(k).replace(/[._:]/g, ' ').replace(/\s+/g, ' ').trim();
+function normUnidad(u) {
+  const x = normal(u).replace(/\./g, '').trim();
+  if (UNIDADES.includes(x)) return x;
+  return ALIAS_UNIDAD[x] || 'unidad';
+}
+
+/** Convierte "1.234,50", "$ 290" o 12.5 en número. Devuelve null si la celda está vacía o no es un número. */
+function parseNum(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  let t = String(v ?? '').replace(/[^\d.,-]/g, '');
+  if (!/\d/.test(t)) return null;
+  if (t.includes(',') && t.includes('.')) t = t.lastIndexOf(',') > t.lastIndexOf('.') ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+  else if (t.includes(',')) t = t.replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+  const x = Number(t);
+  return Number.isFinite(x) ? x : null;
+}
+
+/** Lee las filas de la planilla y arma qué se agregaría y qué se actualizaría, sin tocar los datos. */
+function planImportacion(d, filas) {
+  const plan = { nuevos: [], actualizados: [], salteadas: 0, columnas: [] };
+  const mapa = {};
+  const claves = new Set();
+  filas.forEach((f) => Object.keys(f).forEach((k) => claves.add(k)));
+  for (const k of claves) {
+    const nk = normCol(k);
+    for (const [campo, alias] of Object.entries(COLUMNAS)) if (!mapa[campo] && alias.includes(nk)) mapa[campo] = k;
+  }
+  plan.columnas = Object.values(mapa);
+  if (!mapa.nombre) {
+    plan.error = 'No encontré la columna «Producto». La primera fila de la planilla tiene que tener los títulos de las columnas.';
+    return plan;
+  }
+  const porCodigo = new Map(d.productos.map((p) => [p.codigo, p]));
+  const porNombre = new Map(d.productos.map((p) => [normal(p.nombre), p]));
+  const vistos = new Set();
+  let sec = 0;
+  const codigoNuevo = () => { let c; do { sec++; c = 'P-' + String(sec).padStart(4, '0'); } while (porCodigo.has(c) || vistos.has(c)); return c; };
+  for (const f of filas) {
+    const txt = (c) => (mapa[c] ? String(f[mapa[c]] ?? '').trim() : '');
+    const num = (c) => (mapa[c] ? parseNum(f[mapa[c]]) : null);
+    const nombre = txt('nombre');
+    if (!nombre) { plan.salteadas++; continue; }
+    let codigo = txt('codigo').toUpperCase();
+    const existente = codigo ? porCodigo.get(codigo) : porNombre.get(normal(nombre));
+    const clave = existente ? existente.codigo : (codigo || 'n:' + normal(nombre));
+    if (vistos.has(clave)) { plan.salteadas++; continue; }
+    vistos.add(clave);
+    const datos = {
+      nombre, categoria: txt('categoria'), unidad: txt('unidad') ? normUnidad(txt('unidad')) : '', proveedor: txt('proveedor'),
+      ubicacion: txt('ubicacion'), stock: num('stock'), minimo: num('minimo'), costo: num('costo'), precio: num('precio'),
+    };
+    if (existente) plan.actualizados.push({ id: existente.id, codigo: existente.codigo, datos });
+    else {
+      if (!codigo) { codigo = codigoNuevo(); vistos.add(codigo); }
+      plan.nuevos.push({ codigo, datos });
+    }
+  }
+  return plan;
+}
+
+function aplicarImportacion(d, plan) {
+  const provId = (nombre) => {
+    if (!nombre) return '';
+    let v = d.proveedores.find((x) => normal(x.nombre) === normal(nombre));
+    if (!v) { v = { id: uid(), nombre, contacto: '', telefono: '', email: '', rut: '', notas: '' }; d.proveedores.push(v); }
+    return v.id;
+  };
+  const pos = (x) => (x != null && x >= 0 ? x : null);
+  for (const nuevo of plan.nuevos) {
+    const x = nuevo.datos;
+    const p = {
+      id: uid(), codigo: nuevo.codigo, nombre: x.nombre, categoria: x.categoria, unidad: x.unidad || 'unidad', proveedorId: provId(x.proveedor),
+      ubicacion: x.ubicacion, costo: pos(x.costo) || 0, precio: pos(x.precio) || 0, minimo: pos(x.minimo) || 0, stock: 0,
+    };
+    d.productos.push(p);
+    if (x.stock > 0) registrar(d, { tipo: 'entrada', productoId: p.id, cantidad: x.stock, costoUnit: p.costo, proveedorId: p.proveedorId, nota: 'Stock inicial (importado)' });
+  }
+  for (const act of plan.actualizados) {
+    const p = d.productos.find((q) => q.id === act.id);
+    if (!p) continue;
+    const x = act.datos;
+    p.nombre = x.nombre;
+    if (x.categoria) p.categoria = x.categoria;
+    if (x.unidad) p.unidad = x.unidad;
+    if (x.ubicacion) p.ubicacion = x.ubicacion;
+    if (x.proveedor) p.proveedorId = provId(x.proveedor);
+    if (pos(x.costo) != null) p.costo = x.costo;
+    if (pos(x.precio) != null) p.precio = x.precio;
+    if (pos(x.minimo) != null) p.minimo = x.minimo;
+    if (pos(x.stock) != null && red(x.stock) !== p.stock) registrar(d, { tipo: 'ajuste', productoId: p.id, cantidad: x.stock, nota: 'Corrección por importación' });
+  }
+  return { nuevos: plan.nuevos.length, actualizados: plan.actualizados.length };
 }
 
 /* ---------- Datos de ejemplo ---------- */
@@ -273,17 +422,14 @@ function mostrarVista() {
 
 function render() {
   $('#banner-ejemplo').hidden = !db.ejemplo;
+  $('#marca-nombre').textContent = (db.negocio && db.negocio.nombre) || 'Stock Ferretería';
   const bajos = db.productos.filter((p) => estado(p) !== 'ok').length;
   const b = $('#badge-bajo');
   b.hidden = !bajos;
   b.textContent = bajos;
   b.title = `${bajos} productos para reponer`;
-  renderPanel();
-  renderCaja();
-  renderProductos();
-  renderMovimientos();
-  renderProveedores();
-  renderReportes();
+  // Solo se dibuja la pantalla que se está viendo
+  ({ panel: renderPanel, caja: renderCaja, productos: renderProductos, movimientos: renderMovimientos, proveedores: renderProveedores, reportes: renderReportes })[vistaActual()]();
 }
 
 function opcionesProv(sel, vacio = 'Sin proveedor') {
@@ -337,7 +483,9 @@ function renderPanel() {
 let ticket = []; // { productoId, cantidad, precio }
 
 function medioActual() { return ($('input[name="medio"]:checked') || {}).value || 'Efectivo'; }
-function totalTicket() { return red(ticket.reduce((s, it) => s + it.cantidad * it.precio, 0)); }
+function descuentoActual() { const x = Number($('#caja-desc').value); return x > 0 && x <= 100 ? x : 0; }
+function subtotalTicket() { return red2(ticket.reduce((s, it) => s + it.cantidad * it.precio, 0)); }
+function totalTicket() { const s = subtotalTicket(); return red2(s - red2(s * descuentoActual() / 100)); }
 
 function agregarAlTicket(id, cant = 1) {
   const p = producto(id);
@@ -398,6 +546,10 @@ function renderTicket() {
     }).join('')
     : '<p class="vacio">Agregá productos tocándolos en la lista o escaneando su código.</p>';
   $('#ticket-total').textContent = $u(totalTicket());
+  const pct = descuentoActual();
+  const det = $('#ticket-desc-det');
+  det.hidden = !(pct && ticket.length);
+  det.textContent = pct ? `Subtotal ${$u(subtotalTicket())} · Descuento −${$u(red2(subtotalTicket() * pct / 100))}` : '';
   actualizarVuelto();
   $('#btn-cobrar').disabled = !ticket.length;
   $('#btn-cobrar').textContent = ticket.length ? `Cobrar ${$u(totalTicket())}` : 'Cobrar';
@@ -414,29 +566,80 @@ function actualizarVuelto() {
   v.style.color = dif >= 0 ? '' : 'var(--danger)';
 }
 
+function fechaVentas() { return $('#ventas-fecha').value || isoLocal(); }
+
 function renderVentasHoy() {
-  const hoy = ventasDelDia().sort((a, b) => b.fecha.localeCompare(a.fecha));
-  const validas = hoy.filter((v) => !v.anulada);
+  const dia = fechaVentas();
+  const esHoy = dia === isoLocal();
+  const lista = ventasDelDia(dia).sort((a, b) => b.fecha.localeCompare(a.fecha));
+  const validas = lista.filter((v) => !v.anulada);
   const total = validas.reduce((s, v) => s + v.total, 0);
   const porMedio = {};
   validas.forEach((v) => { porMedio[v.medio] = (porMedio[v.medio] || 0) + v.total; });
   $('#ventas-hoy-resumen').textContent = validas.length
     ? `${validas.length} ${validas.length === 1 ? 'venta' : 'ventas'} · ${$u(total)} · ` + Object.entries(porMedio).map(([m, t]) => `${m} ${$u(t)}`).join(' · ')
-    : 'Todavía no hay ventas hoy.';
-  $('#ventas-hoy').innerHTML = hoy.length
+    : (esHoy ? 'Todavía no hay ventas hoy.' : 'No hubo ventas ese día.');
+  $('#btn-cierre').disabled = !validas.length;
+  $('#ventas-hoy').innerHTML = lista.length
     ? `<div class="table-wrap"><table class="tabla">
         <thead><tr><th>N.º</th><th>Hora</th><th>Detalle</th><th>Pago</th><th class="num">Total</th><th class="num"></th></tr></thead>
-        <tbody>${hoy.map((v) => `
+        <tbody>${lista.map((v) => `
           <tr${v.anulada ? ' class="muted"' : ''}>
             <td class="mono">${String(v.numero).padStart(4, '0')}</td>
             <td class="num">${hora(v.fecha)}</td>
             <td><div>${v.items.map((it) => `${n(it.cantidad)} × ${esc(it.nombre)}`).join('<br>')}</div>${v.cliente ? `<div class="meta">${esc(v.cliente)}</div>` : ''}</td>
             <td>${esc(v.medio)}${v.vuelto != null ? `<div class="meta">Vuelto ${$u(v.vuelto)}</div>` : ''}</td>
-            <td class="num"><strong>${$u(v.total)}</strong></td>
-            <td class="acc">${v.anulada ? '<span class="chip neutro">Anulada</span>' : `<button class="btn sm danger" type="button" data-anular="${v.id}">Anular</button>`}</td>
+            <td class="num"><strong>${$u(v.total)}</strong>${v.descuento ? `<div class="meta">Descuento ${n(v.descuentoPct)} %</div>` : ''}</td>
+            <td class="acc">${puedeImprimir() ? `<button class="btn sm" type="button" data-ticket="${v.id}">Imprimir</button>` : ''}${v.anulada ? '<span class="chip neutro">Anulada</span>' : `<button class="btn sm danger" type="button" data-anular="${v.id}">Anular</button>`}</td>
           </tr>`).join('')}</tbody>
       </table></div>`
     : '';
+}
+
+/* ---------- Impresión de ticket y cierre ---------- */
+
+const puedeImprimir = () => typeof window !== 'undefined' && typeof window.print === 'function' && !window.SIN_IMPRESION;
+
+function encabezadoNegocio() {
+  const g = db.negocio || {};
+  return `<div class="t-c"><strong class="t-neg">${esc(g.nombre || 'Ferretería')}</strong>
+    ${g.direccion ? `<div>${esc(g.direccion)}</div>` : ''}${g.telefono ? `<div>Tel. ${esc(g.telefono)}</div>` : ''}${g.rut ? `<div>RUT ${esc(g.rut)}</div>` : ''}</div>`;
+}
+
+function htmlTicket(v) {
+  const g = db.negocio || {};
+  const fila = (a, b, cls = '') => `<div class="t-fila ${cls}"><span>${a}</span><span>${b}</span></div>`;
+  return `${encabezadoNegocio()}<hr>
+    ${fila(`Venta N.º ${String(v.numero).padStart(4, '0')}`, fechaHora(v.fecha))}
+    ${v.cliente ? `<div>Cliente: ${esc(v.cliente)}</div>` : ''}
+    ${v.anulada ? '<div class="t-c"><strong>VENTA ANULADA</strong></div>' : ''}<hr>
+    ${v.items.map((it) => `<div>${esc(it.nombre)}</div>${fila(`${n(it.cantidad)} ${esc(it.unidad)} × ${$u(it.precio)}`, $u(it.subtotal))}`).join('')}<hr>
+    ${v.descuento ? fila('Subtotal', $u(v.subtotal)) + fila(`Descuento ${n(v.descuentoPct)} %`, '−' + $u(v.descuento)) : ''}
+    ${fila('TOTAL', $u(v.total), 't-total')}
+    ${fila('Pago', esc(v.medio))}
+    ${v.recibido != null ? fila('Recibido', $u(v.recibido)) + fila('Vuelto', $u(v.vuelto)) : ''}<hr>
+    <div class="t-c">${esc(g.pie || '¡Gracias por su compra!')}</div>
+    <div class="t-c t-chico">Comprobante interno. No válido como factura.</div>`;
+}
+
+function htmlCierre(dia) {
+  const lista = ventasDelDia(dia);
+  const validas = lista.filter((v) => !v.anulada);
+  const porMedio = {};
+  validas.forEach((v) => { porMedio[v.medio] = (porMedio[v.medio] || 0) + v.total; });
+  const fila = (a, b, cls = '') => `<div class="t-fila ${cls}"><span>${a}</span><span>${b}</span></div>`;
+  return `${encabezadoNegocio()}<hr>
+    <div class="t-c"><strong>CIERRE DE CAJA</strong><div>${new Date(dia + 'T12:00:00').toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div></div><hr>
+    ${fila('Ventas cobradas', validas.length)}
+    ${fila('Ventas anuladas', lista.length - validas.length)}<hr>
+    ${Object.entries(porMedio).map(([m, t]) => fila(esc(m), $u(t))).join('')}<hr>
+    ${fila('TOTAL', $u(validas.reduce((s, v) => s + v.total, 0)), 't-total')}
+    <div class="t-c t-chico">Impreso el ${fechaHora(new Date().toISOString())}</div>`;
+}
+
+function imprimir(html) {
+  $('#impresion').innerHTML = html;
+  window.print();
 }
 
 function iniciarCaja() {
@@ -486,17 +689,36 @@ function iniciarCaja() {
     it.cantidad = red(q);
     renderTicket();
   });
-  $('#ticket-vaciar').addEventListener('click', () => { ticket = []; $('#caja-recibido').value = ''; renderTicket(); });
+  $('#ticket-vaciar').addEventListener('click', () => { ticket = []; $('#caja-recibido').value = ''; $('#caja-desc').value = ''; renderTicket(); });
+  $('#caja-desc').addEventListener('input', renderTicket);
+  $('#ventas-fecha').value = isoLocal();
+  $('#ventas-fecha').addEventListener('input', renderVentasHoy);
+  $('#btn-cierre').addEventListener('click', () => imprimir(htmlCierre(fechaVentas())));
+  $('#ventas-hoy').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-ticket]');
+    const v = b && db.ventas.find((x) => x.id === b.dataset.ticket);
+    if (v) imprimir(htmlTicket(v));
+  });
+  // Si el lector de códigos escribe sin que el cursor esté en el buscador, se lleva el cursor ahí
+  document.addEventListener('keydown', (e) => {
+    if (vistaActual() !== 'caja' || e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1 || e.key === ' ') return;
+    if (document.querySelector('dialog[open]')) return;
+    const a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'radio') return;
+    $('#caja-buscar').focus();
+  });
   $('#medios').addEventListener('change', actualizarVuelto);
   $('#caja-recibido').addEventListener('input', actualizarVuelto);
 
   $('#btn-cobrar').addEventListener('click', () => {
-    const r = cobrar(db, ticket, medioActual(), $('#caja-recibido').value, $('#caja-cliente').value.trim());
+    const r = cobrar(db, ticket, medioActual(), $('#caja-recibido').value, $('#caja-cliente').value.trim(), undefined, Number($('#caja-desc').value) || 0);
     if (r.error) { $('#caja-err').textContent = r.error; return; }
     guardar();
     ticket = [];
     $('#caja-recibido').value = '';
     $('#caja-cliente').value = '';
+    $('#caja-desc').value = '';
+    $('#ventas-fecha').value = isoLocal();
     $('#caja-err').textContent = '';
     render();
     const v = r.venta;
@@ -535,8 +757,9 @@ function renderProductos() {
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   $('#prod-sub').textContent = `${db.productos.length} productos cargados${lista.length !== db.productos.length ? ` · mostrando ${lista.length}` : ''}.`;
+  const visibles = lista.slice(0, 300);
   $('#tabla-prod').innerHTML = lista.length
-    ? lista.map((p) => `
+    ? visibles.map((p) => `
       <tr>
         <td class="mono">${esc(p.codigo)}</td>
         <td><div class="nom">${esc(p.nombre)}</div><div class="meta">${esc(p.categoria || 'Sin categoría')} · ${esc(p.ubicacion || 'Sin ubicación')}</div></td>
@@ -551,7 +774,7 @@ function renderProductos() {
           <button class="btn sm" type="button" data-accion="salida" data-id="${p.id}">− Restar</button>
           <button class="btn sm ghost" type="button" data-accion="editar" data-id="${p.id}">Editar</button>
         </td>
-      </tr>`).join('')
+      </tr>`).join('') + (lista.length > visibles.length ? `<tr><td colspan="9" class="vacio">Se muestran ${visibles.length} de ${lista.length} productos. Usá el buscador para encontrar el resto.</td></tr>` : '')
     : `<tr><td colspan="9" class="vacio">${db.productos.length ? 'Ningún producto coincide con los filtros.' : 'Todavía no cargaste productos. Usá «Nuevo producto» para agregar el primero.'}</td></tr>`;
 }
 
@@ -848,6 +1071,9 @@ function ventasPeriodo() {
 }
 
 function renderReportes() {
+  if (!$('#form-negocio').contains(document.activeElement)) {
+    ['nombre', 'direccion', 'telefono', 'rut', 'pie'].forEach((k) => { $('#n-' + k).value = (db.negocio || {})[k] || ''; });
+  }
   // Período
   const ventas = ventasPeriodo();
   const validas = ventas.filter((v) => !v.anulada);
@@ -986,7 +1212,7 @@ function exportar(tipo) {
     const filas = [];
     ventasPeriodo().forEach((v) => v.items.forEach((it) => filas.push({
       'Venta N.º': v.numero, 'Fecha': f(v.fecha), 'Estado': v.anulada ? 'Anulada' : 'Cobrada', 'Medio de pago': v.medio, 'Cliente': v.cliente,
-      'Código': it.codigo, 'Producto': it.nombre, 'Cantidad': it.cantidad, 'Unidad': it.unidad, 'Precio': it.precio, 'Subtotal': it.subtotal, 'Total venta': v.total,
+      'Código': it.codigo, 'Producto': it.nombre, 'Cantidad': it.cantidad, 'Unidad': it.unidad, 'Precio': it.precio, 'Subtotal': it.subtotal, 'Descuento %': v.descuentoPct || 0, 'Total venta': v.total,
     })));
     descargarExcel(filas, 'Ventas', 'ventas');
   }
@@ -1041,7 +1267,9 @@ function iniciarRespaldo() {
 
 /* ---------- Arranque ---------- */
 
+let ultimaVenta = null;
 function mostrarVentaCobrada(v) {
+  ultimaVenta = v;
   $('#venta-total').textContent = $u(v.total);
   $('#venta-medio').textContent = `Pagó con ${v.medio.toLowerCase()} · Venta N.º ${String(v.numero).padStart(4, '0')}`;
   $('#venta-vuelto-box').hidden = v.vuelto == null;
@@ -1053,7 +1281,11 @@ function mostrarVentaCobrada(v) {
 /* Tamaño de letra, recordado en esta PC */
 const CLAVE_LETRA = 'ferreteria-letra';
 function aplicarLetra(f) {
-  document.body.style.zoom = f;
+  if (escritorio() && window.almacen.zoom) window.almacen.zoom(Number(f));
+  else {
+    document.body.style.zoom = f;
+    document.documentElement.style.setProperty('--zoom', f);
+  }
   $$('[data-letra]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.letra === String(f))));
 }
 function iniciarLetra() {
@@ -1066,8 +1298,147 @@ function iniciarLetra() {
   }));
 }
 
+/* ---------- Importar desde Excel ---------- */
+
+let planImp = null;
+
+function mostrarPlan(nombreArchivo) {
+  const r = $('#imp-resumen');
+  $('#imp-ok').disabled = true;
+  if (!planImp || planImp.error) { $('#imp-err').textContent = (planImp && planImp.error) || ''; r.innerHTML = ''; return; }
+  $('#imp-err').textContent = '';
+  const total = planImp.nuevos.length + planImp.actualizados.length;
+  if (!total) { $('#imp-err').textContent = 'La planilla no tiene productos para importar.'; r.innerHTML = ''; return; }
+  const muestra = planImp.nuevos.concat(planImp.actualizados).slice(0, 4);
+  r.innerHTML = `
+    <p><strong>${esc(nombreArchivo)}</strong></p>
+    <ul class="lista">
+      <li><span>Productos nuevos que se agregan</span><strong>${planImp.nuevos.length}</strong></li>
+      <li><span>Productos que ya existen y se actualizan</span><strong>${planImp.actualizados.length}</strong></li>
+      ${planImp.salteadas ? `<li><span>Filas que se saltean (sin nombre o repetidas)</span><strong>${planImp.salteadas}</strong></li>` : ''}
+    </ul>
+    <p class="muted">Columnas reconocidas: ${planImp.columnas.map(esc).join(', ')}.</p>
+    <div class="table-wrap"><table class="tabla"><thead><tr><th>Código</th><th>Producto</th><th class="num">Stock</th><th class="num">Precio</th></tr></thead>
+      <tbody>${muestra.map((m) => `<tr><td class="mono">${esc(m.codigo)}</td><td>${esc(m.datos.nombre)}</td><td class="num">${m.datos.stock == null ? '—' : n(m.datos.stock)}</td><td class="num">${m.datos.precio == null ? '—' : $u(m.datos.precio)}</td></tr>`).join('')}
+      ${total > muestra.length ? `<tr><td colspan="4" class="muted">… y ${total - muestra.length} más</td></tr>` : ''}</tbody></table></div>
+    ${planImp.actualizados.length ? '<p class="muted">En los productos que ya existen, si la planilla trae otro stock, se corrige a ese número.</p>' : ''}
+    ${db.ejemplo ? '<p class="nota-edit">Estás con los datos de ejemplo: lo importado se va a mezclar con ellos. Si no querés eso, cancelá y tocá primero «Empezar de cero».</p>' : ''}`;
+  $('#imp-ok').disabled = false;
+}
+
+function iniciarImportacion() {
+  $('#btn-importar').addEventListener('click', () => {
+    planImp = null;
+    $('#imp-resumen').innerHTML = '';
+    $('#imp-err').textContent = '';
+    $('#imp-ok').disabled = true;
+    $('#dlg-import').showModal();
+  });
+  $('#imp-modelo').addEventListener('click', () => descargarExcel([
+    { 'Código': '7790001000101', 'Producto': 'Tornillo autoperforante 8 x 1" (caja x100)', 'Categoría': 'Tornillería', 'Unidad': 'caja', 'Proveedor': 'Distribuidora Ejemplo', 'Ubicación': 'A-01', 'Stock': 30, 'Stock mínimo': 10, 'Costo': 180, 'Precio': 290 },
+    { 'Código': '', 'Producto': 'Cable unipolar 2,5 mm²', 'Categoría': 'Electricidad', 'Unidad': 'm', 'Proveedor': '', 'Ubicación': 'E-02', 'Stock': 300, 'Stock mínimo': 100, 'Costo': 28, 'Precio': 48 },
+  ], 'Productos', 'planilla_modelo_productos'));
+  $('#imp-archivo').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const lector = new FileReader();
+    lector.onload = () => {
+      try {
+        const libro = XLSX.read(new Uint8Array(lector.result), { type: 'array', codepage: 65001 });
+        const filas = XLSX.utils.sheet_to_json(libro.Sheets[libro.SheetNames[0]], { defval: '' });
+        planImp = planImportacion(db, filas);
+      } catch (err) {
+        planImp = { error: 'No pude leer el archivo. Tiene que ser una planilla de Excel (.xlsx) o un archivo .csv.' };
+      }
+      mostrarPlan(file.name);
+    };
+    lector.readAsArrayBuffer(file);
+  });
+  $('#imp-ok').addEventListener('click', () => {
+    if (!planImp || planImp.error) return;
+    const r = aplicarImportacion(db, planImp);
+    planImp = null;
+    guardar();
+    $('#dlg-import').close();
+    render();
+    toast(`Importación lista: ${r.nuevos} productos nuevos y ${r.actualizados} actualizados.`);
+  });
+}
+
+/* ---------- Actualizar precios ---------- */
+
+function opcionesPrecios() {
+  return {
+    filtro: $('#pr-filtro').value,
+    pct: Number($('#pr-pct').value),
+    redondeo: Number($('#pr-red').value) || 0,
+    costo: $('#pr-costo').checked,
+  };
+}
+
+function vistaPreviaPrecios() {
+  const o = opcionesPrecios();
+  const lista = productosDeFiltro(db, o.filtro);
+  const prev = $('#pr-prev');
+  if (!lista.length) { prev.textContent = 'No hay productos en ese grupo.'; return; }
+  if (!o.pct || o.pct <= -100) { prev.textContent = `${lista.length} productos. Escribí el porcentaje para ver un ejemplo.`; return; }
+  const p = lista.find((x) => x.precio > 0) || lista[0];
+  const nuevo = redondearPrecio(p.precio * (1 + o.pct / 100), o.redondeo);
+  prev.innerHTML = `Se ${o.pct > 0 ? 'suben' : 'bajan'} <strong>${lista.length} productos</strong>. Ejemplo: ${esc(p.nombre)} pasa de ${$u(p.precio)} a <strong>${$u(nuevo)}</strong>.`;
+}
+
+function iniciarPrecios() {
+  $('#btn-precios').addEventListener('click', () => {
+    const cats = [...new Set(db.productos.map((p) => p.categoria).filter(Boolean))].sort();
+    const provs = [...db.proveedores].sort((a, b) => a.nombre.localeCompare(b.nombre));
+    $('#pr-filtro').innerHTML = '<option value="">Todos los productos</option>'
+      + (cats.length ? `<optgroup label="Una categoría">${cats.map((c) => `<option value="c:${esc(c)}">${esc(c)}</option>`).join('')}</optgroup>` : '')
+      + (provs.length ? `<optgroup label="Un proveedor">${provs.map((v) => `<option value="p:${v.id}">${esc(v.nombre)}</option>`).join('')}</optgroup>` : '');
+    $('#pr-pct').value = '';
+    $('#pr-red').value = '1';
+    $('#pr-costo').checked = false;
+    $('#precios-err').textContent = '';
+    vistaPreviaPrecios();
+    $('#dlg-precios').showModal();
+    $('#pr-pct').focus();
+  });
+  ['#pr-filtro', '#pr-pct', '#pr-red', '#pr-costo'].forEach((sel) => $(sel).addEventListener('input', vistaPreviaPrecios));
+  $('#form-precios').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const o = opcionesPrecios();
+    const cant = productosDeFiltro(db, o.filtro).length;
+    if (!o.pct) { $('#precios-err').textContent = 'Escribí un porcentaje, por ejemplo 10.'; return; }
+    if (!(await confirmar(`¿${o.pct > 0 ? 'Subir' : 'Bajar'} un ${n(Math.abs(o.pct))} % el precio de ${cant} productos?`, 'Sí, actualizar'))) return;
+    const r = actualizarPrecios(db, o.filtro, o.pct, o);
+    if (r.error) { $('#precios-err').textContent = r.error; return; }
+    guardar();
+    $('#dlg-precios').close();
+    render();
+    toast(`Listo: se actualizó el precio de ${r.cantidad} productos.`);
+  });
+}
+
+/* ---------- Datos del negocio ---------- */
+
+function iniciarNegocio() {
+  $('#form-negocio').addEventListener('submit', (e) => {
+    e.preventDefault();
+    db.negocio = {};
+    ['nombre', 'direccion', 'telefono', 'rut', 'pie'].forEach((k) => { db.negocio[k] = $('#n-' + k).value.trim(); });
+    guardar();
+    render();
+    toast('Datos del negocio guardados.');
+  });
+}
+
 function iniciar() {
   iniciarLetra();
+  iniciarImportacion();
+  iniciarPrecios();
+  iniciarNegocio();
+  if (!puedeImprimir()) $$('[data-imprime]').forEach((b) => { b.hidden = true; });
+  $('#venta-imprimir').addEventListener('click', () => { if (ultimaVenta) imprimir(htmlTicket(ultimaVenta)); });
   $('#dlg-venta').addEventListener('close', () => $('#caja-buscar').focus());
   $('#venta-nueva').addEventListener('click', () => $('#dlg-venta').close());
   cargar();
@@ -1089,7 +1460,7 @@ function iniciar() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado };
+  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

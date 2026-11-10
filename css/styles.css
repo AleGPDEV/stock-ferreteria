@@ -58,7 +58,7 @@ a { color: var(--accent); }
 .side {
   background: var(--surface); border-right: 1px solid var(--line);
   padding-block: 20px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: 16px;
-  position: sticky; top: env(safe-area-inset-top, 0px); height: 100vh; align-self: start;
+  position: sticky; top: env(safe-area-inset-top, 0px); height: calc(100vh / var(--zoom, 1)); align-self: start;
   display: flex; flex-direction: column; gap: 24px;
 }
 .brand { display: flex; align-items: center; gap: 10px; padding-inline: 4px; }
@@ -228,6 +228,10 @@ input:focus, select:focus { border-color: var(--accent); outline: none; box-shad
 .qty input { width: 64px; font-size: 17px; border: 0; border-radius: 0; text-align: center; padding: 4px; font-variant-numeric: tabular-nums; }
 .qty input:focus { box-shadow: none; }
 .ticket-linea .quitar { margin-left: auto; }
+.desc-f { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 14.5px; font-weight: 500; }
+.desc-in { display: inline-flex; align-items: center; gap: 6px; }
+.desc-in input { width: 84px; text-align: right; }
+.desc-det { font-size: 14px; text-align: right; margin-top: -6px; }
 .ticket-total { display: flex; justify-content: space-between; align-items: baseline; border-top: 2px solid var(--fg); padding-top: 10px; }
 .ticket-total span { font-weight: 600; text-transform: uppercase; letter-spacing: .07em; font-size: 15px; }
 .ticket-total strong { font-family: var(--f-mono); font-size: 32px; font-variant-numeric: tabular-nums; }
@@ -253,9 +257,9 @@ input:focus, select:focus { border-color: var(--accent); outline: none; box-shad
 /* Diálogos */
 dialog {
   border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--fg);
-  padding: 0; width: min(600px, calc(100vw - 32px)); max-height: calc(100vh - 32px);
+  padding: 0; width: min(640px, calc(100vw / var(--zoom, 1) - 32px)); max-height: calc(100vh / var(--zoom, 1) - 32px);
 }
-dialog.dlg-chico { width: min(420px, calc(100vw - 32px)); }
+dialog.dlg-chico { width: min(460px, calc(100vw / var(--zoom, 1) - 32px)); }
 dialog::backdrop { background: var(--backdrop); }
 .dlg-h { padding: 18px 20px 4px; }
 .dlg-b { padding: 14px 20px; }
@@ -279,6 +283,28 @@ dialog::backdrop { background: var(--backdrop); }
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   background: var(--fg); color: var(--bg); padding: 14px 20px; border-radius: 10px; font-weight: 500; font-size: 17px;
   max-width: calc(100vw - 32px); box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
+}
+
+.check { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 500; cursor: pointer; }
+.check input { width: 22px; height: 22px; flex: none; accent-color: var(--accent); }
+.imp-b { display: flex; flex-direction: column; gap: 14px; }
+.imp-resumen { display: flex; flex-direction: column; gap: 10px; }
+.imp-resumen:empty { display: none; }
+
+/* Ticket impreso: pensado para impresora térmica de 80 mm, también sale bien en hoja común */
+.solo-impresion { display: none; }
+@media print {
+  @page { margin: 5mm; }
+  html, body { background: #fff !important; }
+  body > *:not(#impresion) { display: none !important; }
+  #impresion { display: block; width: 72mm; max-width: 100%; color: #000; font: 12px/1.4 var(--f-mono); }
+  #impresion hr { border: 0; border-top: 1px dashed #000; margin: 6px 0; }
+  #impresion .t-c { text-align: center; }
+  #impresion .t-neg { font-size: 16px; }
+  #impresion .t-fila { display: flex; justify-content: space-between; gap: 8px; }
+  #impresion .t-fila span:last-child { text-align: right; white-space: nowrap; }
+  #impresion .t-total { font-size: 16px; font-weight: 700; margin-block: 4px; }
+  #impresion .t-chico { font-size: 10px; margin-top: 6px; }
 }
 
 /* Celular y tablet */

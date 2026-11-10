@@ -1,12 +1,12 @@
-# Genera el instalador de Windows.
-# - En cada push a main: deja el .exe como "artifact" descargable en la pestaña Actions.
-# - Al crear un tag vX.Y.Z: publica una Release con el instalador y la versión portable.
+# Prueba el programa y genera el instalador de Windows en cada push a main.
+# - El .exe queda como "artifact" descargable en la pestaña Actions.
+# - Además se publica en Releases con el tag vX.Y.Z, tomando la versión de package.json.
+#   Para sacar una versión nueva, subí el número de "version" en package.json.
 name: Instalador de Windows
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -26,10 +26,13 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Usar la versión del tag
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Pruebas automáticas
+        run: npm test
+
+      - name: Leer versión
+        id: ver
         shell: bash
-        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+        run: echo "v=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Generar instalador
         run: npx electron-builder --win nsis portable --x64 --publish never
@@ -42,11 +45,13 @@ jobs:
             dist/*.exe
           retention-days: 30
 
-      - name: Publicar Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publicar en Releases
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          name: Stock Ferretería ${{ github.ref_name }}
+          tag_name: v${{ steps.ver.outputs.v }}
+          target_commitish: ${{ github.sha }}
+          name: Stock Ferretería ${{ steps.ver.outputs.v }}
           files: |
             dist/Stock-Ferreteria-Instalador-*.exe
             dist/Stock-Ferreteria-Portable-*.exe
@@ -56,3 +61,5 @@ jobs:
             - `Stock-Ferreteria-Portable-…exe`: se ejecuta sin instalar (sirve para llevar en un pendrive).
 
             Windows puede mostrar "Windows protegió su PC" porque el programa no está firmado: tocá **Más información → Ejecutar de todas formas**.
+
+            Al instalar una versión nueva encima de la anterior, los datos se conservan.

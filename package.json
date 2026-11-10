@@ -1,7 +1,7 @@
 {
   "name": "stock-ferreteria",
   "productName": "Stock Ferretería",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Control de stock y caja para ferretería",
   "author": "AleGPDEV",
   "license": "UNLICENSED",
@@ -9,6 +9,7 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
+    "test": "node --test tests/logica.test.js",
     "dist": "electron-builder --win nsis portable --x64",
     "dist:dir": "electron-builder --win dir --x64"
   },

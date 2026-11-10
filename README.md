@@ -4,12 +4,18 @@ Programa para controlar el stock de una ferretería y cobrar en el mostrador. Se
 
 ## Qué hace
 
-- **Caja**: buscás el producto por nombre o código (sirve un lector de código de barras USB), armás el ticket, elegís el medio de pago (efectivo, débito, crédito o transferencia) y calcula el vuelto. Al **cobrar**, el stock se descuenta solo. Las ventas del día se pueden **anular** y el stock vuelve.
+- **Vender**: buscás el producto por nombre o código (sirve un lector de código de barras USB), armás el ticket, elegís cómo paga (efectivo, débito, crédito o transferencia) y calcula el vuelto. Al **cobrar**, el stock se descuenta solo. Permite hacer un **descuento** en porcentaje, **imprimir el ticket** y el **cierre de caja**, ver las ventas de cualquier día y **anular** una venta (el stock vuelve).
 - **Productos**: código, nombre, categoría, unidad (unidad, kg, m, litro, caja…), proveedor, ubicación en el local, costo, precio de venta y stock mínimo. Avisa cuando un producto está bajo el mínimo o sin stock.
-- **Movimientos**: entradas (compras a proveedores, actualiza el costo), salidas que no pasan por la caja (roturas, uso interno) y ajustes por conteo físico. Todo queda en el historial con el stock antes y después.
+  - **Importar desde Excel**: carga cientos de productos de una vez desde una planilla `.xlsx` o `.csv`. Trae una planilla modelo. Si el código ya existe, actualiza el producto en lugar de duplicarlo.
+  - **Actualizar precios**: sube o baja un porcentaje a todos los productos, a una categoría o a un proveedor, con redondeo.
+- **Cargar mercadería**: llegada de mercadería (actualiza el costo), salidas que no son ventas (roturas, uso interno) y corrección después de contar. Todo queda en el historial con el stock antes y después.
 - **Proveedores**: datos de contacto, RUT y cuántos productos de cada uno hay que reponer.
 - **Reportes** (descargables a Excel): ventas del período con total por medio de pago y más vendidos, lista de reposición con cantidad sugerida a pedir, valor del inventario por categoría e inventario completo.
+- **Datos del negocio**: nombre, dirección, teléfono y RUT que salen en el ticket.
 - **Copia de seguridad**: descarga y restauración de todos los datos en un archivo `.json`.
+- **Tamaño de letra** ajustable, pensado para que lo usen personas mayores.
+
+El ticket impreso es un comprobante interno: no reemplaza a la factura ni al e-ticket de DGI.
 
 ## Instalar en Windows
 
@@ -45,20 +51,23 @@ Requiere [Node.js](https://nodejs.org) 20 o más nuevo.
 ```bash
 npm install        # instala Electron y electron-builder
 npm start          # abre el programa en modo desarrollo
+npm test           # corre las pruebas automáticas
 npm run dist       # genera el instalador y la versión portable en dist/ (en Windows)
 ```
 
 ### Publicar una versión nueva
 
-El workflow `.github/workflows/build-windows.yml` compila el instalador en GitHub Actions:
+El workflow `.github/workflows/build-windows.yml` corre en cada push a `main`: ejecuta las pruebas, compila el instalador y lo publica en **Releases** con el tag `vX.Y.Z` que toma de `"version"` en `package.json`.
 
-- Cada push a `main` deja el `.exe` para descargar en la pestaña **Actions** (sección *Artifacts* de la ejecución).
-- Para publicar una versión en **Releases**, creá un tag:
+Para sacar una versión nueva, subí ese número (por ejemplo de `1.1.0` a `1.2.0`) y hacé push. Si no lo cambiás, se actualizan los archivos de la versión que ya está publicada.
 
-  ```bash
-  git tag v1.0.1
-  git push origin v1.0.1
-  ```
+### Pruebas
+
+```bash
+npm test
+```
+
+Prueban la lógica de stock, cobro, descuentos, anulación, actualización de precios e importación (`tests/logica.test.js`).
 
 ### Estructura
 
@@ -70,11 +79,13 @@ vendor/xlsx.full.min.js   SheetJS para exportar a Excel sin conexión
 electron/main.js          Ventana de escritorio, guardado en archivo y respaldo diario
 electron/preload.js       Puente entre la página y el disco
 build/icon.*              Ícono del programa
+tests/logica.test.js      Pruebas automáticas
 ```
 
 ## Ideas para más adelante
 
 - Varias cajas o PCs compartiendo los mismos datos (requiere una base de datos en un servidor).
-- Impresión de ticket en impresora térmica y etiquetas con código de barras.
+- Etiquetas con código de barras para los estantes.
+- Ventas a crédito (fiado) con cuenta corriente por cliente.
 - Usuarios con contraseña y permisos.
 - Facturación electrónica (CFE de DGI) a través de un proveedor habilitado.
