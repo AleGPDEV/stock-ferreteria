@@ -191,7 +191,15 @@
         </div>
         <p class="ayuda" id="mov-explica"></p>
         <div class="campos">
-          <label class="f f-wide" for="mov-prod">Producto<select id="mov-prod" required></select></label>
+          <div class="f f-wide combo">
+            <label for="mov-prod-buscar">Producto</label>
+            <div class="combo-caja">
+              <input id="mov-prod-buscar" type="text" role="combobox" aria-expanded="false" aria-controls="mov-prod-lista" aria-autocomplete="list" autocomplete="off" placeholder="Escribí el nombre o el código, o pasá el lector">
+              <button type="button" class="combo-limpiar" id="mov-prod-limpiar" aria-label="Borrar el producto elegido" hidden>×</button>
+            </div>
+            <ul id="mov-prod-lista" class="combo-lista" role="listbox" aria-label="Productos" hidden></ul>
+            <input type="hidden" id="mov-prod">
+          </div>
           <label class="f" for="mov-cant"><span id="mov-cant-label">Cantidad</span><input id="mov-cant" type="number" step="any" min="0" inputmode="decimal" required><small id="mov-hint" class="muted"></small></label>
           <label class="f solo-entrada" for="mov-costo">Costo unitario<input id="mov-costo" type="number" step="any" min="0" inputmode="decimal"></label>
           <label class="f solo-entrada" for="mov-prov">Proveedor<select id="mov-prov"></select></label>

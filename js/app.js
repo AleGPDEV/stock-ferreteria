@@ -1158,10 +1158,10 @@ function actualizarFormMov() {
 }
 
 function renderMovimientos() {
-  const sel = $('#mov-prod');
-  const actual = sel.value;
-  sel.innerHTML = '<option value="">Elegí un producto</option>' + [...db.productos].sort((a, b) => a.nombre.localeCompare(b.nombre))
-    .map((p) => `<option value="${p.id}"${p.id === actual ? ' selected' : ''}>${esc(p.nombre)} — ${esc(p.codigo)}</option>`).join('');
+  const elegido = producto($('#mov-prod').value);
+  if (!elegido) $('#mov-prod').value = '';
+  if (document.activeElement !== $('#mov-prod-buscar')) $('#mov-prod-buscar').value = elegido ? textoCombo(elegido) : '';
+  $('#mov-prod-limpiar').hidden = !$('#mov-prod-buscar').value;
   const provSel = $('#mov-prov');
   const provAct = provSel.value;
   provSel.innerHTML = opcionesProv(provAct);
@@ -1197,7 +1197,105 @@ function movimientosFiltrados() {
   }).sort((a, b) => b.fecha.localeCompare(a.fecha));
 }
 
+/* Buscador de producto con lista que se filtra mientras se escribe */
+let comboOps = [];
+let comboActivo = -1;
+const textoCombo = (p) => `${p.nombre} — ${p.codigo}`;
+
+function abrirCombo(abrir) {
+  $('#mov-prod-lista').hidden = !abrir;
+  $('#mov-prod-buscar').setAttribute('aria-expanded', String(abrir));
+}
+
+function marcarCombo(i) {
+  comboActivo = i;
+  $$('#mov-prod-lista .combo-op').forEach((li, k) => li.setAttribute('aria-selected', String(k === i)));
+  const li = $(`#combo-op-${i}`);
+  if (li) { if (!li.matches(':hover')) li.scrollIntoView({ block: 'nearest' }); $('#mov-prod-buscar').setAttribute('aria-activedescendant', li.id); }
+  else $('#mov-prod-buscar').removeAttribute('aria-activedescendant');
+}
+
+function filtrarCombo() {
+  const texto = $('#mov-prod-buscar').value.trim();
+  const elegido = producto($('#mov-prod').value);
+  const q = elegido && texto === textoCombo(elegido) ? '' : normal(texto);
+  const provs = new Map(db.proveedores.map((v) => [v.id, v.nombre]));
+  const todos = db.productos
+    .filter((p) => !q || normal(`${p.codigo} ${p.nombre} ${p.categoria} ${provs.get(p.proveedorId) || ''} ${p.ubicacion}`).includes(q))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+  comboOps = todos.slice(0, 60);
+  $('#mov-prod-lista').innerHTML = comboOps.length
+    ? comboOps.map((p, i) => `<li class="combo-op" role="option" id="combo-op-${i}" data-id="${p.id}" aria-selected="false">
+        <span>${esc(p.nombre)}</span><small><span class="mono">${esc(p.codigo)}</span> · stock ${n(p.stock)} ${esc(p.unidad)}</small></li>`).join('')
+      + (todos.length > comboOps.length ? `<li class="combo-vacio">Hay ${todos.length - comboOps.length} más. Escribí más letras para encontrarlo.</li>` : '')
+    : `<li class="combo-vacio">${db.productos.length ? `No hay ningún producto con «${esc(texto)}».` : 'Todavía no hay productos cargados.'}</li>`;
+  abrirCombo(true);
+  marcarCombo(q && comboOps.length ? 0 : -1);
+}
+
+function elegirCombo(id) {
+  const p = producto(id);
+  if (!p) return;
+  $('#mov-prod').value = p.id;
+  $('#mov-prod-buscar').value = textoCombo(p);
+  $('#mov-prod-limpiar').hidden = false;
+  abrirCombo(false);
+  $('#mov-prod').dispatchEvent(new Event('change'));
+  $('#mov-err').textContent = '';
+  $('#mov-cant').focus();
+}
+
+function limpiarCombo() {
+  $('#mov-prod').value = '';
+  $('#mov-prod-buscar').value = '';
+  $('#mov-prod-limpiar').hidden = true;
+  $('#mov-prod').dispatchEvent(new Event('change'));
+}
+
+function iniciarCombo() {
+  const caja = $('#mov-prod-buscar');
+  caja.addEventListener('focus', () => { caja.select(); filtrarCombo(); });
+  caja.addEventListener('input', () => {
+    if ($('#mov-prod').value) { $('#mov-prod').value = ''; $('#mov-prod').dispatchEvent(new Event('change')); }
+    $('#mov-prod-limpiar').hidden = !caja.value;
+    filtrarCombo();
+  });
+  caja.addEventListener('keydown', (e) => {
+    const abierta = !$('#mov-prod-lista').hidden;
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (!abierta) filtrarCombo(); marcarCombo(Math.min(comboActivo + 1, comboOps.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); marcarCombo(Math.max(comboActivo - 1, 0)); }
+    else if (e.key === 'Escape') { abrirCombo(false); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      const texto = caja.value.trim();
+      const exacto = db.productos.find((p) => normal(p.codigo) === normal(texto));
+      if (exacto) elegirCombo(exacto.id);
+      else if (comboActivo >= 0 && comboOps[comboActivo]) elegirCombo(comboOps[comboActivo].id);
+      else if (comboOps.length === 1) elegirCombo(comboOps[0].id);
+    }
+  });
+  caja.addEventListener('blur', () => setTimeout(() => {
+    abrirCombo(false);
+    const p = producto($('#mov-prod').value);
+    if (p) caja.value = textoCombo(p);
+  }, 150));
+  // mousedown para que el clic no le saque el foco a la caja antes de elegir
+  $('#mov-prod-lista').addEventListener('mousedown', (e) => {
+    const li = e.target.closest('[data-id]');
+    e.preventDefault();
+    if (li) elegirCombo(li.dataset.id);
+  });
+  $('#mov-prod-lista').addEventListener('mousemove', (e) => {
+    const li = e.target.closest('.combo-op');
+    if (!li) return;
+    const i = Number(li.id.replace('combo-op-', ''));
+    if (i !== comboActivo) marcarCombo(i);
+  });
+  $('#mov-prod-limpiar').addEventListener('click', () => { limpiarCombo(); caja.focus(); });
+}
+
 function iniciarMovimientos() {
+  iniciarCombo();
   $('#mov-desde').value = isoLocal(new Date(Date.now() - 30 * DIA));
   $('#mov-hasta').value = isoLocal();
   ['#mov-desde', '#mov-hasta', '#mov-tipo', '#mov-buscar'].forEach((s) => $(s).addEventListener('input', renderMovimientos));
