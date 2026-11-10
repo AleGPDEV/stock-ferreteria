@@ -504,27 +504,79 @@ function agregarAlTicket(id, cant = 1) {
 
 function renderCaja() {
   $('#ticket-num').textContent = `N.º ${String((db.numVenta || 0) + 1).padStart(4, '0')}`;
+  renderFiltrosCaja();
   renderResultados();
   renderTicket();
   renderVentasHoy();
 }
 
+/* Filtros de la lista de productos al vender */
+const SIN_CATEGORIA = 'Sin categoría';
+const PASO_LISTA = 24;
+let cajaCat = '';
+let cajaLimite = PASO_LISTA;
+
+function renderFiltrosCaja() {
+  const cuenta = {};
+  db.productos.forEach((p) => { const c = p.categoria || SIN_CATEGORIA; cuenta[c] = (cuenta[c] || 0) + 1; });
+  const cats = Object.keys(cuenta).sort((a, b) => (a === SIN_CATEGORIA) - (b === SIN_CATEGORIA) || a.localeCompare(b));
+  if (cajaCat && !cuenta[cajaCat]) cajaCat = '';
+  const chip = (valor, texto, cant) => `<button type="button" class="chip-f" data-cat="${esc(valor)}" aria-pressed="${cajaCat === valor}">${esc(texto)} <span>${cant}</span></button>`;
+  $('#caja-cats').innerHTML = cats.length > 1 ? chip('', 'Todas', db.productos.length) + cats.map((c) => chip(c, c, cuenta[c])).join('') : '';
+  const sel = $('#caja-prov');
+  const actual = sel.value;
+  sel.innerHTML = opcionesProv(actual, 'Todos los proveedores');
+  if (actual && !proveedor(actual)) sel.value = '';
+}
+
+function hayFiltrosCaja() { return !!(cajaCat || $('#caja-prov').value || $('#caja-constock').checked); }
+
+function quitarFiltrosCaja() {
+  cajaCat = '';
+  $('#caja-prov').value = '';
+  $('#caja-constock').checked = false;
+  cajaLimite = PASO_LISTA;
+  renderFiltrosCaja();
+  renderResultados();
+}
+
 function renderResultados() {
-  const q = normal($('#caja-buscar').value.trim());
-  let lista = db.productos;
-  if (q) lista = lista.filter((p) => normal(`${p.codigo} ${p.nombre} ${p.categoria}`).includes(q));
-  else lista = [...lista].sort((a, b) => a.nombre.localeCompare(b.nombre));
-  lista = lista.slice(0, 18);
+  const texto = $('#caja-buscar').value.trim();
+  const q = normal(texto);
+  const prov = $('#caja-prov').value;
+  const conStock = $('#caja-constock').checked;
+  const orden = $('#caja-orden').value;
+  const provs = new Map(db.proveedores.map((v) => [v.id, v.nombre]));
+  let lista = db.productos.filter((p) => (!cajaCat || (p.categoria || SIN_CATEGORIA) === cajaCat)
+    && (!prov || p.proveedorId === prov)
+    && (!conStock || p.stock > 0)
+    && (!q || normal(`${p.codigo} ${p.nombre} ${p.categoria} ${provs.get(p.proveedorId) || ''} ${p.ubicacion}`).includes(q)));
+
+  const porNombre = (a, b) => a.nombre.localeCompare(b.nombre);
+  if (orden === 'vendidos') {
+    const veces = {};
+    db.ventas.forEach((v) => { if (!v.anulada) v.items.forEach((it) => { veces[it.productoId] = (veces[it.productoId] || 0) + 1; }); });
+    lista.sort((a, b) => (veces[b.id] || 0) - (veces[a.id] || 0) || porNombre(a, b));
+  } else if (orden === 'precio-asc') lista.sort((a, b) => a.precio - b.precio || porNombre(a, b));
+  else if (orden === 'precio-desc') lista.sort((a, b) => b.precio - a.precio || porNombre(a, b));
+  else lista.sort(porNombre);
+
+  const total = lista.length;
+  const filtros = hayFiltrosCaja();
+  $('#caja-limpiar').hidden = !filtros;
+  $('#caja-cuenta').textContent = db.productos.length && (q || filtros) ? `${total} ${total === 1 ? 'producto' : 'productos'}` : '';
+  lista = lista.slice(0, cajaLimite);
   $('#caja-resultados').innerHTML = lista.length
     ? lista.map((p) => `
       <button class="prod-btn" type="button" data-agregar="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>
         <span class="nom">${esc(p.nombre)}</span>
         <span class="fila"><span class="mono">${esc(p.codigo)}</span><span>${p.stock <= 0 ? 'Sin stock' : `Stock ${n(p.stock)} ${esc(p.unidad)}`}</span></span>
         <span class="precio">${$u(p.precio)}</span>
-      </button>`).join('')
+      </button>`).join('') + (total > lista.length ? `<button class="btn ver-mas" type="button" data-ver-mas>Ver más productos (faltan ${total - lista.length})</button>` : '')
     : `<div class="vacio sin-resultado">
-        <p>${q ? `No encontré ningún producto con «${esc($('#caja-buscar').value.trim())}».` : 'Todavía no hay productos cargados.'}</p>
-        <button class="btn primary" type="button" data-alta>Agregar como producto nuevo</button>
+        <p>${q ? `No encontré ningún producto con «${esc(texto)}»${filtros ? ' con esos filtros' : ''}.` : (filtros ? 'No hay productos con esos filtros.' : 'Todavía no hay productos cargados.')}</p>
+        ${filtros ? '<button class="btn" type="button" data-quitar-filtros>Quitar filtros</button>' : ''}
+        ${q || !filtros ? '<button class="btn primary" type="button" data-alta>Agregar como producto nuevo</button>' : ''}
       </div>`;
 }
 
@@ -696,7 +748,17 @@ function iniciarAltaRapida() {
 function iniciarCaja() {
   iniciarAltaRapida();
   const buscar = $('#caja-buscar');
-  buscar.addEventListener('input', renderResultados);
+  const refiltrar = () => { cajaLimite = PASO_LISTA; renderResultados(); };
+  buscar.addEventListener('input', refiltrar);
+  ['#caja-prov', '#caja-constock', '#caja-orden'].forEach((sel) => $(sel).addEventListener('input', refiltrar));
+  $('#caja-limpiar').addEventListener('click', quitarFiltrosCaja);
+  $('#caja-cats').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cat]');
+    if (!b) return;
+    cajaCat = b.dataset.cat;
+    $$('#caja-cats [data-cat]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    refiltrar();
+  });
   buscar.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
@@ -716,6 +778,8 @@ function iniciarCaja() {
   });
   $('#caja-resultados').addEventListener('click', (e) => {
     if (e.target.closest('[data-alta]')) { abrirAltaRapida(buscar.value.trim()); return; }
+    if (e.target.closest('[data-quitar-filtros]')) { quitarFiltrosCaja(); return; }
+    if (e.target.closest('[data-ver-mas]')) { cajaLimite += PASO_LISTA; renderResultados(); return; }
     const b = e.target.closest('[data-agregar]');
     if (b) { agregarAlTicket(b.dataset.agregar); buscar.focus(); }
   });

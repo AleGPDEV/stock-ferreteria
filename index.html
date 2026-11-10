@@ -76,6 +76,22 @@
           <label class="paso" for="caja-buscar"><span class="paso-n">1</span> Buscá el producto y tocalo para agregarlo</label>
           <input id="caja-buscar" type="search" autocomplete="off" placeholder="Nombre o código del producto">
           <p class="ayuda">También podés escanear el código de barras: se agrega solo.</p>
+          <div class="filtros">
+            <div class="chips" id="caja-cats" role="group" aria-label="Filtrar por categoría"></div>
+            <div class="filtros-fila">
+              <label class="f" for="caja-prov">Proveedor<select id="caja-prov"></select></label>
+              <label class="f" for="caja-orden">Ordenar por
+                <select id="caja-orden">
+                  <option value="nombre">Nombre (A a Z)</option>
+                  <option value="vendidos">Los más vendidos primero</option>
+                  <option value="precio-asc">Precio: de menor a mayor</option>
+                  <option value="precio-desc">Precio: de mayor a menor</option>
+                </select>
+              </label>
+              <label class="check" for="caja-constock"><input type="checkbox" id="caja-constock"> Solo con stock</label>
+            </div>
+            <div class="filtros-pie"><span class="muted" id="caja-cuenta"></span><button class="btn sm ghost" type="button" id="caja-limpiar" hidden>Quitar filtros</button></div>
+          </div>
           <div id="caja-resultados" class="resultados"></div>
         </div>
         <aside class="card ticket" aria-label="Ticket">
