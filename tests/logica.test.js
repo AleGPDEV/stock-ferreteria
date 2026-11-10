@@ -294,3 +294,40 @@ test('la clave pública del programa corresponde a la privada del generador', as
   const codigo = await firmar(privada, { v: 1, i: 'ABCD-EFGH', h: app.PERMANENTE, m: 31, f: '2026-11-10' });
   assert.equal((await app.verificarCodigo(codigo, 'ABCD-EFGH', '2026-11-10')).ok, true);
 });
+
+// ---------- Caja ----------
+test('abrir, vender, retirar y cerrar la caja con arqueo', () => {
+  const d = base();
+  d.cajas = [];
+  assert.equal(app.cajaAbierta(d), null);
+  assert.match(app.cerrarCaja(d, 100).error, /ya está cerrada/);
+  const { caja } = app.abrirCaja(d, 2000, 'Marta');
+  assert.equal(caja.numero, 1);
+  assert.match(app.abrirCaja(d, 100).error, /ya está abierta/);
+  // ventas: 2 en efectivo (una anulada), 1 con débito
+  const v1 = app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 620 }], 'Efectivo', 1000).venta;
+  const v2 = app.cobrar(d, [{ productoId: 'b', cantidad: 10, precio: 48 }], 'Efectivo', '').venta;
+  app.cobrar(d, [{ productoId: 'a', cantidad: 2, precio: 620 }], 'Débito', '');
+  assert.equal(v1.cajaId, caja.id);
+  app.anularVenta(d, v2.id);
+  assert.equal(app.movimientoCaja(d, 'retiro', 500, 'Pago a proveedor', 'Marta'), null);
+  assert.equal(app.movimientoCaja(d, 'ingreso', 200, 'Más cambio', 'Marta'), null);
+  assert.match(app.movimientoCaja(d, 'retiro', 0, 'x'), /monto/);
+  assert.match(app.movimientoCaja(d, 'retiro', 10, ''), /motivo/);
+  const r = app.resumenCaja(d, caja);
+  assert.equal(r.ventasEfectivo, 620);
+  assert.equal(r.porMedio['Débito'], 1240);
+  assert.equal(r.ventas, 2);
+  assert.equal(r.anuladas, 1);
+  assert.equal(r.esperado, 2000 + 620 + 200 - 500);
+  // cierre con faltante de 20
+  assert.match(app.cerrarCaja(d, '').error, /Contá/);
+  const cierre = app.cerrarCaja(d, 2300, 'Jorge', 'Faltó un vuelto').caja;
+  assert.equal(cierre.diferencia, -20);
+  assert.equal(cierre.cerradaPor, 'Jorge');
+  assert.equal(app.cajaAbierta(d), null);
+  // la venta siguiente ya no pertenece a esa caja
+  assert.equal(app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 620 }], 'Efectivo', '').venta.cajaId, '');
+  // otra caja: el número sigue
+  assert.equal(app.abrirCaja(d, 0).caja.numero, 2);
+});

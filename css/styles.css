@@ -419,6 +419,26 @@ textarea { width: 100%; resize: vertical; }
 .venta-alerta ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .venta-alerta li { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 15px; }
 
+/* Apertura y cierre de caja */
+.caja-abierta { display: flex; flex-direction: column; gap: 16px; }
+.caja-cerrada { align-items: center; text-align: center; padding: 32px 20px; gap: 10px; max-width: 560px; margin-inline: auto; width: 100%; }
+.caja-cerrada .sub { max-width: 44ch; }
+.caja-ico { width: 64px; height: 64px; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.abrir-caja { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 360px; margin-top: 8px; text-align: left; }
+.abrir-caja input { font-size: 22px; padding: 12px; text-align: right; font-family: var(--f-mono); }
+.caja-barra {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow);
+}
+.caja-barra-texto { color: var(--muted); font-size: 14.5px; flex: 1 1 260px; }
+.caja-barra-acc { display: flex; gap: 8px; flex-wrap: wrap; }
+.cc-resumen li span:last-child, .cc-resumen li strong { font-family: var(--f-mono); }
+.cc-resumen .cc-total { font-size: 17px; border-top: 2px solid var(--fg); }
+.cc-contado { font-size: 24px !important; padding: 12px !important; text-align: right; font-family: var(--f-mono); }
+.cc-diferencia { min-height: 1.6em; text-align: right; font-size: 16px; }
+.cc-diferencia .chip { font-size: 16px; padding: 4px 12px; }
+.cr-detalle { width: 100%; text-align: left; }
+
 /* Permisos: lo marcado como solo-admin no se muestra al empleado */
 .rol-empleado .solo-admin { display: none !important; }
 

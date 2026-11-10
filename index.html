@@ -93,6 +93,29 @@
       <header class="vh">
         <div><h1>Vender</h1><p class="sub">Al cobrar, los productos se descuentan solos del stock.</p></div>
       </header>
+
+      <div id="caja-cerrada" class="card caja-cerrada" hidden>
+        <svg class="caja-ico" viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="18" width="36" height="22" rx="3"/><path d="M12 18v-6h24v6M6 28h36M22 33h4"/></svg>
+        <h2>La caja está cerrada</h2>
+        <p class="sub">Para empezar a vender, abrí la caja. Contá el efectivo que hay para dar cambio y escribilo.</p>
+        <form id="form-abrir-caja" class="abrir-caja" novalidate>
+          <label class="f" for="ac-monto">¿Con cuánto efectivo empezás?<input id="ac-monto" type="number" min="0" step="any" inputmode="decimal" placeholder="Ej.: 2000"></label>
+          <p class="err" id="ac-err" role="alert"></p>
+          <button class="btn verde btn-grande" type="submit">Abrir caja</button>
+        </form>
+        <p class="muted" id="caja-ultimo-cierre"></p>
+      </div>
+
+      <div id="caja-barra" class="caja-barra" hidden>
+        <span id="caja-barra-estado" class="chip ok">Caja abierta</span>
+        <span id="caja-barra-texto" class="caja-barra-texto"></span>
+        <div class="caja-barra-acc">
+          <button class="btn sm" type="button" id="btn-caja-mov">Retiro o ingreso de efectivo</button>
+          <button class="btn sm primary" type="button" id="btn-cerrar-caja">Cerrar caja</button>
+        </div>
+      </div>
+
+      <div id="caja-abierta" class="caja-abierta" hidden>
       <div class="caja">
         <div class="caja-izq">
           <label class="paso" for="caja-buscar"><span class="paso-n">1</span> Buscá el producto y tocalo para agregarlo</label>
@@ -149,12 +172,14 @@
         </aside>
       </div>
 
+      </div>
+
       <article class="card ventas-hoy">
         <header class="card-h">
           <div><h2>Ventas del día</h2><p class="sub solo-admin" id="ventas-hoy-resumen"></p></div>
           <div class="acciones">
             <label class="f-inline solo-admin" for="ventas-fecha">Día <input type="date" id="ventas-fecha"></label>
-            <button class="btn sm solo-admin mod-impresion" type="button" id="btn-cierre" data-imprime>Imprimir cierre de caja</button>
+            <button class="btn sm solo-admin mod-impresion" type="button" id="btn-cierre" data-imprime>Imprimir resumen del día</button>
           </div>
         </header>
         <div id="ventas-hoy"></div>
@@ -298,6 +323,17 @@
             <div><h2>Inventario completo</h2><p class="sub">Todos los productos con stock, costos, precios y ubicación.</p></div>
             <button class="btn sm" type="button" data-export="inventario">Exportar Excel</button>
           </header>
+        </article>
+
+        <article class="card mod-caja" id="card-cajas">
+          <header class="card-h">
+            <div><h2>Cierres de caja</h2><p class="sub">Cada apertura y cierre, con lo que debería haber, lo que se contó y la diferencia.</p></div>
+            <button class="btn sm" type="button" data-export="cajas">Exportar Excel</button>
+          </header>
+          <div class="table-wrap"><table class="tabla">
+            <thead><tr><th>N.º</th><th>Abierta</th><th>Cerrada</th><th class="num">Ventas</th><th class="num">Total</th><th class="num">Debería haber</th><th class="num">Se contó</th><th>Resultado</th><th class="num"></th></tr></thead>
+            <tbody id="tabla-cajas"></tbody>
+          </table></div>
         </article>
 
         <article class="card mod-usuarios" id="card-usuarios">
@@ -506,6 +542,48 @@
       <button class="btn primary" type="submit">Guardar</button>
     </footer>
   </form>
+</dialog>
+
+<!-- Retiro o ingreso de efectivo -->
+<dialog id="dlg-caja-mov" class="dlg-chico" aria-labelledby="cm-titulo">
+  <form id="form-caja-mov" novalidate>
+    <header class="dlg-h"><h2 id="cm-titulo">Retiro o ingreso de efectivo</h2><p class="sub">Para anotar efectivo que sale de la caja (pago a un proveedor, llevar al banco) o que entra (más cambio). No son ventas.</p></header>
+    <div class="dlg-b campos-col">
+      <div class="seg seg-wrap" role="radiogroup" aria-label="Tipo">
+        <label><input type="radio" name="cm-tipo" value="retiro" checked><span>Sale efectivo</span></label>
+        <label><input type="radio" name="cm-tipo" value="ingreso"><span>Entra efectivo</span></label>
+      </div>
+      <label class="f" for="cm-monto">Monto<input id="cm-monto" type="number" min="0" step="any" inputmode="decimal"></label>
+      <label class="f" for="cm-motivo">Motivo<input id="cm-motivo" type="text" placeholder="Ej.: Pago a Distribuidora Sur, factura 1234"></label>
+    </div>
+    <p class="err dlg-err" id="cm-err" role="alert"></p>
+    <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" data-cerrar>Cancelar</button><button class="btn primary" type="submit">Anotar</button></footer>
+  </form>
+</dialog>
+
+<!-- Cerrar caja -->
+<dialog id="dlg-cerrar-caja" aria-labelledby="cc-titulo">
+  <form id="form-cerrar-caja" novalidate>
+    <header class="dlg-h"><h2 id="cc-titulo">Cerrar caja</h2><p class="sub">Contá todo el efectivo que hay en la caja, billetes y monedas, y escribí el total.</p></header>
+    <div class="dlg-b campos-col">
+      <ul class="lista cc-resumen solo-admin" id="cc-resumen"></ul>
+      <label class="f" for="cc-contado">¿Cuánto efectivo hay en la caja?<input id="cc-contado" type="number" min="0" step="any" inputmode="decimal" class="cc-contado"></label>
+      <div class="cc-diferencia solo-admin" id="cc-diferencia"></div>
+      <label class="f" for="cc-nota">Nota (opcional)<input id="cc-nota" type="text" placeholder="Ej.: faltan $ 100 de un vuelto mal dado"></label>
+    </div>
+    <p class="err dlg-err" id="cc-err" role="alert"></p>
+    <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" data-cerrar>Seguir vendiendo</button><button class="btn primary" type="submit">Cerrar caja</button></footer>
+  </form>
+</dialog>
+
+<!-- Caja cerrada -->
+<dialog id="dlg-caja-resultado" class="dlg-chico" aria-labelledby="cr-titulo">
+  <div class="dlg-b venta-ok">
+    <svg class="venta-check" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="22"/><path d="M14 24.5l7 7 13-14"/></svg>
+    <h2 id="cr-titulo">Caja cerrada</h2>
+    <div id="cr-detalle" class="cr-detalle"></div>
+  </div>
+  <footer class="dlg-f"><button type="button" class="btn btn-grande solo-admin mod-impresion" id="cr-imprimir" data-imprime>Imprimir cierre</button><button type="button" class="btn primary btn-grande" id="cr-listo">Listo</button></footer>
 </dialog>
 
 <!-- Venta cobrada -->

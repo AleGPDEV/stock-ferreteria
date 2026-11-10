@@ -273,7 +273,7 @@ function eliminarUsuario(d, id, idActual) {
 /* ---------- Datos ---------- */
 
 function baseVacia() {
-  return { productos: [], proveedores: [], movimientos: [], ventas: [], numVenta: 0, ejemplo: false, negocio: { nombre: '', direccion: '', telefono: '', rut: '', pie: '' } };
+  return { productos: [], proveedores: [], movimientos: [], ventas: [], numVenta: 0, cajas: [], numCaja: 0, ejemplo: false, negocio: { nombre: '', direccion: '', telefono: '', rut: '', pie: '' } };
 }
 
 // En la versión de escritorio (Electron) existe window.almacen y los datos van a un archivo.
@@ -483,6 +483,7 @@ function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0) {
     vuelto: medio === 'Efectivo' && recibido !== '' && recibido != null ? red(Number(recibido) - total) : null,
     cliente: cliente || '',
     usuario: sesion ? sesion.nombre : '',
+    cajaId: (cajaAbierta(d) || {}).id || '',
     anulada: false,
   };
   for (const it of venta.items) {
@@ -505,6 +506,74 @@ function anularVenta(d, ventaId) {
   return null;
 }
 
+
+
+/* ---------- Apertura y cierre de caja ---------- */
+
+const cajaAbierta = (d) => (Array.isArray(d.cajas) ? d.cajas.find((c) => !c.cerrada) : null) || null;
+
+function abrirCaja(d, monto, usuario, fecha) {
+  if (!Array.isArray(d.cajas)) d.cajas = [];
+  if (cajaAbierta(d)) return { error: 'La caja ya está abierta.' };
+  const inicial = monto === '' || monto == null ? 0 : Number(monto);
+  if (!Number.isFinite(inicial) || inicial < 0) return { error: 'Escribí el efectivo con el que empezás (puede ser 0).' };
+  d.numCaja = (d.numCaja || 0) + 1;
+  const caja = { id: uid(), numero: d.numCaja, abierta: fecha || new Date().toISOString(), abiertaPor: usuario || '', inicial: red2(inicial), movs: [], cerrada: null };
+  d.cajas.push(caja);
+  return { caja };
+}
+
+/** Retiro (pago a un proveedor, llevar a depósito…) o ingreso (más cambio) de efectivo. */
+function movimientoCaja(d, tipo, monto, motivo, usuario, fecha) {
+  const caja = cajaAbierta(d);
+  if (!caja) return 'La caja está cerrada.';
+  if (tipo !== 'retiro' && tipo !== 'ingreso') return 'Elegí si es un retiro o un ingreso.';
+  const m = Number(monto);
+  if (!(m > 0)) return 'Escribí el monto.';
+  if (!String(motivo || '').trim()) return 'Escribí el motivo, por ejemplo «Pago a proveedor».';
+  caja.movs.push({ id: uid(), fecha: fecha || new Date().toISOString(), tipo, monto: red2(m), motivo: String(motivo).trim(), usuario: usuario || '' });
+  return null;
+}
+
+/** Cuánto efectivo debería haber y cuánto se vendió por cada medio de pago. */
+function resumenCaja(d, caja) {
+  const ventas = d.ventas.filter((v) => v.cajaId === caja.id);
+  const validas = ventas.filter((v) => !v.anulada);
+  const porMedio = {};
+  validas.forEach((v) => { porMedio[v.medio] = red2((porMedio[v.medio] || 0) + v.total); });
+  const ventasEfectivo = porMedio.Efectivo || 0;
+  const ingresos = red2(caja.movs.filter((m) => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0));
+  const retiros = red2(caja.movs.filter((m) => m.tipo === 'retiro').reduce((s, m) => s + m.monto, 0));
+  return {
+    inicial: caja.inicial,
+    ventas: validas.length,
+    anuladas: ventas.length - validas.length,
+    total: red2(validas.reduce((s, v) => s + v.total, 0)),
+    porMedio,
+    ventasEfectivo,
+    ingresos,
+    retiros,
+    esperado: red2(caja.inicial + ventasEfectivo + ingresos - retiros),
+  };
+}
+
+function cerrarCaja(d, contado, usuario, nota, fecha) {
+  const caja = cajaAbierta(d);
+  if (!caja) return { error: 'La caja ya está cerrada.' };
+  if (contado === '' || contado == null) return { error: 'Contá el efectivo que hay en la caja y escribí el total.' };
+  const c = Number(contado);
+  if (!Number.isFinite(c) || c < 0) return { error: 'Escribí cuánto efectivo hay en la caja.' };
+  const resumen = resumenCaja(d, caja);
+  Object.assign(caja, {
+    cerrada: fecha || new Date().toISOString(),
+    cerradaPor: usuario || '',
+    contado: red2(c),
+    resumen,
+    diferencia: red2(c - resumen.esperado),
+    nota: String(nota || '').trim(),
+  });
+  return { caja };
+}
 
 /* ---------- Actualizar precios por porcentaje ---------- */
 
@@ -693,6 +762,7 @@ function semilla() {
   const item = (c, q) => ({ productoId: cod(c).id, cantidad: q, precio: cod(c).precio });
   const hoy0 = new Date(); hoy0.setHours(9, 0, 0, 0);
   const hace = (min) => new Date(Math.min(Date.now() - 60000, hoy0.getTime() + min * 60000)).toISOString();
+  abrirCaja(d, 2000, 'Administrador', hace(-5));
   cobrar(d, [item('7790001000101', 2), item('ELE-CAI19', 1)], 'Efectivo', 1000, '', hace(25));
   cobrar(d, [item('SAN-PVC110', 2), item('SAN-COD110', 4)], 'Débito', '', 'Obra calle Rivera', hace(110));
   cobrar(d, [item('ELE-CAB25', 10), item('HER-MAR16', 1)], 'Transferencia', '', '', hace(190));
@@ -884,12 +954,32 @@ function agregarAlTicket(id, cant = 1) {
   renderTicket();
 }
 
+function renderEstadoCaja() {
+  const caja = cajaAbierta(db);
+  $('#caja-cerrada').hidden = !!caja;
+  $('#caja-abierta').hidden = !caja;
+  $('#caja-barra').hidden = !caja;
+  if (!caja) {
+    const ultima = [...(db.cajas || [])].reverse().find((c) => c.cerrada);
+    $('#caja-ultimo-cierre').textContent = ultima ? `Último cierre: ${fechaHora(ultima.cerrada)}${ultima.cerradaPor ? ` por ${ultima.cerradaPor}` : ''}.` : '';
+    return false;
+  }
+  const deOtroDia = isoLocal(new Date(caja.abierta)) !== isoLocal();
+  $('#caja-barra-texto').innerHTML = `Caja N.º ${caja.numero} abierta ${deOtroDia ? `el ${fechaHora(caja.abierta)}` : `a las ${hora(caja.abierta)}`}${caja.abiertaPor ? ` por ${esc(caja.abiertaPor)}` : ''} · empezó con ${$u(caja.inicial)}`
+    + (caja.movs.length ? ` · ${plural(caja.movs.length, 'movimiento de efectivo', 'movimientos de efectivo')}` : '');
+  $('#caja-barra-estado').className = 'chip ' + (deOtroDia ? 'warn' : 'ok');
+  $('#caja-barra-estado').textContent = deOtroDia ? 'Abierta desde otro día: cerrala' : 'Caja abierta';
+  return true;
+}
+
 function renderCaja() {
+  const abierta = renderEstadoCaja();
+  renderVentasHoy();
+  if (!abierta) return;
   $('#ticket-num').textContent = `N.º ${String((db.numVenta || 0) + 1).padStart(4, '0')}`;
   renderFiltrosCaja();
   renderResultados();
   renderTicket();
-  renderVentasHoy();
 }
 
 /* Filtros de la lista de productos al vender */
@@ -1202,7 +1292,7 @@ function iniciarCaja() {
   });
   // Si el lector de códigos escribe sin que el cursor esté en el buscador, se lleva el cursor ahí
   document.addEventListener('keydown', (e) => {
-    if (!sesion || vistaActual() !== 'caja' || e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1 || e.key === ' ') return;
+    if (!sesion || vistaActual() !== 'caja' || !cajaAbierta(db) || e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1 || e.key === ' ') return;
     if (document.querySelector('dialog[open]')) return;
     const a = document.activeElement;
     if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'radio') return;
@@ -1212,6 +1302,7 @@ function iniciarCaja() {
   $('#caja-recibido').addEventListener('input', actualizarVuelto);
 
   $('#btn-cobrar').addEventListener('click', () => {
+    if (!cajaAbierta(db)) { $('#caja-err').textContent = 'Abrí la caja antes de cobrar.'; render(); return; }
     const r = cobrar(db, ticket, medioActual(), $('#caja-recibido').value, $('#caja-cliente').value.trim(), undefined, Number($('#caja-desc').value) || 0);
     if (r.error) { $('#caja-err').textContent = r.error; return; }
     guardar();
@@ -1671,6 +1762,7 @@ function ventasPeriodo() {
 
 function renderReportes() {
   renderUsuarios();
+  renderCierresCaja();
   renderRespaldoExtra();
   if (!$('#form-negocio').contains(document.activeElement)) {
     ['nombre', 'direccion', 'telefono', 'rut', 'pie'].forEach((k) => { $('#n-' + k).value = (db.negocio || {})[k] || ''; });
@@ -1809,6 +1901,16 @@ function exportar(tipo) {
       'Fecha': f(m.fecha), 'Tipo': etiquetaTipo(m), 'Código': m.codigo, 'Producto': m.producto, 'Cantidad': m.cantidad, 'Unidad': m.unidad,
       'Stock antes': m.stockAntes, 'Stock después': m.stockDespues, 'Costo unitario': m.costoUnit, 'Proveedor': nombreProv(m.proveedorId), 'Usuario': m.usuario || '', 'Nota': m.nota,
     })), 'Movimientos', 'movimientos');
+  } else if (tipo === 'cajas') {
+    descargarExcel((db.cajas || []).map((c) => {
+      const r = c.resumen || resumenCaja(db, c);
+      return {
+        'Caja N.º': c.numero, 'Abierta': f(c.abierta), 'Abrió': c.abiertaPor, 'Cerrada': c.cerrada ? f(c.cerrada) : 'Abierta', 'Cerró': c.cerradaPor || '',
+        'Efectivo inicial': r.inicial, 'Ventas': r.ventas, 'Total vendido': r.total, 'Ventas en efectivo': r.ventasEfectivo,
+        'Débito': r.porMedio['Débito'] || 0, 'Crédito': r.porMedio['Crédito'] || 0, 'Transferencia': r.porMedio.Transferencia || 0,
+        'Ingresos': r.ingresos, 'Retiros': r.retiros, 'Debería haber': r.esperado, 'Se contó': c.cerrada ? c.contado : '', 'Diferencia': c.cerrada ? c.diferencia : '', 'Nota': c.nota || '',
+      };
+    }), 'Cierres de caja', 'cierres_de_caja');
   } else if (tipo === 'ventas') {
     const filas = [];
     ventasPeriodo().forEach((v) => v.items.forEach((it) => filas.push({
@@ -2418,7 +2520,146 @@ function iniciarDesarrollador() {
   $('#banner-licencia-ir').addEventListener('click', () => { location.hash = '#desarrollador'; });
 }
 
+/* ---------- Pantallas de apertura, movimientos y cierre de caja ---------- */
+
+function htmlArqueo(caja) {
+  const r = caja.resumen || resumenCaja(db, caja);
+  const fila = (a, b2, cls = '') => `<div class="t-fila ${cls}"><span>${a}</span><span>${b2}</span></div>`;
+  const dif = caja.diferencia;
+  return `${encabezadoNegocio()}<hr>
+    <div class="t-c"><strong>CIERRE DE CAJA N.º ${caja.numero}</strong></div>
+    ${fila('Abierta', fechaHora(caja.abierta))}${caja.abiertaPor ? fila('Abrió', esc(caja.abiertaPor)) : ''}
+    ${caja.cerrada ? fila('Cerrada', fechaHora(caja.cerrada)) : ''}${caja.cerradaPor ? fila('Cerró', esc(caja.cerradaPor)) : ''}<hr>
+    ${fila('Efectivo inicial', $u(r.inicial))}
+    ${fila('+ Ventas en efectivo', $u(r.ventasEfectivo))}
+    ${r.ingresos ? fila('+ Ingresos', $u(r.ingresos)) : ''}
+    ${r.retiros ? fila('− Retiros', $u(r.retiros)) : ''}
+    ${fila('Debería haber', $u(r.esperado), 't-total')}
+    ${caja.cerrada ? fila('Se contó', $u(caja.contado)) + fila(dif === 0 ? 'Diferencia' : dif > 0 ? 'Sobrante' : 'Faltante', $u(Math.abs(dif)), 't-total') : ''}<hr>
+    ${fila('Ventas', r.ventas)}${r.anuladas ? fila('Anuladas', r.anuladas) : ''}
+    ${Object.entries(r.porMedio).map(([m, t]) => fila(esc(m), $u(t))).join('')}
+    ${fila('Total vendido', $u(r.total))}
+    ${caja.movs.length ? '<hr>' + caja.movs.map((m) => fila(`${m.tipo === 'retiro' ? 'Retiro' : 'Ingreso'}: ${esc(m.motivo)}`, (m.tipo === 'retiro' ? '−' : '+') + $u(m.monto))).join('') : ''}
+    ${caja.nota ? `<hr><div>Nota: ${esc(caja.nota)}</div>` : ''}
+    <div class="t-c t-chico">Impreso el ${fechaHora(new Date().toISOString())}</div>`;
+}
+
+function chipDiferencia(dif) {
+  if (dif == null) return '';
+  if (Math.abs(dif) < 0.005) return '<span class="chip ok">Justo</span>';
+  return dif > 0 ? `<span class="chip warn">Sobran ${$u(dif)}</span>` : `<span class="chip danger">Faltan ${$u(-dif)}</span>`;
+}
+
+function renderCierreEnVivo() {
+  const caja = cajaAbierta(db);
+  if (!caja) return;
+  const r = resumenCaja(db, caja);
+  $('#cc-resumen').innerHTML = `
+    <li><span>Efectivo inicial</span><span>${$u(r.inicial)}</span></li>
+    <li><span>+ Ventas en efectivo</span><span>${$u(r.ventasEfectivo)}</span></li>
+    ${r.ingresos ? `<li><span>+ Ingresos de efectivo</span><span>${$u(r.ingresos)}</span></li>` : ''}
+    ${r.retiros ? `<li><span>− Retiros de efectivo</span><span>${$u(r.retiros)}</span></li>` : ''}
+    <li class="cc-total"><span>Debería haber en efectivo</span><strong>${$u(r.esperado)}</strong></li>
+    ${Object.entries(r.porMedio).filter(([m]) => m !== 'Efectivo').map(([m, t]) => `<li class="muted"><span>${esc(m)} (no es efectivo)</span><span>${$u(t)}</span></li>`).join('')}
+    <li class="muted"><span>Ventas cobradas</span><span>${r.ventas}${r.anuladas ? ` · ${r.anuladas} anuladas` : ''}</span></li>`;
+  const v = $('#cc-contado').value;
+  $('#cc-diferencia').innerHTML = v === '' ? '' : chipDiferencia(red2(Number(v) - r.esperado));
+}
+
+function mostrarResultadoCierre(caja) {
+  $('#cr-titulo').textContent = `Caja N.º ${caja.numero} cerrada`;
+  $('#cr-detalle').innerHTML = esAdmin()
+    ? `<ul class="lista"><li><span>Debería haber</span><strong>${$u(caja.resumen.esperado)}</strong></li>
+       <li><span>Se contó</span><strong>${$u(caja.contado)}</strong></li>
+       <li><span>Resultado</span>${chipDiferencia(caja.diferencia)}</li></ul>`
+    : `<p>Se guardó el conteo: <strong>${$u(caja.contado)}</strong> en efectivo. El administrador revisa el cierre.</p>`;
+  cajaParaImprimir = caja;
+  $('#dlg-caja-resultado').showModal();
+}
+
+let cajaParaImprimir = null;
+
+function renderCierresCaja() {
+  const lista = [...(db.cajas || [])].reverse().slice(0, 60);
+  $('#tabla-cajas').innerHTML = lista.length ? lista.map((c) => {
+    const r = c.resumen || resumenCaja(db, c);
+    return `<tr>
+      <td class="mono">${String(c.numero).padStart(3, '0')}</td>
+      <td>${fechaHora(c.abierta)}<div class="meta">${esc(c.abiertaPor || '')}</div></td>
+      <td>${c.cerrada ? `${fechaHora(c.cerrada)}<div class="meta">${esc(c.cerradaPor || '')}</div>` : '<span class="chip ok">Abierta</span>'}</td>
+      <td class="num">${r.ventas}</td>
+      <td class="num">${$u(r.total)}</td>
+      <td class="num">${$u(r.esperado)}</td>
+      <td class="num">${c.cerrada ? $u(c.contado) : '—'}</td>
+      <td>${c.cerrada ? chipDiferencia(c.diferencia) : ''}</td>
+      <td class="acc">${puedeImprimir() ? `<button class="btn sm" type="button" data-imprimir-caja="${c.id}">Imprimir</button>` : ''}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="9" class="vacio">Todavía no se abrió ninguna caja.</td></tr>';
+}
+
+function iniciarAperturaCaja() {
+  $('#form-abrir-caja').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const r = abrirCaja(db, $('#ac-monto').value, sesion ? sesion.nombre : '');
+    if (r.error) { $('#ac-err').textContent = r.error; return; }
+    $('#ac-err').textContent = '';
+    $('#ac-monto').value = '';
+    guardar();
+    render();
+    toast(`Caja abierta con ${$u(r.caja.inicial)}. Ya se puede vender.`);
+    $('#caja-buscar').focus();
+  });
+
+  // Retiro o ingreso de efectivo
+  $('#btn-caja-mov').addEventListener('click', () => {
+    $('#cm-monto').value = '';
+    $('#cm-motivo').value = '';
+    $('#cm-err').textContent = '';
+    $('#dlg-caja-mov').showModal();
+    $('#cm-monto').focus();
+  });
+  $('#form-caja-mov').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const tipo = ($('input[name="cm-tipo"]:checked') || {}).value;
+    const err = movimientoCaja(db, tipo, $('#cm-monto').value, $('#cm-motivo').value, sesion ? sesion.nombre : '');
+    if (err) { $('#cm-err').textContent = err; return; }
+    guardar();
+    $('#dlg-caja-mov').close();
+    render();
+    toast(`${tipo === 'retiro' ? 'Retiro' : 'Ingreso'} de ${$u(Number($('#cm-monto').value))} anotado.`);
+  });
+
+  // Cierre
+  $('#btn-cerrar-caja').addEventListener('click', () => {
+    if (ticket.length) { toast('Hay productos en el ticket. Cobrá o borrá la venta antes de cerrar la caja.'); return; }
+    $('#cc-contado').value = '';
+    $('#cc-nota').value = '';
+    $('#cc-err').textContent = '';
+    renderCierreEnVivo();
+    $('#dlg-cerrar-caja').showModal();
+    $('#cc-contado').focus();
+  });
+  $('#cc-contado').addEventListener('input', renderCierreEnVivo);
+  $('#form-cerrar-caja').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const r = cerrarCaja(db, $('#cc-contado').value, sesion ? sesion.nombre : '', $('#cc-nota').value);
+    if (r.error) { $('#cc-err').textContent = r.error; return; }
+    guardar();
+    $('#dlg-cerrar-caja').close();
+    render();
+    mostrarResultadoCierre(r.caja);
+  });
+  $('#cr-imprimir').addEventListener('click', () => { if (cajaParaImprimir) imprimir(htmlArqueo(cajaParaImprimir)); });
+  $('#cr-listo').addEventListener('click', () => $('#dlg-caja-resultado').close());
+  $('#tabla-cajas').addEventListener('click', (e) => {
+    const bt = e.target.closest('[data-imprimir-caja]');
+    const c = bt && (db.cajas || []).find((x) => x.id === bt.dataset.imprimirCaja);
+    if (c) imprimir(htmlArqueo(c));
+  });
+}
+
 function iniciar() {
+  iniciarAperturaCaja();
   $('#banner-stock-ver').addEventListener('click', verParaReponer);
   $('#banner-stock-ocultar').addEventListener('click', () => {
     const { sin, bajo } = paraReponer();
@@ -2456,7 +2697,7 @@ function iniciar() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, verificarCodigo, idDesdeHex, fotoDe, calcularCambios, normalizarId, sumarMeses, estadoLicencia, aB64url, deB64url, MODULOS, PERMANENTE };
+  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, verificarCodigo, idDesdeHex, fotoDe, calcularCambios, normalizarId, sumarMeses, estadoLicencia, aB64url, deB64url, MODULOS, PERMANENTE };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }
