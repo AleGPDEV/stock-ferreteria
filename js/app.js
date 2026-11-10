@@ -749,6 +749,55 @@ function mostrarVista() {
   if (v === 'caja') setTimeout(() => $('#caja-buscar').focus(), 0);
 }
 
+/* ---------- Alerta de stock ---------- */
+
+let alertaOcultaFirma = '';
+
+function paraReponer() {
+  const sin = [], bajo = [];
+  db.productos.forEach((p) => { const e = estado(p); if (e === 'sin') sin.push(p); else if (e === 'bajo') bajo.push(p); });
+  return { sin, bajo };
+}
+
+const plural = (cant, uno, varios) => `${cant} ${cant === 1 ? uno : varios}`;
+
+function renderAlertaStock() {
+  const { sin, bajo } = paraReponer();
+  const total = sin.length + bajo.length;
+  const badge = $('#badge-bajo');
+  badge.hidden = !total;
+  badge.textContent = total;
+  badge.classList.toggle('danger', sin.length > 0);
+  badge.title = `${plural(total, 'producto', 'productos')} para reponer`;
+
+  const firma = sin.map((p) => p.id).join(',') + '|' + bajo.map((p) => p.id).join(',');
+  const banner = $('#banner-stock');
+  banner.hidden = !total || firma === alertaOcultaFirma || vistaActual() === 'productos' && $('#prod-estado').value === 'reponer';
+  if (banner.hidden) return;
+  banner.classList.toggle('urgente', sin.length > 0);
+  const partes = [];
+  if (sin.length) partes.push(`<strong>${plural(sin.length, 'producto sin stock', 'productos sin stock')}</strong>`);
+  if (bajo.length) partes.push(`<strong>${plural(bajo.length, 'producto bajo el mínimo', 'productos bajo el mínimo')}</strong>`);
+  const ejemplos = sin.concat(bajo).slice(0, 3).map((p) => esc(p.nombre)).join(', ');
+  $('#banner-stock-texto').innerHTML = `Hay ${partes.join(' y ')}. ${ejemplos}${total > 3 ? ' y otros' : ''}.`;
+}
+
+function verParaReponer() {
+  $('#prod-buscar').value = '';
+  $('#prod-cat').value = '';
+  $('#prod-estado').value = 'reponer';
+  if (location.hash !== '#productos') location.hash = '#productos';
+  else render();
+}
+
+/** Aviso corto para mostrar después de vender o sacar del stock. */
+function avisoStock(p) {
+  const e = estado(p);
+  if (e === 'sin') return `${p.nombre} se quedó sin stock.`;
+  if (e === 'bajo') return `${p.nombre} quedó bajo el mínimo: quedan ${n(p.stock)} ${p.unidad} (mínimo ${n(p.minimo)}).`;
+  return '';
+}
+
 function render() {
   if (!sesion) return;
   $('#banner-ejemplo').hidden = !db.ejemplo;
@@ -760,11 +809,7 @@ function render() {
     $('#banner-licencia-texto').innerHTML = `La licencia del programa vence ${cuando} (${fechaLarga(licenciaActual.h)}). Para renovarla, comunicate con ${contactoCorto()}.`;
   }
   $('#marca-nombre').textContent = (db.negocio && db.negocio.nombre) || 'Stock Ferretería';
-  const bajos = db.productos.filter((p) => estado(p) !== 'ok').length;
-  const b = $('#badge-bajo');
-  b.hidden = !bajos;
-  b.textContent = bajos;
-  b.title = `${bajos} productos para reponer`;
+  renderAlertaStock();
   // Solo se dibuja la pantalla que se está viendo
   ({ panel: renderPanel, caja: renderCaja, productos: renderProductos, movimientos: renderMovimientos, proveedores: renderProveedores, reportes: renderReportes, desarrollador: renderDesarrollador })[vistaActual()]();
 }
@@ -908,7 +953,7 @@ function renderResultados() {
     ? lista.map((p) => `
       <button class="prod-btn" type="button" data-agregar="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>
         <span class="nom">${esc(p.nombre)}</span>
-        <span class="fila"><span class="mono">${esc(p.codigo)}</span><span>${p.stock <= 0 ? 'Sin stock' : `Stock ${n(p.stock)} ${esc(p.unidad)}`}</span></span>
+        <span class="fila"><span class="mono">${esc(p.codigo)}</span><span class="${estado(p) === 'bajo' ? 'stock-bajo' : ''}">${p.stock <= 0 ? 'Sin stock' : estado(p) === 'bajo' ? `Quedan ${n(p.stock)} ${esc(p.unidad)}` : `Stock ${n(p.stock)} ${esc(p.unidad)}`}</span></span>
         <span class="precio">${$u(p.precio)}</span>
       </button>`).join('') + (total > lista.length ? `<button class="btn ver-mas" type="button" data-ver-mas>Ver más productos (faltan ${total - lista.length})</button>` : '')
     : `<div class="vacio sin-resultado">
@@ -1209,7 +1254,7 @@ function renderProductos() {
   const lista = db.productos
     .filter((p) => !q || normal(`${p.codigo} ${p.nombre} ${p.ubicacion} ${nombreProv(p.proveedorId)}`).includes(q))
     .filter((p) => !cat || p.categoria === cat)
-    .filter((p) => !est || (est === 'bajo' ? estado(p) === 'bajo' : estado(p) === est))
+    .filter((p) => !est || (est === 'reponer' ? estado(p) !== 'ok' : estado(p) === est))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   $('#prod-sub').textContent = `${db.productos.length} productos cargados${lista.length !== db.productos.length ? ` · mostrando ${lista.length}` : ''}.`;
@@ -1350,7 +1395,7 @@ function iniciarMovRapido() {
     guardar();
     $('#dlg-mov').close();
     render();
-    toast(`${movRapido.tipo === 'entrada' ? 'Entrada' : 'Salida'} registrada. Stock de ${p.nombre}: ${n(p.stock)} ${p.unidad}.`);
+    toast(avisoStock(p) || `${movRapido.tipo === 'entrada' ? 'Entrada' : 'Salida'} registrada. Stock de ${p.nombre}: ${n(p.stock)} ${p.unidad}.`);
   });
 }
 
@@ -1546,7 +1591,7 @@ function iniciarMovimientos() {
     $('#mov-nota').value = '';
     guardar();
     render();
-    toast(`Listo. Stock de ${p.nombre}: ${n(p.stock)} ${p.unidad}.`);
+    toast(avisoStock(p) ? `Listo. Atención: ${avisoStock(p)}` : `Listo. Stock de ${p.nombre}: ${n(p.stock)} ${p.unidad}.`);
   });
 }
 
@@ -1879,6 +1924,10 @@ function mostrarVentaCobrada(v) {
   $('#venta-medio').textContent = `Pagó con ${v.medio.toLowerCase()} · Venta N.º ${String(v.numero).padStart(4, '0')}`;
   $('#venta-vuelto-box').hidden = v.vuelto == null;
   $('#venta-vuelto').textContent = $u(v.vuelto);
+  const avisos = [...new Set(v.items.map((it) => it.productoId))].map(producto).filter(Boolean).map((p) => ({ p, e: estado(p) })).filter((x) => x.e !== 'ok');
+  $('#venta-alerta').hidden = !avisos.length;
+  $('#venta-alerta').innerHTML = avisos.length ? `<strong>Hay que reponer</strong><ul>${avisos.map(({ p, e }) => `<li><span>${esc(p.nombre)}</span>${e === 'sin'
+    ? '<span class="chip danger">Sin stock</span>' : `<span class="chip warn">Quedan ${n(p.stock)} · mín. ${n(p.minimo)}</span>`}</li>`).join('')}</ul>` : '';
   $('#dlg-venta').showModal();
   $('#venta-nueva').focus();
 }
@@ -2370,6 +2419,12 @@ function iniciarDesarrollador() {
 }
 
 function iniciar() {
+  $('#banner-stock-ver').addEventListener('click', verParaReponer);
+  $('#banner-stock-ocultar').addEventListener('click', () => {
+    const { sin, bajo } = paraReponer();
+    alertaOcultaFirma = sin.map((p) => p.id).join(',') + '|' + bajo.map((p) => p.id).join(',');
+    $('#banner-stock').hidden = true;
+  });
   iniciarBloqueo();
   iniciarDesarrollador();
   iniciarLogin();
