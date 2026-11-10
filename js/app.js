@@ -31,9 +31,13 @@ function baseVacia() {
   return { productos: [], proveedores: [], movimientos: [], ventas: [], numVenta: 0, ejemplo: false };
 }
 
+// En la versión de escritorio (Electron) existe window.almacen y los datos van a un archivo.
+// En el navegador se usa localStorage.
+const escritorio = () => typeof window !== 'undefined' && window.almacen && window.almacen.escritorio;
+
 function cargar() {
   try {
-    const raw = localStorage.getItem(CLAVE);
+    const raw = escritorio() ? window.almacen.leer() : localStorage.getItem(CLAVE);
     if (raw) {
       db = Object.assign(baseVacia(), JSON.parse(raw));
       return;
@@ -43,8 +47,23 @@ function cargar() {
   guardar();
 }
 
+let avisoErrorGuardado = false;
 function guardar() {
-  try { localStorage.setItem(CLAVE, JSON.stringify(db)); } catch (e) { /* almacenamiento no disponible */ }
+  try {
+    const texto = JSON.stringify(db);
+    if (escritorio()) {
+      const err = window.almacen.guardar(texto);
+      if (err) throw new Error(err);
+    } else {
+      localStorage.setItem(CLAVE, texto);
+    }
+    avisoErrorGuardado = false;
+  } catch (e) {
+    if (!avisoErrorGuardado && typeof toast === 'function') {
+      avisoErrorGuardado = true;
+      toast('No se pudieron guardar los cambios. Descargá una copia de seguridad.');
+    }
+  }
 }
 
 const producto = (id) => db.productos.find((p) => p.id === id);
@@ -972,6 +991,12 @@ function exportar(tipo) {
 /* ---------- Respaldo ---------- */
 
 function iniciarRespaldo() {
+  if (escritorio()) {
+    const info = window.almacen.info();
+    $('#respaldo-texto').textContent = `Los cambios se guardan solos en esta PC. Cada día se hace un respaldo automático en ${info.respaldos} (se guardan los últimos 60 días). Igual conviene copiar esa carpeta a un pendrive o a la nube de vez en cuando.`;
+    $('#btn-abrir-respaldos').hidden = false;
+    $('#btn-abrir-respaldos').addEventListener('click', () => window.almacen.abrirRespaldos());
+  }
   $('#btn-respaldo').addEventListener('click', () => {
     descargarBlob(JSON.stringify(db, null, 2), 'application/json', `respaldo_stock_${isoLocal()}.json`);
     toast('Descargando la copia de seguridad.');

@@ -229,10 +229,11 @@
 
         <article class="card">
           <header class="card-h">
-            <div><h2>Copia de seguridad</h2><p class="sub">Los datos se guardan en este navegador. Descargá una copia seguido y guardala en un pendrive o en la nube.</p></div>
+            <div><h2>Copia de seguridad</h2><p class="sub" id="respaldo-texto">Los datos se guardan en este navegador. Descargá una copia seguido y guardala en un pendrive o en la nube.</p></div>
           </header>
           <div class="botonera">
             <button class="btn primary" type="button" id="btn-respaldo">Descargar copia</button>
+            <button class="btn" type="button" id="btn-abrir-respaldos" hidden>Abrir carpeta de respaldos</button>
             <label class="btn" for="input-restaurar">Restaurar copia</label>
             <input type="file" id="input-restaurar" accept="application/json,.json" hidden>
             <button class="btn ghost" type="button" id="btn-cargar-ejemplo">Cargar datos de ejemplo</button>
@@ -321,7 +322,7 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

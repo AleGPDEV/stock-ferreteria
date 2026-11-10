@@ -1,0 +1,54 @@
+{
+  "name": "stock-ferreteria",
+  "productName": "Stock Ferretería",
+  "version": "1.0.0",
+  "description": "Control de stock y caja para ferretería",
+  "author": "AleGPDEV",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis portable --x64",
+    "dist:dir": "electron-builder --win dir --x64"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "uy.alegpdev.stockferreteria",
+    "productName": "Stock Ferretería",
+    "copyright": "AleGPDEV",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "index.html",
+      "css/**/*",
+      "js/**/*",
+      "vendor/**/*",
+      "electron/**/*",
+      "build/icon.ico",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "artifactName": "Stock-Ferreteria-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Stock Ferretería",
+      "artifactName": "Stock-Ferreteria-Instalador-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Stock-Ferreteria-Portable-${version}.${ext}"
+    }
+  }
+}
