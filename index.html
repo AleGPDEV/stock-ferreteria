@@ -108,7 +108,7 @@
           <div id="caja-resultados" class="resultados"></div>
         </div>
         <aside class="card ticket" aria-label="Ticket">
-          <header class="card-h"><p class="paso"><span class="paso-n">2</span> Revisá lo que lleva el cliente</p><button class="btn sm ghost" type="button" id="ticket-vaciar">Borrar todo</button></header>
+          <header class="card-h"><p class="paso"><span class="paso-n">2</span> Revisá lo que lleva el cliente</p><button class="btn sm danger" type="button" id="ticket-vaciar">Borrar todo</button></header>
           <p class="muted ticket-num">Venta <span class="mono" id="ticket-num"></span></p>
           <div id="ticket-items"></div>
           <label class="desc-f" for="caja-desc"><span>Descuento (opcional)</span><span class="desc-in"><input id="caja-desc" type="number" min="0" max="100" step="any" inputmode="decimal" placeholder="0"> %</span></label>
@@ -133,7 +133,7 @@
             <input id="caja-cliente" type="text" placeholder="Nombre o RUT">
           </label>
           <p class="err" id="caja-err" role="alert"></p>
-          <button class="btn primary btn-cobrar" type="button" id="btn-cobrar">Cobrar</button>
+          <button class="btn verde btn-cobrar" type="button" id="btn-cobrar">Cobrar</button>
         </aside>
       </div>
 
@@ -156,7 +156,7 @@
         <div class="acciones">
           <button class="btn solo-admin" type="button" id="btn-importar">Importar desde Excel</button>
           <button class="btn solo-admin" type="button" id="btn-precios">Actualizar precios</button>
-          <button class="btn primary" type="button" id="btn-nuevo-prod">Nuevo producto</button>
+          <button class="btn verde" type="button" id="btn-nuevo-prod">Nuevo producto</button>
         </div>
       </header>
       <div class="toolbar">
@@ -171,7 +171,7 @@
       </div>
       <div class="table-wrap">
         <table class="tabla">
-          <thead><tr><th>Código</th><th>Producto</th><th>Proveedor</th><th class="num">Stock</th><th class="num">Mín.</th><th>Estado</th><th class="num solo-admin">Costo</th><th class="num">Precio</th><th class="num">Acciones</th></tr></thead>
+          <thead><tr><th>Producto</th><th class="num">Stock</th><th class="num">Mín.</th><th>Estado</th><th class="num solo-admin">Costo</th><th class="num">Precio</th><th class="num">Acciones</th></tr></thead>
           <tbody id="tabla-prod"></tbody>
         </table>
       </div>
@@ -199,7 +199,7 @@
         </div>
         <div class="form-pie">
           <p class="err" id="mov-err" role="alert"></p>
-          <button class="btn primary" type="submit" id="mov-submit">Registrar entrada</button>
+          <button class="btn verde" type="submit" id="mov-submit">Registrar entrada</button>
         </div>
       </form>
       <h2 class="titulo-sec">Historial de cambios de stock</h2>
@@ -228,7 +228,7 @@
     <section id="v-proveedores" class="vista" hidden>
       <header class="vh">
         <div><h1>Proveedores</h1><p class="sub" id="prov-sub"></p></div>
-        <div class="acciones"><button class="btn primary" type="button" id="btn-nuevo-prov">Nuevo proveedor</button></div>
+        <div class="acciones"><button class="btn verde" type="button" id="btn-nuevo-prov">Nuevo proveedor</button></div>
       </header>
       <div class="table-wrap">
         <table class="tabla">
@@ -282,7 +282,7 @@
         <article class="card" id="card-usuarios">
           <header class="card-h">
             <div><h2>Usuarios</h2><p class="sub">Quién puede entrar al programa. El empleado vende, carga mercadería y productos; el administrador además ve el resumen, los reportes y las copias.</p></div>
-            <button class="btn sm primary" type="button" id="btn-nuevo-usuario">Nuevo usuario</button>
+            <button class="btn sm verde" type="button" id="btn-nuevo-usuario">Nuevo usuario</button>
           </header>
           <div class="table-wrap"><table class="tabla">
             <thead><tr><th>Nombre</th><th>Tipo</th><th>PIN</th><th class="num"></th></tr></thead>
@@ -314,7 +314,7 @@
             <label class="btn" for="input-restaurar">Restaurar copia</label>
             <input type="file" id="input-restaurar" accept="application/json,.json" hidden>
             <button class="btn ghost" type="button" id="btn-cargar-ejemplo">Cargar datos de ejemplo</button>
-            <button class="btn danger" type="button" id="btn-borrar-todo">Borrar todos los datos</button>
+            <button class="btn rojo" type="button" id="btn-borrar-todo">Borrar todos los datos</button>
           </div>
         </article>
       </div>
@@ -365,7 +365,7 @@
       <label class="f f-wide" for="qm-nota">Nota<input id="qm-nota" type="text" placeholder="Ej.: Factura A-1234"></label>
     </div>
     <p class="err dlg-err" id="qm-err" role="alert"></p>
-    <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" data-cerrar>Cancelar</button><button class="btn primary" type="submit" id="qm-ok">Registrar</button></footer>
+    <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" data-cerrar>Cancelar</button><button class="btn verde" type="submit" id="qm-ok">Registrar</button></footer>
   </form>
 </dialog>
 
@@ -441,7 +441,7 @@
       <p class="muted ar-nota">El resto de los datos (costo, proveedor, stock mínimo) se completa después en Productos.</p>
     </div>
     <p class="err dlg-err" id="ar-err" role="alert"></p>
-    <footer class="dlg-f"><button type="button" class="btn" data-cerrar>Cancelar</button><button class="btn primary btn-grande" type="submit">Guardar y agregar a la venta</button></footer>
+    <footer class="dlg-f"><button type="button" class="btn" data-cerrar>Cancelar</button><button class="btn verde btn-grande" type="submit">Guardar y agregar a la venta</button></footer>
   </form>
 </dialog>
 

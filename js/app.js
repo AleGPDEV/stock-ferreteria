@@ -493,11 +493,12 @@ function toast(msg) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 6000);
 }
 
-function confirmar(texto, okTexto = 'Confirmar') {
+function confirmar(texto, okTexto = 'Confirmar', peligro = false) {
   return new Promise((res) => {
     const d = $('#dlg-conf');
     $('#conf-texto').textContent = texto;
     $('#conf-ok').textContent = okTexto;
+    $('#conf-ok').className = 'btn ' + (peligro ? 'rojo' : 'primary');
     let listo = false;
     const fin = (v) => { if (listo) return; listo = true; d.close(); res(v); };
     $('#conf-ok').onclick = () => fin(true);
@@ -573,7 +574,7 @@ function renderPanel() {
         <li>
           <div class="izq"><div class="nom">${esc(p.nombre)}</div>
           <div class="meta">${n(p.stock)} de mín. ${n(p.minimo)} ${esc(p.unidad)} · ${esc(nombreProv(p.proveedorId) || 'Sin proveedor')}</div></div>
-          <button class="btn sm" type="button" data-accion="entrada" data-id="${p.id}">+ Sumar stock</button>
+          <button class="btn sm verde-suave" type="button" data-accion="entrada" data-id="${p.id}">+ Sumar stock</button>
         </li>`).join('')}</ul>`
     : '<p class="vacio">Todo el stock está por encima del mínimo.</p>';
 
@@ -686,7 +687,7 @@ function renderResultados() {
     : `<div class="vacio sin-resultado">
         <p>${q ? `No encontré ningún producto con «${esc(texto)}»${filtros ? ' con esos filtros' : ''}.` : (filtros ? 'No hay productos con esos filtros.' : 'Todavía no hay productos cargados.')}</p>
         ${filtros ? '<button class="btn" type="button" data-quitar-filtros>Quitar filtros</button>' : ''}
-        ${q || !filtros ? '<button class="btn primary" type="button" data-alta>Agregar como producto nuevo</button>' : ''}
+        ${q || !filtros ? '<button class="btn verde" type="button" data-alta>Agregar como producto nuevo</button>' : ''}
       </div>`;
 }
 
@@ -957,7 +958,7 @@ function iniciarCaja() {
     const b = e.target.closest('[data-anular]');
     if (!b || !esAdmin()) return;
     const v = db.ventas.find((x) => x.id === b.dataset.anular);
-    if (!(await confirmar(`¿Anular la venta N.º ${v.numero} por ${$u(v.total)}? Los productos vuelven al stock.`, 'Anular venta'))) return;
+    if (!(await confirmar(`¿Anular la venta N.º ${v.numero} por ${$u(v.total)}? Los productos vuelven al stock.`, 'Anular venta', true))) return;
     const err = anularVenta(db, v.id);
     if (err) { toast(err); return; }
     guardar();
@@ -989,21 +990,19 @@ function renderProductos() {
   $('#tabla-prod').innerHTML = lista.length
     ? visibles.map((p) => `
       <tr>
-        <td class="mono">${esc(p.codigo)}</td>
-        <td><div class="nom">${esc(p.nombre)}</div><div class="meta">${esc(p.categoria || 'Sin categoría')} · ${esc(p.ubicacion || 'Sin ubicación')}</div></td>
-        <td>${esc(nombreProv(p.proveedorId)) || '<span class="muted">—</span>'}</td>
+        <td><div class="nom">${esc(p.nombre)}</div><div class="meta"><span class="mono">${esc(p.codigo)}</span> · ${[p.categoria || 'Sin categoría', p.ubicacion, nombreProv(p.proveedorId)].filter(Boolean).map(esc).join(' · ')}</div></td>
         <td class="num"><strong>${n(p.stock)}</strong> <span class="u">${esc(p.unidad)}</span></td>
         <td class="num">${n(p.minimo)}</td>
         <td>${chipEstado(p)}</td>
         <td class="num solo-admin">${$u(p.costo)}</td>
         <td class="num">${$u(p.precio)}</td>
         <td class="acc">
-          <button class="btn sm" type="button" data-accion="entrada" data-id="${p.id}">+ Sumar stock</button>
-          <button class="btn sm" type="button" data-accion="salida" data-id="${p.id}">− Restar</button>
+          <button class="btn sm verde-suave" type="button" data-accion="entrada" data-id="${p.id}">+ Sumar stock</button>
+          <button class="btn sm danger" type="button" data-accion="salida" data-id="${p.id}">− Restar</button>
           <button class="btn sm ghost" type="button" data-accion="editar" data-id="${p.id}">Editar</button>
         </td>
-      </tr>`).join('') + (lista.length > visibles.length ? `<tr><td colspan="9" class="vacio">Se muestran ${visibles.length} de ${lista.length} productos. Usá el buscador para encontrar el resto.</td></tr>` : '')
-    : `<tr><td colspan="9" class="vacio">${db.productos.length ? 'Ningún producto coincide con los filtros.' : 'Todavía no cargaste productos. Usá «Nuevo producto» para agregar el primero.'}</td></tr>`;
+      </tr>`).join('') + (lista.length > visibles.length ? `<tr><td colspan="7" class="vacio">Se muestran ${visibles.length} de ${lista.length} productos. Usá el buscador para encontrar el resto.</td></tr>` : '')
+    : `<tr><td colspan="7" class="vacio">${db.productos.length ? 'Ningún producto coincide con los filtros.' : 'Todavía no cargaste productos. Usá «Nuevo producto» para agregar el primero.'}</td></tr>`;
 }
 
 let editandoProd = null;
@@ -1083,7 +1082,7 @@ function iniciarProductos() {
 
   $('#prod-eliminar').addEventListener('click', async () => {
     const p = producto(editandoProd);
-    if (!(await confirmar(`¿Eliminar ${p.nombre}? Su historial de movimientos y ventas se conserva.`, 'Eliminar'))) return;
+    if (!(await confirmar(`¿Eliminar ${p.nombre}? Su historial de movimientos y ventas se conserva.`, 'Eliminar', true))) return;
     db.productos = db.productos.filter((x) => x.id !== p.id);
     guardar();
     $('#dlg-prod').close();
@@ -1106,6 +1105,7 @@ function abrirMovRapido(tipo, id) {
   $('#qm-nota').value = '';
   $('#qm-nota').placeholder = tipo === 'entrada' ? 'Ej.: Factura A-1234' : 'Ej.: Rotura, uso interno';
   $('#qm-ok').textContent = tipo === 'entrada' ? 'Sumar al stock' : 'Restar del stock';
+  $('#qm-ok').className = 'btn ' + (tipo === 'entrada' ? 'verde' : 'rojo');
   $('#qm-err').textContent = '';
   $('#dlg-mov').showModal();
   $('#qm-cant').focus();
@@ -1147,6 +1147,7 @@ function actualizarFormMov() {
   $$('.solo-entrada').forEach((el) => { el.hidden = t !== 'entrada'; });
   $('#mov-cant-label').textContent = { entrada: '¿Cuántos llegaron?', salida: '¿Cuántos sacás?', ajuste: '¿Cuántos contaste?' }[t];
   $('#mov-submit').textContent = { entrada: 'Sumar al stock', salida: 'Restar del stock', ajuste: 'Corregir el stock' }[t];
+  $('#mov-submit').className = 'btn ' + { entrada: 'verde', salida: 'rojo', ajuste: 'primary' }[t];
   $('#mov-explica').textContent = {
     entrada: 'Elegí el producto y anotá cuántos llegaron. Se suman al stock.',
     salida: 'Para productos que se rompieron, se usaron en el local o se devolvieron al proveedor. Las ventas no van acá: se hacen en Vender.',
@@ -1279,7 +1280,7 @@ function iniciarProveedores() {
   $('#prov-eliminar').addEventListener('click', async () => {
     const v = proveedor(editandoProv);
     const cant = db.productos.filter((p) => p.proveedorId === v.id).length;
-    if (!(await confirmar(`¿Eliminar ${v.nombre}?${cant ? ` Sus ${cant} productos quedan sin proveedor asignado.` : ''}`, 'Eliminar'))) return;
+    if (!(await confirmar(`¿Eliminar ${v.nombre}?${cant ? ` Sus ${cant} productos quedan sin proveedor asignado.` : ''}`, 'Eliminar', true))) return;
     db.productos.forEach((p) => { if (p.proveedorId === v.id) p.proveedorId = ''; });
     db.proveedores = db.proveedores.filter((x) => x.id !== v.id);
     guardar();
@@ -1483,22 +1484,22 @@ function iniciarRespaldo() {
       let datos;
       try { datos = JSON.parse(lector.result); } catch (err) { toast('El archivo no es una copia válida.'); return; }
       if (!datos || !Array.isArray(datos.productos) || !Array.isArray(datos.movimientos)) { toast('El archivo no es una copia de Stock Ferretería.'); return; }
-      if (!(await confirmar(`¿Reemplazar los datos actuales por la copia (${datos.productos.length} productos)? Lo que no esté en la copia se pierde.`, 'Restaurar'))) return;
+      if (!(await confirmar(`¿Reemplazar los datos actuales por la copia (${datos.productos.length} productos)? Lo que no esté en la copia se pierde.`, 'Restaurar', true))) return;
       reemplazarDatos(Object.assign(baseVacia(), datos), !Array.isArray(datos.usuarios) || !datos.usuarios.length);
       toast('Copia restaurada.');
     };
     lector.readAsText(file);
   });
   $('#btn-cargar-ejemplo').addEventListener('click', async () => {
-    if (!(await confirmar('¿Reemplazar todos los datos por los de ejemplo?', 'Cargar ejemplo'))) return;
+    if (!(await confirmar('¿Reemplazar todos los datos por los de ejemplo?', 'Cargar ejemplo', true))) return;
     reemplazarDatos(semilla()); toast('Datos de ejemplo cargados.');
   });
   $('#btn-borrar-todo').addEventListener('click', async () => {
-    if (!(await confirmar('¿Borrar todos los productos, proveedores, ventas y movimientos? Descargá una copia antes si la vas a necesitar.', 'Borrar todo'))) return;
+    if (!(await confirmar('¿Borrar todos los productos, proveedores, ventas y movimientos? Descargá una copia antes si la vas a necesitar.', 'Borrar todo', true))) return;
     reemplazarDatos(baseVacia()); toast('Se borraron todos los datos. Los usuarios se conservan.');
   });
   $('#btn-vaciar').addEventListener('click', async () => {
-    if (!(await confirmar('¿Borrar los datos de ejemplo y empezar con tu ferretería?', 'Empezar de cero'))) return;
+    if (!(await confirmar('¿Borrar los datos de ejemplo y empezar con tu ferretería?', 'Empezar de cero', true))) return;
     reemplazarDatos(baseVacia()); location.hash = '#productos';
     toast('Listo. Empezá cargando tus proveedores y productos.');
   });
@@ -1803,7 +1804,7 @@ function iniciarUsuarios() {
   });
   $('#usr-eliminar').addEventListener('click', async () => {
     const u = db.usuarios.find((x) => x.id === editandoUsuario);
-    if (!u || !(await confirmar(`¿Eliminar el usuario ${u.nombre}? Ya no va a poder entrar al programa.`, 'Eliminar'))) return;
+    if (!u || !(await confirmar(`¿Eliminar el usuario ${u.nombre}? Ya no va a poder entrar al programa.`, 'Eliminar', true))) return;
     const err = eliminarUsuario(db, u.id, sesion.id);
     if (err) { $('#usr-err').textContent = err; $('#dlg-usuario').showModal(); return; }
     guardar();
