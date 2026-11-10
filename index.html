@@ -364,6 +364,22 @@
   <footer class="dlg-f"><button type="button" class="btn btn-grande" id="venta-imprimir" data-imprime>Imprimir ticket</button><button type="button" class="btn primary btn-grande" id="venta-nueva">Nueva venta</button></footer>
 </dialog>
 
+<!-- Producto nuevo desde la venta -->
+<dialog id="dlg-rapido" class="dlg-chico" aria-labelledby="ar-titulo">
+  <form id="form-rapido" novalidate>
+    <header class="dlg-h"><h2 id="ar-titulo">Producto nuevo</h2><p class="sub" id="ar-sub"></p></header>
+    <div class="dlg-b campos-col">
+      <label class="f" for="ar-nombre">Nombre<input id="ar-nombre" type="text" autocomplete="off" required></label>
+      <label class="f" for="ar-precio">Precio de venta<input id="ar-precio" type="number" step="any" min="0" inputmode="decimal" required></label>
+      <label class="f" for="ar-stock">¿Cuántos hay en stock? (opcional)<input id="ar-stock" type="number" step="any" min="0" inputmode="decimal" placeholder="1"><small>Si lo dejás vacío se anota 1, el que estás vendiendo.</small></label>
+      <label class="f" for="ar-codigo">Código (opcional)<input id="ar-codigo" type="text" autocomplete="off"></label>
+      <p class="muted ar-nota">El resto de los datos (costo, proveedor, stock mínimo) se completa después en Productos.</p>
+    </div>
+    <p class="err dlg-err" id="ar-err" role="alert"></p>
+    <footer class="dlg-f"><button type="button" class="btn" data-cerrar>Cancelar</button><button class="btn primary btn-grande" type="submit">Guardar y agregar a la venta</button></footer>
+  </form>
+</dialog>
+
 <!-- Importar productos -->
 <dialog id="dlg-import" aria-labelledby="imp-titulo">
   <header class="dlg-h">

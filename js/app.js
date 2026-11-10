@@ -522,7 +522,10 @@ function renderResultados() {
         <span class="fila"><span class="mono">${esc(p.codigo)}</span><span>${p.stock <= 0 ? 'Sin stock' : `Stock ${n(p.stock)} ${esc(p.unidad)}`}</span></span>
         <span class="precio">${$u(p.precio)}</span>
       </button>`).join('')
-    : `<p class="vacio">${db.productos.length ? 'Ningún producto coincide con la búsqueda.' : 'Cargá productos en la sección Productos para poder venderlos.'}</p>`;
+    : `<div class="vacio sin-resultado">
+        <p>${q ? `No encontré ningún producto con «${esc($('#caja-buscar').value.trim())}».` : 'Todavía no hay productos cargados.'}</p>
+        <button class="btn primary" type="button" data-alta>Agregar como producto nuevo</button>
+      </div>`;
 }
 
 function renderTicket() {
@@ -642,7 +645,56 @@ function imprimir(html) {
   window.print();
 }
 
+/* Producto que no está cargado: se agrega con nombre y precio sin salir de la venta */
+function codigoLibre() {
+  const usados = new Set(db.productos.map((p) => p.codigo));
+  let i = 0, c;
+  do { i++; c = 'P-' + String(i).padStart(4, '0'); } while (usados.has(c));
+  return c;
+}
+
+function abrirAltaRapida(texto) {
+  const esCodigo = !!texto && !/\s/.test(texto) && /\d/.test(texto);
+  $('#ar-codigo').value = esCodigo ? texto.toUpperCase() : '';
+  $('#ar-nombre').value = esCodigo ? '' : texto;
+  $('#ar-precio').value = '';
+  $('#ar-stock').value = '';
+  $('#ar-err').textContent = '';
+  $('#ar-sub').textContent = esCodigo
+    ? `El código ${texto} no está cargado. Poné el nombre y el precio para venderlo ahora.`
+    : 'Poné el nombre y el precio para venderlo ahora.';
+  $('#dlg-rapido').showModal();
+  (esCodigo || !texto ? $('#ar-nombre') : $('#ar-precio')).focus();
+}
+
+function iniciarAltaRapida() {
+  $('#form-rapido').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const err = (t) => { $('#ar-err').textContent = t; };
+    const nombre = $('#ar-nombre').value.trim();
+    const precio = Number($('#ar-precio').value);
+    const codigo = $('#ar-codigo').value.trim().toUpperCase() || codigoLibre();
+    const stockTxt = $('#ar-stock').value;
+    const stock = stockTxt === '' ? 1 : Number(stockTxt);
+    if (!nombre) return err('Escribí el nombre del producto.');
+    if (!(precio > 0)) return err('Escribí el precio de venta.');
+    if (!(stock > 0)) return err('El stock tiene que ser 1 o más para poder venderlo.');
+    if (db.productos.some((p) => p.codigo === codigo)) return err(`El código ${codigo} ya lo usa otro producto.`);
+    const p = { id: uid(), codigo, nombre, categoria: '', unidad: 'unidad', proveedorId: '', ubicacion: '', costo: 0, precio, minimo: 0, stock: 0 };
+    db.productos.push(p);
+    registrar(db, { tipo: 'entrada', productoId: p.id, cantidad: stock, costoUnit: 0, nota: 'Agregado desde la venta' });
+    guardar();
+    $('#dlg-rapido').close();
+    $('#caja-buscar').value = '';
+    agregarAlTicket(p.id);
+    render();
+    toast(`${p.nombre} quedó cargado y agregado a la venta.`);
+    $('#caja-buscar').focus();
+  });
+}
+
 function iniciarCaja() {
+  iniciarAltaRapida();
   const buscar = $('#caja-buscar');
   buscar.addEventListener('input', renderResultados);
   buscar.addEventListener('keydown', (e) => {
@@ -657,12 +709,13 @@ function iniciarCaja() {
       buscar.value = '';
       renderResultados();
     } else if (!cand.length) {
-      toast(`No hay ningún producto con el código ${q}.`);
+      abrirAltaRapida(q);
     } else {
       toast('Hay varios productos que coinciden. Tocá el que corresponda.');
     }
   });
   $('#caja-resultados').addEventListener('click', (e) => {
+    if (e.target.closest('[data-alta]')) { abrirAltaRapida(buscar.value.trim()); return; }
     const b = e.target.closest('[data-agregar]');
     if (b) { agregarAlTicket(b.dataset.agregar); buscar.focus(); }
   });
