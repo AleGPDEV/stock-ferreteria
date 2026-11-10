@@ -76,9 +76,12 @@
           <label class="paso" for="caja-buscar"><span class="paso-n">1</span> Buscá el producto y tocalo para agregarlo</label>
           <input id="caja-buscar" type="search" autocomplete="off" placeholder="Nombre o código del producto">
           <p class="ayuda">También podés escanear el código de barras: se agrega solo.</p>
-          <div class="filtros">
-            <div class="chips" id="caja-cats" role="group" aria-label="Filtrar por categoría"></div>
+          <div class="filtros" id="caja-filtros">
             <div class="filtros-fila">
+              <select id="caja-cat" aria-label="Categoría"></select>
+              <button class="btn ghost" type="button" id="caja-mas-filtros" aria-expanded="false" aria-controls="caja-filtros-extra">Más filtros</button>
+            </div>
+            <div class="filtros-fila" id="caja-filtros-extra" hidden>
               <label class="f" for="caja-prov">Proveedor<select id="caja-prov"></select></label>
               <label class="f" for="caja-orden">Ordenar por
                 <select id="caja-orden">

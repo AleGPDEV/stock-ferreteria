@@ -521,8 +521,9 @@ function renderFiltrosCaja() {
   db.productos.forEach((p) => { const c = p.categoria || SIN_CATEGORIA; cuenta[c] = (cuenta[c] || 0) + 1; });
   const cats = Object.keys(cuenta).sort((a, b) => (a === SIN_CATEGORIA) - (b === SIN_CATEGORIA) || a.localeCompare(b));
   if (cajaCat && !cuenta[cajaCat]) cajaCat = '';
-  const chip = (valor, texto, cant) => `<button type="button" class="chip-f" data-cat="${esc(valor)}" aria-pressed="${cajaCat === valor}">${esc(texto)} <span>${cant}</span></button>`;
-  $('#caja-cats').innerHTML = cats.length > 1 ? chip('', 'Todas', db.productos.length) + cats.map((c) => chip(c, c, cuenta[c])).join('') : '';
+  $('#caja-cat').innerHTML = '<option value="">Todas las categorías</option>'
+    + cats.map((c) => `<option value="${esc(c)}"${c === cajaCat ? ' selected' : ''}>${esc(c)} (${cuenta[c]})</option>`).join('');
+  $('#caja-filtros').hidden = !db.productos.length;
   const sel = $('#caja-prov');
   const actual = sel.value;
   sel.innerHTML = opcionesProv(actual, 'Todos los proveedores');
@@ -752,12 +753,12 @@ function iniciarCaja() {
   buscar.addEventListener('input', refiltrar);
   ['#caja-prov', '#caja-constock', '#caja-orden'].forEach((sel) => $(sel).addEventListener('input', refiltrar));
   $('#caja-limpiar').addEventListener('click', quitarFiltrosCaja);
-  $('#caja-cats').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-cat]');
-    if (!b) return;
-    cajaCat = b.dataset.cat;
-    $$('#caja-cats [data-cat]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
-    refiltrar();
+  $('#caja-cat').addEventListener('input', () => { cajaCat = $('#caja-cat').value; refiltrar(); });
+  $('#caja-mas-filtros').addEventListener('click', () => {
+    const extra = $('#caja-filtros-extra');
+    extra.hidden = !extra.hidden;
+    $('#caja-mas-filtros').setAttribute('aria-expanded', String(!extra.hidden));
+    $('#caja-mas-filtros').textContent = extra.hidden ? 'Más filtros' : 'Menos filtros';
   });
   buscar.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;

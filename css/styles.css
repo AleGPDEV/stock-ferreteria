@@ -206,18 +206,9 @@ input:focus, select:focus { border-color: var(--accent); outline: none; box-shad
 .caja-izq { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .caja-izq #caja-buscar { font-size: 19px; padding: 14px 14px; border-width: 2px; border-color: var(--accent); }
 .filtros { display: flex; flex-direction: column; gap: 10px; }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; max-height: 148px; overflow-y: auto; }
-.chips:empty { display: none; }
-.chip-f {
-  border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 999px;
-  padding: 9px 16px; font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap;
-}
-.chip-f span { color: var(--muted); font-size: 13.5px; margin-left: 2px; }
-.chip-f:hover { border-color: var(--accent); }
-.chip-f[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
-.chip-f[aria-pressed="true"] span { color: inherit; opacity: .85; }
 .filtros-fila { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
 .filtros-fila .f { flex: 1 1 180px; }
+#caja-cat { flex: 1 1 220px; }
 .filtros-fila .check { padding-bottom: 10px; }
 .filtros-pie { display: flex; justify-content: space-between; align-items: center; min-height: 20px; gap: 12px; }
 .filtros-pie:has(#caja-cuenta:empty):has(#caja-limpiar[hidden]) { display: none; }
