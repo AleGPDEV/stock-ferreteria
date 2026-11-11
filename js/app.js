@@ -2177,7 +2177,7 @@ const SIN_CAT = 'Sin categoría';
 function analisisVentas(d, desde, hasta) {
   const prods = new Map(d.productos.map((p) => [p.id, p]));
   const ventas = d.ventas.filter((v) => { const t = Date.parse(v.fecha); return !v.anulada && t >= desde && t <= hasta; });
-  const r = { cantidad: ventas.length, total: 0, descuentos: 0, porMedio: {}, porVendedor: {}, porDia: {}, porCategoria: {}, porProducto: {}, ventas };
+  const r = { cantidad: ventas.length, total: 0, descuentos: 0, porMedio: {}, porVendedor: {}, porDia: {}, porDiaCant: {}, porCategoria: {}, porProducto: {}, ventas };
   ventas.forEach((v) => {
     r.total += v.total;
     r.descuentos += v.descuento || 0;
@@ -2188,6 +2188,7 @@ function analisisVentas(d, desde, hasta) {
     ve.cant++; ve.total += v.total; ve.descuentos += v.descuento || 0;
     const dia = isoLocal(new Date(v.fecha));
     r.porDia[dia] = (r.porDia[dia] || 0) + v.total;
+    r.porDiaCant[dia] = (r.porDiaCant[dia] || 0) + 1;
     const factor = v.subtotal > 0 ? v.total / v.subtotal : 1; // reparte el descuento entre los productos
     v.items.forEach((it) => {
       const p = prods.get(it.productoId);
@@ -2221,7 +2222,7 @@ function analisisVentas(d, desde, hasta) {
 }
 
 /** Barras del gráfico: por día si el período es de hasta 62 días; si no, por mes. */
-function serieVentas(porDia, desde, hasta) {
+function serieVentas(porDia, desde, hasta, porDiaCant = {}) {
   const ini = new Date(desde); ini.setHours(0, 0, 0, 0);
   const fin = new Date(hasta);
   const dias = Math.round((fin - ini) / DIA) + 1;
@@ -2229,15 +2230,17 @@ function serieVentas(porDia, desde, hasta) {
   if (dias <= 62) {
     for (let t = new Date(ini); t <= fin; t.setDate(t.getDate() + 1)) {
       const k = isoLocal(t);
-      serie.push({ clave: k, fecha: new Date(t), total: red2(porDia[k] || 0) });
+      serie.push({ clave: k, fecha: new Date(t), total: red2(porDia[k] || 0), cant: porDiaCant[k] || 0 });
     }
-    return { escala: 'día', serie };
+    // Los domingos sin ventas (local cerrado) no ocupan lugar en el gráfico
+    return { escala: 'día', serie: serie.filter((x) => x.total > 0 || x.fecha.getDay() !== 0) };
   }
-  const meses = {};
+  const meses = {}, cants = {};
   Object.entries(porDia).forEach(([k, v]) => { meses[k.slice(0, 7)] = (meses[k.slice(0, 7)] || 0) + v; });
+  Object.entries(porDiaCant).forEach(([k, v]) => { cants[k.slice(0, 7)] = (cants[k.slice(0, 7)] || 0) + v; });
   for (let t = new Date(ini.getFullYear(), ini.getMonth(), 1); t <= fin; t.setMonth(t.getMonth() + 1)) {
     const k = isoLocal(t).slice(0, 7);
-    serie.push({ clave: k, fecha: new Date(t), total: red2(meses[k] || 0) });
+    serie.push({ clave: k, fecha: new Date(t), total: red2(meses[k] || 0), cant: cants[k] || 0 });
   }
   return { escala: 'mes', serie };
 }
@@ -2266,7 +2269,7 @@ function periodoReportes() {
 }
 
 function chipCambio(actual, anterior, plata = false) {
-  if (!anterior) return actual ? '<span class="delta neutro">sin datos del período anterior</span>' : '';
+  if (!anterior) return '';
   const pct = (actual - anterior) / Math.abs(anterior) * 100;
   const cls = Math.abs(pct) < 0.5 ? 'neutro' : pct > 0 ? 'sube' : 'baja';
   const flecha = cls === 'sube' ? '▲' : cls === 'baja' ? '▼' : '＝';
@@ -2280,23 +2283,82 @@ function barrasHtml(items, valor, texto) {
   return `<ul class="barras">${items.map((x) => `<li><div class="b-txt">${texto(x)}</div><div class="barra"><i style="width:${(valor(x) / max) * 100}%"></i></div></li>`).join('')}</ul>`;
 }
 
+/** Escala «linda» para el eje: 4 o 5 marcas redondas (0, 10 mil, 20 mil…). */
+function escalaEje(max) {
+  if (!(max > 0)) return { tope: 1, paso: 1 };
+  // De los pasos redondos que dan entre 3 y 6 marcas, el que deja el tope más cerca del máximo
+  const mag = Math.pow(10, Math.floor(Math.log10(max)) - 1);
+  let mejor = null;
+  for (const m of [mag, mag * 10]) {
+    for (const f of [1, 2, 2.5, 5]) {
+      const paso = f * m, tope = Math.ceil(max / paso) * paso, marcas = tope / paso;
+      if (marcas >= 3 && marcas <= 6 && (!mejor || tope < mejor.tope || (tope === mejor.tope && paso > mejor.paso))) mejor = { tope, paso };
+    }
+  }
+  return mejor || { tope: max, paso: max / 4 };
+}
+/** Plata corta para ejes y etiquetas: $ 900, $ 4.500, $ 25 mil, $ 1,2 M. */
+const plataCorta = (x) => (x >= 1e6 ? `$ ${n(Math.round(x / 1e5) / 10)} M` : x >= 1e4 ? `$ ${n(Math.round(x / 100) / 10)} mil` : `$ ${n(Math.round(x))}`);
+
 function graficoVentas(serieInfo) {
   const { escala, serie } = serieInfo;
   const max = Math.max(...serie.map((x) => x.total), 0);
   if (!max) return '<p class="vacio">No hubo ventas en este período.</p>';
-  const cada = Math.ceil(serie.length / 12); // cuántas etiquetas se saltean para que entren
-  const etiqueta = (x) => (escala === 'día'
-    ? x.fecha.toLocaleDateString('es-UY', { day: 'numeric', month: 'short' })
-    : x.fecha.toLocaleDateString('es-UY', { month: 'short', year: '2-digit' }));
-  const tope = Math.pow(10, Math.floor(Math.log10(max)));
-  const escalaMax = Math.ceil(max / tope) * tope;
-  const corto = (x) => (x >= 1e6 ? `$ ${n(Math.round(x / 1e5) / 10)} M` : x >= 1e4 ? `$ ${n(Math.round(x / 100) / 10)} mil` : $u(x).replace(/,00$/, ''));
-  return `<div class="g-wrap"><div class="g-eje"><span style="bottom:100%">${corto(escalaMax)}</span><span style="bottom:50%">${corto(escalaMax / 2)}</span><span style="bottom:0">$ 0</span></div>
-    <div class="g-barras" style="--n:${serie.length}"><i class="g-linea" style="bottom:calc(30px + 220px)"></i><i class="g-linea" style="bottom:calc(30px + 110px)"></i>${serie.map((x, i) => `
-      <div class="g-col${x.fecha.getDay() === 0 && escala === 'día' ? ' domingo' : ''}" title="${esc(etiqueta(x))}: ${$u(x.total)}">
-        <div class="g-bar" style="height:${(x.total / escalaMax) * 100}%"></div>
-        <div class="g-lbl">${i % cada === 0 ? esc(etiqueta(x)) : ''}</div>
-      </div>`).join('')}</div></div>`;
+  const { tope, paso } = escalaEje(max);
+  const marcas = [];
+  for (let v = 0; v <= tope + 1e-9; v += paso) marcas.push(v);
+  const iMax = serie.findIndex((x) => x.total === max);
+  const cada = Math.max(1, Math.ceil(serie.length / 10)); // etiquetas del eje x que entran sin pisarse
+  const corta = (x) => (escala === 'día'
+    ? x.fecha.toLocaleDateString('es-UY', { day: 'numeric', month: 'short' }).replace('.', '')
+    : x.fecha.toLocaleDateString('es-UY', { month: 'short', year: '2-digit' }).replace('.', ''));
+  const larga = (x) => (escala === 'día'
+    ? x.fecha.toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long' })
+    : x.fecha.toLocaleDateString('es-UY', { month: 'long', year: 'numeric' }));
+  const pct = (v) => (v / tope) * 100;
+  const tabla = `<details class="g-datos"><summary>Ver los datos en una tabla</summary><div class="table-wrap"><table class="tabla">
+    <thead><tr><th>${escala === 'día' ? 'Día' : 'Mes'}</th><th class="num">Ventas</th><th class="num">Total</th></tr></thead>
+    <tbody>${serie.map((x) => `<tr><td>${esc(larga(x))}</td><td class="num">${n(x.cant)}</td><td class="num">${$u(x.total)}</td></tr>`).join('')}</tbody></table></div></details>`;
+  return `<div class="g" role="group" aria-label="Ventas por ${escala}">
+    <div class="g-plot">
+      ${marcas.map((v) => `<div class="g-grid" style="bottom:${pct(v)}%"><span>${v ? plataCorta(v) : '$ 0'}</span></div>`).join('')}
+      <div class="g-cols" style="--n:${serie.length}">${serie.map((x, i) => `
+        <div class="g-col" tabindex="0" data-g="${i}" aria-label="${esc(larga(x))}: ${$u(x.total)}, ${n(x.cant)} ventas"
+          data-titulo="${esc(larga(x))}" data-total="${esc($u(x.total))}" data-cant="${x.cant}">
+          ${x.total ? `<div class="g-bar" style="height:${pct(x.total)}%">${i === iMax ? `<span class="g-max">${plataCorta(x.total)}</span>` : ''}</div>` : ''}
+        </div>`).join('')}</div>
+      <div class="g-tip" hidden></div>
+    </div>
+    <div class="g-x" style="--n:${serie.length}">${serie.map((x, i) => `<span>${i % cada === 0 ? esc(corta(x)) : ''}</span>`).join('')}</div>
+  </div>${tabla}`;
+}
+
+/** Cartelito al pasar el mouse (o el foco del teclado) por una barra. */
+function iniciarGraficos() {
+  const mostrar = (col) => {
+    const plot = col.closest('.g-plot');
+    const tip = plot.querySelector('.g-tip');
+    plot.querySelectorAll('.g-col.activa').forEach((c) => c.classList.remove('activa'));
+    col.classList.add('activa');
+    tip.innerHTML = `<strong>${esc(col.dataset.titulo)}</strong><span>${esc(col.dataset.total)}</span><span class="muted">${n(Number(col.dataset.cant))} venta${col.dataset.cant === '1' ? '' : 's'}</span>`;
+    tip.hidden = false;
+    const r = col.getBoundingClientRect(), rp = plot.getBoundingClientRect();
+    const bar = col.querySelector('.g-bar');
+    const arriba = bar ? bar.getBoundingClientRect().top - rp.top : rp.height;
+    const x = r.left - rp.left + r.width / 2;
+    tip.style.left = `${Math.min(Math.max(x, tip.offsetWidth / 2 + 4), rp.width - tip.offsetWidth / 2 - 4)}px`;
+    tip.style.top = `${Math.max(arriba - 10, tip.offsetHeight - 30)}px`;
+  };
+  const ocultar = (plot) => {
+    if (!plot) return;
+    plot.querySelectorAll('.g-col.activa').forEach((c) => c.classList.remove('activa'));
+    const tip = plot.querySelector('.g-tip');
+    if (tip) tip.hidden = true;
+  };
+  document.addEventListener('mouseover', (e) => { const c = e.target.closest && e.target.closest('.g-col'); if (c) mostrar(c); });
+  document.addEventListener('focusin', (e) => { const c = e.target.closest && e.target.closest('.g-col'); if (c) mostrar(c); });
+  document.addEventListener('mouseout', (e) => { const p = e.target.closest && e.target.closest('.g-plot'); if (p && !p.contains(e.relatedTarget)) ocultar(p); });
+  document.addEventListener('focusout', (e) => { const p = e.target.closest && e.target.closest('.g-plot'); if (p && !p.contains(e.relatedTarget)) ocultar(p); });
 }
 
 function renderReportes() {
@@ -2310,14 +2372,15 @@ function renderRepVentas(per) {
   const a = analisisVentas(db, per.desde, per.hasta);
   const ant = analisisVentas(db, per.antDesde, per.antHasta);
   const movs = db.movimientos.filter((m) => { const t = Date.parse(m.fecha); return t >= per.desde && t <= per.hasta; });
+  const sinAnterior = !ant.cantidad;
   $('#rep-kpis').innerHTML = [
     kpi('Total vendido', $u(a.total), chipCambio(a.total, ant.total, true)),
     kpi('Ventas', n(a.cantidad), chipCambio(a.cantidad, ant.cantidad)),
     kpi('Ticket promedio', $u(a.ticketPromedio), chipCambio(a.ticketPromedio, ant.ticketPromedio, true)),
     kpi('Ganancia bruta', $u(a.ganancia), chipCambio(a.ganancia, ant.ganancia, true)),
     kpi('Compras', $u(totalCompras(movs)), '<span class="delta neutro">mercadería que llegó</span>'),
-  ].join('');
-  const s = serieVentas(a.porDia, per.desde, per.hasta);
+  ].join('') + (sinAnterior && a.cantidad ? '<p class="kpis-nota muted">No hay ventas en el período anterior para comparar.</p>' : '');
+  const s = serieVentas(a.porDia, per.desde, per.hasta, a.porDiaCant);
   $('#rep-escala').textContent = s.escala;
   const mejor = s.serie.reduce((m, x) => (x.total > m.total ? x : m), { total: 0 });
   $('#rep-dia-sub').textContent = mejor.total ? `El mejor ${s.escala}: ${mejor.fecha.toLocaleDateString('es-UY', s.escala === 'día' ? { weekday: 'long', day: 'numeric', month: 'long' } : { month: 'long', year: 'numeric' })}, con ${$u(mejor.total)}.` : '';
@@ -2328,8 +2391,9 @@ function renderRepVentas(per) {
     : '<p class="vacio">Sin ventas.</p>';
   const vend = Object.entries(a.porVendedor).map(([u, v]) => ({ u, ...v })).sort((x, y) => y.total - x.total);
   $('#rep-vendedores').innerHTML = vend.length
-    ? `<ul class="barras">${vend.map((v) => `<li><div class="b-txt"><span>${esc(v.u)} <span class="muted">· ${n(v.cant)} venta${v.cant === 1 ? '' : 's'} · promedio ${$u(v.total / v.cant)}${v.descuentos ? ` · descuentos ${$u(v.descuentos)}` : ''}</span></span><strong class="num">${$u(v.total)}</strong></div>
-        <div class="barra"><i style="width:${v.total / vend[0].total * 100}%"></i></div></li>`).join('')}</ul>`
+    ? `<ul class="barras">${vend.map((v) => `<li><div class="b-txt"><span>${esc(v.u)}</span><strong class="num">${$u(v.total)}</strong></div>
+        <div class="barra"><i style="width:${v.total / vend[0].total * 100}%"></i></div>
+        <div class="b-meta">${n(v.cant)} venta${v.cant === 1 ? '' : 's'} · promedio ${$u(v.total / v.cant)}${v.descuentos ? ` · descuentos ${$u(v.descuentos)}` : ''}</div></li>`).join('')}</ul>`
     : '<p class="vacio">Sin ventas.</p>';
   const top = Object.values(a.porProducto).sort((x, y) => y.vendido - x.vendido).slice(0, 15);
   const maxTop = Math.max(1, ...top.map((x) => x.vendido));
@@ -3303,6 +3367,7 @@ function iniciarBarra() {
 
 function iniciar() {
   iniciarBarra();
+  iniciarGraficos();
   document.body.classList.toggle('es-escritorio', escritorio() && !!window.almacen.abrirHerramienta);
   iniciarAperturaCaja();
   $('#banner-stock-ver').addEventListener('click', verParaReponer);

@@ -471,8 +471,8 @@ test('reportes: serie por día o por mes según el largo del período', () => {
   const desde = new Date(2026, 9, 1).getTime(), hasta = new Date(2026, 9, 31, 23, 59).getTime();
   const s = app.serieVentas({ '2026-10-05': 100, '2026-10-06': 50 }, desde, hasta);
   assert.equal(s.escala, 'día');
-  assert.equal(s.serie.length, 31);
-  assert.equal(s.serie[4].total, 100);
+  assert.equal(s.serie.length, 27, 'los 4 domingos sin ventas no se muestran');
+  assert.equal(s.serie.find((x) => x.clave === '2026-10-05').total, 100);
   const m = app.serieVentas({ '2026-02-05': 100, '2026-10-06': 50 }, new Date(2026, 0, 1).getTime(), hasta);
   assert.equal(m.escala, 'mes');
   assert.equal(m.serie.length, 10);
