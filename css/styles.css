@@ -542,7 +542,7 @@ body:not(.es-escritorio) .solo-escritorio { display: none !important; }
 .barras .barra i { border-radius: 5px; }
 /* Gráfico de barras de ventas */
 .grafico { overflow-x: auto; }
-.g-wrap { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; min-width: 420px; padding-top: 10px; }
+.g-wrap { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; min-width: 420px; padding-top: 10px; padding-right: 30px; }
 .g-eje { position: relative; height: 220px; min-width: 64px; font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); }
 .g-eje span { position: absolute; right: 0; transform: translateY(50%); white-space: nowrap; }
 .g-barras { position: relative; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 3px; height: 250px; align-items: end; border-left: 1px solid var(--line); }
