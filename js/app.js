@@ -103,8 +103,22 @@ function fallarPin(d, id, ahora = Date.now()) {
   d.intentosPin = d.intentosPin || {};
   const b = d.intentosPin[id] || (d.intentosPin[id] = { fallos: 0, hasta: 0 });
   b.fallos++;
-  if (b.fallos >= INTENTOS_PIN) { b.hasta = ahora + ESPERA_PIN; return ESPERA_PIN; }
+  if (b.fallos >= INTENTOS_PIN) {
+    b.hasta = ahora + ESPERA_PIN;
+    // Queda anotado para avisarle al dueño del PIN la próxima vez que entre
+    const usuario = String(id).replace(/^aut:/, '');
+    d.bloqueosPin = d.bloqueosPin || {};
+    (d.bloqueosPin[usuario] = d.bloqueosPin[usuario] || []).push({ fecha: new Date(ahora).toISOString(), donde: String(id).startsWith('aut:') ? 'autorizar' : 'ingreso' });
+    if (d.bloqueosPin[usuario].length > 20) d.bloqueosPin[usuario].splice(0, d.bloqueosPin[usuario].length - 20);
+    return ESPERA_PIN;
+  }
   return 0;
+}
+/** Bloqueos por PIN equivocado desde la última vez que ese usuario entró (y los borra). */
+function bloqueosPendientes(d, usuarioId) {
+  const l = (d.bloqueosPin || {})[usuarioId] || [];
+  if (d.bloqueosPin) delete d.bloqueosPin[usuarioId];
+  return l;
 }
 function acertarPin(d, id) {
   if (!d.intentosPin || !d.intentosPin[id]) return false;
@@ -472,9 +486,25 @@ function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0, opc
   return { venta };
 }
 
-function anularVenta(d, ventaId) {
+/**
+ * Una venta en efectivo de una caja que ya se cerró: si se le devuelve la plata al cliente, sale de la caja abierta
+ * y hay que anotarlo ahí (si es de la caja abierta, el cierre ya la descuenta solo).
+ */
+function devolucionEnOtraCaja(d, v) {
+  if (!v || v.anulada || v.medio !== 'Efectivo') return null;
+  const caja = cajaAbierta(d);
+  if (caja && v.cajaId === caja.id) return null;
+  return { caja, monto: v.total };
+}
+
+/** opc.devolucion: anota un retiro «Devolución venta N.º X» en la caja abierta (para ventas en efectivo de otra caja). */
+function anularVenta(d, ventaId, opc = {}) {
   const v = d.ventas.find((x) => x.id === ventaId);
   if (!v || v.anulada) return 'La venta no existe o ya está anulada.';
+  if (opc.devolucion) {
+    const dev = devolucionEnOtraCaja(d, v);
+    if (!dev || !dev.caja) return 'No hay una caja abierta para anotar la devolución.';
+  }
   for (const it of v.items) {
     if (d.productos.some((p) => p.id === it.productoId)) {
       registrar(d, { tipo: 'entrada', productoId: it.productoId, cantidad: it.cantidad, costoUnit: 0, nota: `Anulación venta N.º ${v.numero}`, ventaId: v.id });
@@ -482,6 +512,10 @@ function anularVenta(d, ventaId) {
   }
   v.anulada = true;
   v.anuladaEl = new Date().toISOString();
+  if (opc.devolucion) {
+    movimientoCaja(d, 'retiro', v.total, `Devolución venta N.º ${v.numero}`, opc.usuario || '');
+    v.devolucionCajaId = cajaAbierta(d).id;
+  }
   return null;
 }
 
@@ -570,6 +604,20 @@ function anotarPrecio(d, p, nuevo, motivo = '') {
   if (!p || red2(nuevo) === red2(p.precio)) return;
   anotarHistorial(d, { productoId: p.id, codigo: p.codigo, producto: p.nombre, antes: p.precio, despues: red2(nuevo), motivo });
 }
+/** Precio de venta igual o menor al costo: se vende sin ganar o perdiendo plata. */
+const precioBajoCosto = (p) => p.costo > 0 && p.precio > 0 && p.precio <= p.costo;
+
+/**
+ * Producto nuevo cargado a mano (no por importación): queda quién lo creó y su precio en el historial.
+ * Si lo creó un empleado, queda «para revisar» hasta que un administrador lo edite.
+ */
+function marcarProductoNuevo(d, p, usuario, rol, origen = 'Nuevo producto') {
+  p.creadoPor = usuario || '';
+  p.creadoEl = new Date().toISOString();
+  if (rol !== 'admin') p.revisar = true;
+  if (p.precio > 0) anotarHistorial(d, { productoId: p.id, codigo: p.codigo, producto: p.nombre, antes: null, despues: red2(p.precio), motivo: `Producto nuevo (${origen})`, usuario: usuario || '' });
+}
+
 function anotarHistorial(d, x) {
   d.historialPrecios = Array.isArray(d.historialPrecios) ? d.historialPrecios : [];
   d.historialPrecios.push({ id: uid(), fecha: new Date().toISOString(), usuario: sesion ? sesion.nombre : '', ...x });
@@ -833,11 +881,13 @@ function toast(msg) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 6000);
 }
 
-function confirmar(texto, okTexto = 'Confirmar', peligro = false) {
+function confirmar(texto, okTexto = 'Confirmar', peligro = false, cancelTexto = 'Cancelar') {
   return new Promise((res) => {
     const d = $('#dlg-conf');
     $('#conf-texto').textContent = texto;
     $('#conf-ok').textContent = okTexto;
+    $('#conf-cancel').textContent = cancelTexto;
+    $('#conf-cancel').hidden = cancelTexto == null;
     $('#conf-ok').className = 'btn ' + (peligro ? 'rojo' : 'primary');
     let listo = false;
     const fin = (v) => { if (listo) return; listo = true; d.close(); res(v); };
@@ -847,6 +897,9 @@ function confirmar(texto, okTexto = 'Confirmar', peligro = false) {
     d.showModal();
   });
 }
+
+/** Un aviso que hay que leer (con un solo botón). */
+const aviso = (texto) => confirmar(texto, 'Entendido', false, null);
 
 const VISTAS_ADMIN = ['panel', 'reportes', 'ajustes'];
 const esAdmin = () => !!sesion && sesion.rol === 'admin';
@@ -1009,15 +1062,18 @@ function pedirAdmin(texto) {
       e.preventDefault();
       const u = admins.find((x) => x.id === $('#aut-usuario').value);
       if (!u) return;
-      const espera = esperaPin(db, u.id);
+      // Contador aparte del ingreso: los errores en esta ventana (en la sesión de un empleado) no bloquean
+      // al administrador para entrar al programa.
+      const clave = `aut:${u.id}`;
+      const espera = esperaPin(db, clave);
       if (espera) { $('#aut-err').textContent = `Demasiados intentos. Esperá ${textoEspera(espera)}.`; return; }
       if (!verificarPin(u, $('#aut-pin').value)) {
-        const b = fallarPin(db, u.id); guardar();
+        const b = fallarPin(db, clave); guardar();
         $('#aut-err').textContent = b ? `PIN incorrecto. Esperá ${textoEspera(b)}.` : 'El PIN no es correcto.';
         $('#aut-pin').value = '';
         return;
       }
-      if (acertarPin(db, u.id)) guardar();
+      if (acertarPin(db, clave)) guardar();
       fin(u);
     };
     d.showModal();
@@ -1367,6 +1423,7 @@ function iniciarAltaRapida() {
     if (codigoUsado(db, codigo)) return err(`El código ${codigo} ya lo usa otro producto.`);
     const p = { id: uid(), codigo, nombre, categoria: '', unidad: 'unidad', proveedorId: '', ubicacion: '', costo: 0, precio, minimo: 0, stock: 0 };
     db.productos.push(p);
+    marcarProductoNuevo(db, p, sesion ? sesion.nombre : '', sesion ? sesion.rol : '', 'agregado desde la venta');
     registrar(db, { tipo: 'entrada', productoId: p.id, cantidad: stock, costoUnit: 0, nota: 'Agregado desde la venta', origen: 'inicial' });
     guardar();
     $('#dlg-rapido').close();
@@ -1509,11 +1566,19 @@ function iniciarCaja() {
     if (!b || !esAdmin()) return;
     const v = db.ventas.find((x) => x.id === b.dataset.anular);
     if (!(await confirmar(`¿Anular la venta N.º ${v.numero} por ${$u(v.total)}? Los productos vuelven al stock.`, 'Anular venta', true))) return;
-    const err = anularVenta(db, v.id);
+    // Venta en efectivo de una caja ya cerrada: la plata que se devuelve sale de la caja de hoy
+    const dev = devolucionEnOtraCaja(db, v);
+    let devolucion = false;
+    if (dev && dev.caja) {
+      devolucion = await confirmar(`La venta N.º ${v.numero} se cobró en efectivo en una caja que ya se cerró. ¿Le devolviste los ${$u(v.total)} al cliente con plata de la caja de ahora? Se anota como retiro «Devolución venta N.º ${v.numero}», así al cerrar no falta plata.`, 'Sí, anotar el retiro', false, 'No devolví plata');
+    }
+    const err = anularVenta(db, v.id, { devolucion, usuario: sesion ? sesion.nombre : '' });
     if (err) { toast(err); return; }
     guardar();
     render();
-    toast(`Venta N.º ${v.numero} anulada. El stock se repuso.`);
+    toast(devolucion ? `Venta N.º ${v.numero} anulada. Se repuso el stock y se anotó el retiro de ${$u(v.total)} en la caja.`
+      : dev && !dev.caja ? `Venta N.º ${v.numero} anulada. Si devolviste plata, anotala como retiro cuando abras la caja.`
+        : `Venta N.º ${v.numero} anulada. El stock se repuso.`);
   });
 }
 
@@ -1532,7 +1597,7 @@ function renderProductos() {
   const lista = db.productos
     .filter((p) => !q || normal(`${textoCodigos(p)} ${p.nombre} ${p.ubicacion} ${nombreProv(p.proveedorId)}`).includes(q))
     .filter((p) => !cat || p.categoria === cat)
-    .filter((p) => !est || (est === 'reponer' ? estado(p) !== 'ok' : est === 'sincosto' ? !(p.costo > 0) : est === 'sinprecio' ? !(p.precio > 0) : est === 'sinfoto' ? !tieneFoto(p) : estado(p) === est))
+    .filter((p) => !est || (est === 'reponer' ? estado(p) !== 'ok' : est === 'sincosto' ? !(p.costo > 0) : est === 'sinprecio' ? !(p.precio > 0) : est === 'sinfoto' ? !tieneFoto(p) : est === 'bajocosto' ? precioBajoCosto(p) : est === 'revisar' ? !!p.revisar : estado(p) === est))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   $('#prod-sub').textContent = `${db.productos.length} productos cargados${lista.length !== db.productos.length ? ` · mostrando ${lista.length}` : ''}.`;
@@ -1540,12 +1605,12 @@ function renderProductos() {
   $('#tabla-prod').innerHTML = lista.length
     ? visibles.map((p) => `
       <tr>
-        <td><div class="con-foto">${miniatura(p)}<div><div class="nom">${esc(p.nombre)}</div><div class="meta"><span class="mono">${esc(p.codigo)}${(p.barras || []).length ? ' · ' + (p.barras || []).map(esc).join(' · ') : ''}</span> · ${[p.categoria || 'Sin categoría', p.ubicacion, nombreProv(p.proveedorId)].filter(Boolean).map(esc).join(' · ')}</div></div></div></td>
+        <td><div class="con-foto">${miniatura(p)}<div><div class="nom">${esc(p.nombre)}${p.revisar && esAdmin() ? ` <span class="chip info" title="Lo creó ${esc(p.creadoPor || 'un empleado')}${p.creadoEl ? ` el ${fechaHora(p.creadoEl)}` : ''}. Al editarlo queda revisado.">Nuevo · revisar</span>` : ''}</div><div class="meta"><span class="mono">${esc(p.codigo)}${(p.barras || []).length ? ' · ' + (p.barras || []).map(esc).join(' · ') : ''}</span> · ${[p.categoria || 'Sin categoría', p.ubicacion, nombreProv(p.proveedorId)].filter(Boolean).map(esc).join(' · ')}</div></div></div></td>
         <td class="num"><strong>${n(p.stock)}</strong> <span class="u">${esc(p.unidad)}</span></td>
         <td class="num">${n(p.minimo)}</td>
         <td>${chipEstado(p)}</td>
         <td class="num solo-admin">${$u(p.costo)}</td>
-        <td class="num">${$u(p.precio)}</td>
+        <td class="num">${$u(p.precio)}${precioBajoCosto(p) && esAdmin() ? `<div><span class="chip danger" title="El precio de venta no supera el costo (${$u(p.costo)}).">${p.precio < p.costo ? 'Bajo el costo' : 'Igual al costo'}</span></div>` : ''}</td>
         <td class="acc"><div class="acc-botones">
           <button class="btn sm verde-suave" type="button" data-accion="entrada" data-id="${p.id}">+ Sumar stock</button>
           <button class="btn sm danger" type="button" data-accion="salida" data-id="${p.id}">− Restar</button>
@@ -1786,6 +1851,12 @@ function iniciarProductos() {
       const otro = codigoUsado(db, b, editandoProd);
       if (otro) return err(`El código de barras ${b} ya es de «${otro.nombre}».`);
     }
+    const cambioPrecio = !actual || actual.precio !== datos.precio || actual.costo !== datos.costo;
+    if (esAdmin() && cambioPrecio && precioBajoCosto(datos)
+      && !(await confirmar(`El precio de venta (${$u(datos.precio)}) ${datos.precio < datos.costo ? 'es menor que' : 'es igual a'} el costo (${$u(datos.costo)}): ${datos.precio < datos.costo ? 'se vende perdiendo plata' : 'no deja ganancia'}. ¿Guardar igual?`, 'Guardar igual', false, 'Corregir el precio'))) {
+      $('#p-precio').focus();
+      return;
+    }
     const nuevoId = actual ? actual.id : uid();
     if (fotoPendiente) {
       const conFoto = { id: nuevoId };
@@ -1800,10 +1871,12 @@ function iniciarProductos() {
     if (actual) {
       anotarPrecio(db, actual, datos.precio, 'Editar producto');
       Object.assign(actual, datos);
+      if (esAdmin()) delete actual.revisar; // un administrador lo revisó
       toast('Producto guardado.');
     } else {
       const p = { id: nuevoId, ...datos, stock: 0 };
       db.productos.push(p);
+      marcarProductoNuevo(db, p, sesion ? sesion.nombre : '', sesion ? sesion.rol : '');
       const ini = Number($('#p-stock').value);
       if (ini > 0) registrar(db, { tipo: 'entrada', productoId: p.id, cantidad: ini, costoUnit: datos.costo, proveedorId: datos.proveedorId, nota: 'Stock inicial', origen: 'inicial' });
       toast(`Producto agregado: ${p.nombre}.`);
@@ -2172,7 +2245,7 @@ function renderCambiosPrecio() {
     ? `<div class="table-wrap"><table class="tabla"><thead><tr><th>Fecha</th><th>Producto</th><th class="num">Antes</th><th class="num">Ahora</th><th>Quién</th></tr></thead>
       <tbody>${lista.slice(0, 200).map((h) => `<tr><td class="num">${fechaHora(h.fecha)}</td>
         <td><div class="nom">${esc(h.producto)}</div><div class="meta">${esc(h.motivo || '')}${h.codigo ? ` · <span class="mono">${esc(h.codigo)}</span>` : ''}</div></td>
-        <td class="num">${h.masivo ? '—' : $u(h.antes)}</td><td class="num">${h.masivo ? '—' : `<strong>${$u(h.despues)}</strong>`}</td><td>${esc(h.usuario || '')}</td></tr>`).join('')}
+        <td class="num">${h.masivo || h.antes == null ? '—' : $u(h.antes)}</td><td class="num">${h.masivo ? '—' : `<strong>${$u(h.despues)}</strong>`}</td><td>${esc(h.usuario || '')}</td></tr>`).join('')}
       ${lista.length > 200 ? `<tr><td colspan="5" class="muted">… y ${lista.length - 200} más (exportá a Excel para verlos todos)</td></tr>` : ''}</tbody></table></div>`
     : '<p class="vacio">No hubo cambios de precio en este período.</p>';
 }
@@ -2644,6 +2717,10 @@ function renderRepTablero(per) {
   if (cajasDif.length) alertas.push(['baja', `${cajasDif.length} cierre${cajasDif.length === 1 ? '' : 's'} de caja con diferencia`, cajasDif.slice(0, 3).map((c) => `Caja ${String(c.numero).padStart(3, '0')}: ${signoPlata(c.diferencia)}`).join(' · ')]);
   if (a.descuentos > 0) alertas.push([claseCambio(ant.descuentos, a.descuentos) === 'baja' ? 'aviso' : 'info', `Descuentos por ${$u(a.descuentos)}`, ant.descuentos ? `Antes: ${$u(ant.descuentos)} (${pctCambio((a.descuentos - ant.descuentos) / ant.descuentos * 100)})` : 'Lo que se dejó de cobrar en el período.']);
   if (a.productosSinCosto) alertas.push(['aviso', `${a.productosSinCosto} producto${a.productosSinCosto === 1 ? '' : 's'} vendido${a.productosSinCosto === 1 ? '' : 's'} sin costo cargado`, `La ganancia no cuenta ${$u(a.vendidoSinCosto)}.`]);
+  const bajoCosto = db.productos.filter(precioBajoCosto);
+  if (bajoCosto.length) alertas.push(['baja', `${bajoCosto.length} producto${bajoCosto.length === 1 ? '' : 's'} con precio igual o menor al costo`, bajoCosto.slice(0, 3).map((p) => p.nombre).join(', ') + (bajoCosto.length > 3 ? '…' : '') + ' · En Productos, filtro «Precio igual o menor al costo».']);
+  const revisar = db.productos.filter((p) => p.revisar);
+  if (revisar.length) alertas.push(['aviso', `${revisar.length} producto${revisar.length === 1 ? '' : 's'} nuevo${revisar.length === 1 ? '' : 's'} cargado${revisar.length === 1 ? '' : 's'} por empleados para revisar`, `${revisar.slice(0, 3).map((p) => `${p.nombre} (${$u(p.precio)})`).join(', ')}${revisar.length > 3 ? '…' : ''} · En Productos, filtro «Nuevos para revisar»; al editarlos quedan revisados.`]);
   const parada = mercaderiaParada(db, 90);
   if (parada.length) alertas.push(['info', `${$u(parada.reduce((x, y) => x + y.valorCosto, 0))} en mercadería parada`, `${parada.length} producto${parada.length === 1 ? '' : 's'} con stock y sin ventas en 90 días.`]);
   $('#tab-alertas').innerHTML = alertas.length
@@ -3456,17 +3533,25 @@ function iniciarLogin() {
     const pin = $('#login-pin').value;
     if (!pin) { $('#login-err').textContent = 'Escribí tu PIN.'; return; }
     const espera = esperaPin(db, loginUsuario.id);
-    if (espera) { $('#login-err').textContent = `Demasiados intentos. Esperá ${textoEspera(espera)} y probá de nuevo.`; $('#login-pin').value = ''; return; }
+    // Un administrador bloqueado no tiene que esperar: puede entrar con la clave de recuperación
+    const salida = loginUsuario.rol === 'admin' && db.recuperacion && db.recuperacion.hash ? ' Si no podés esperar, tocá «Me olvidé el PIN del administrador» y usá la clave de recuperación.' : '';
+    if (espera) { $('#login-err').textContent = `Demasiados intentos. Esperá ${textoEspera(espera)} y probá de nuevo.${salida}`; $('#login-pin').value = ''; return; }
     if (!verificarPin(loginUsuario, pin)) {
       const bloq = fallarPin(db, loginUsuario.id);
       guardar();
-      $('#login-err').textContent = bloq ? `PIN incorrecto. Por seguridad, esperá ${textoEspera(bloq)} antes de volver a probar.` : 'El PIN no es correcto. Probá de nuevo.';
+      $('#login-err').textContent = bloq ? `PIN incorrecto. Por seguridad, esperá ${textoEspera(bloq)} antes de volver a probar.${salida}` : 'El PIN no es correcto. Probá de nuevo.';
       $('#login-pin').value = '';
       $('#login-pin').focus();
       return;
     }
-    if (acertarPin(db, loginUsuario.id)) guardar();
+    acertarPin(db, loginUsuario.id);
+    const bloqueos = bloqueosPendientes(db, loginUsuario.id);
+    guardar();
     entrar(loginUsuario);
+    if (bloqueos.length) {
+      const ult = bloqueos[bloqueos.length - 1];
+      aviso(`Ojo: alguien escribió mal tu PIN ${INTENTOS_PIN} veces seguidas${bloqueos.length > 1 ? ` (${bloqueos.length} veces desde que entraste la última vez)` : ''}. La última fue el ${fechaHora(ult.fecha)}${ult.donde === 'autorizar' ? ', en la ventana para autorizar un descuento' : ', en el ingreso'}. Si no fuiste vos, cambiá el PIN en Configuración.`);
+    }
   });
   $('#login-olvide').addEventListener('click', () => {
     const admins = db.usuarios.filter((u) => u.rol === 'admin');
@@ -3549,6 +3634,13 @@ function renderRecuperacion() {
   $('#btn-rec-crear').textContent = r && r.hash ? 'Crear una nueva' : 'Crear clave de recuperación';
 }
 
+function mostrarClaveRecuperacion(clave, motivo = '') {
+  $('#rec-clave').textContent = clave;
+  $('#rec-motivo').textContent = motivo;
+  $('#rec-motivo').hidden = !motivo;
+  $('#dlg-rec').showModal();
+}
+
 function iniciarRecuperacion() {
   $('#btn-rec-crear').addEventListener('click', async () => {
     if (!esAdmin()) return;
@@ -3556,8 +3648,7 @@ function iniciarRecuperacion() {
       && !(await confirmar('¿Crear una clave de recuperación nueva? La anterior deja de servir.', 'Crear una nueva'))) return;
     const clave = nuevaClaveRecuperacion(db);
     if (!guardar()) { toast('No se pudo guardar la clave.'); return; }
-    $('#rec-clave').textContent = clave;
-    $('#dlg-rec').showModal();
+    mostrarClaveRecuperacion(clave);
     render();
   });
   $('#rec-clave-copiar').addEventListener('click', () => copiarTexto($('#rec-clave').textContent, 'Clave copiada. Anotala también en papel.'));
@@ -3580,11 +3671,15 @@ function iniciarUsuarios() {
     if (pin !== $('#u-pin2').value) { $('#usr-err').textContent = 'Los dos PIN no coinciden.'; return; }
     const r = guardarUsuario(db, { nombre: $('#u-nombre').value, rol: $('#u-rol').value, pin }, editandoUsuario);
     if (r.error) { $('#usr-err').textContent = r.error; return; }
+    // Al poner el PIN de un administrador, si todavía no hay clave de recuperación se crea en el momento:
+    // sin ella, un PIN olvidado deja el programa sin nadie que pueda entrar como administrador.
+    const claveNueva = r.usuario.rol === 'admin' && pin && !(db.recuperacion && db.recuperacion.hash) ? nuevaClaveRecuperacion(db) : '';
     guardar();
     $('#dlg-usuario').close();
     if (r.usuario.id === sesion.id) { sesion = r.usuario; aplicarPermisos(); }
     mostrarVista();
     toast(editandoUsuario ? 'Usuario guardado.' : `Usuario ${r.usuario.nombre} creado.`);
+    if (claveNueva) mostrarClaveRecuperacion(claveNueva, 'Como es el primer PIN de administrador, el programa creó la clave para entrar si alguien se lo olvida.');
   });
   $('#usr-eliminar').addEventListener('click', async () => {
     const u = db.usuarios.find((x) => x.id === editandoUsuario);
@@ -3914,7 +4009,7 @@ function iniciar() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias };
+  module.exports = { registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

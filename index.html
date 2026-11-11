@@ -200,6 +200,8 @@
           <option value="sincosto" class="solo-admin">Sin costo cargado</option>
           <option value="sinprecio">Sin precio</option>
           <option value="sinfoto">Sin foto</option>
+          <option value="bajocosto" class="solo-admin">Precio igual o menor al costo</option>
+          <option value="revisar" class="solo-admin">Nuevos para revisar (los cargó un empleado)</option>
         </select>
       </div>
       <div class="table-wrap">
@@ -560,7 +562,7 @@
 
 <!-- Clave de recuperación recién creada -->
 <dialog id="dlg-rec" class="dlg-chico" aria-labelledby="rec-titulo">
-  <header class="dlg-h"><h2 id="rec-titulo">Clave de recuperación</h2><p class="sub">Anotala en papel ahora: no se vuelve a mostrar. Guardala fuera del mostrador, donde no la vean los empleados.</p></header>
+  <header class="dlg-h"><h2 id="rec-titulo">Clave de recuperación</h2><p class="sub rec-motivo" id="rec-motivo" hidden></p><p class="sub">Anotala en papel ahora: no se vuelve a mostrar. Guardala fuera del mostrador, donde no la vean los empleados.</p></header>
   <div class="dlg-b"><p class="rec-clave mono" id="rec-clave"></p></div>
   <footer class="dlg-f"><button type="button" class="btn" id="rec-clave-copiar">Copiar</button><span class="sp"></span><button type="button" class="btn primary" data-cerrar>Ya la anoté</button></footer>
 </dialog>

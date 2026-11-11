@@ -8,6 +8,7 @@ const zlib = require('zlib');
 const { promisify } = require('util');
 const { pathToFileURL } = require('url');
 const { Almacen } = require('./datos');
+const { fotosEnUso, planLimpiezaFotos } = require('./fotos');
 
 const RESPALDOS_A_CONSERVAR = 60;
 const PATRON_RESPALDO = /^respaldo_\d{4}-\d{2}-\d{2}\.json(\.gz)?$/;
@@ -107,26 +108,60 @@ function copiarAExtra(archivo) {
  * Respaldos\Fotos (por ejemplo, al pasar a una PC nueva), se trae de ahí. */
 const NOMBRE_FOTO = /^[\w-]{1,80}\.jpg$/;
 
-/** Copia a destino las fotos que no tiene. Devuelve cuántas copió. */
-function sincronizarFotos(origen, destino) {
+/** Copia a destino las fotos que no tiene (solo las de «solo», si se pasa). Devuelve cuántas copió. */
+function sincronizarFotos(origen, destino, solo = null) {
   if (!fs.existsSync(origen)) return 0;
   fs.mkdirSync(destino, { recursive: true });
   const hay = new Set(fs.readdirSync(destino));
   let n = 0;
   for (const f of fs.readdirSync(origen)) {
-    if (!NOMBRE_FOTO.test(f) || hay.has(f)) continue;
+    if (!NOMBRE_FOTO.test(f) || hay.has(f) || (solo && !solo.has(f))) continue;
     try { fs.copyFileSync(path.join(origen, f), path.join(destino, f)); n++; } catch (e) { /* se reintenta en el próximo respaldo */ }
   }
+  return n;
+}
+
+/** Fotos en la carpeta extra (pendrive o nube), si está configurada y conectada. */
+function carpetaFotosExtra() {
+  const c = almacen && almacen.ajuste('carpetaExtra');
+  if (!c || !fs.existsSync(c)) return null;
+  return path.join(c, CARPETA_EXTRA, 'Fotos');
+}
+
+const fotosUsadasAhora = () => { try { return almacen ? fotosEnUso(almacen.leerJson() || '') : null; } catch (e) { return null; } };
+
+/**
+ * Trae a esta PC las fotos que usan los productos y faltan (PC nueva o disco cambiado): primero de
+ * Respaldos\Fotos y después de la carpeta extra. Solo las que se usan, así no vuelven fotos ya borradas.
+ */
+function traerFotosQueFaltan(enUso = fotosUsadasAhora()) {
+  if (!enUso || !enUso.size) return 0;
+  const r = rutas();
+  let n = sincronizarFotos(path.join(r.respaldos, 'Fotos'), r.fotos, enUso);
+  const extra = carpetaFotosExtra();
+  if (extra) n += sincronizarFotos(extra, r.fotos, enUso);
   return n;
 }
 
 function respaldarFotos(carpetaExtraDestino) {
   const r = rutas();
   try {
-    sincronizarFotos(path.join(r.respaldos, 'Fotos'), r.fotos); // trae las que falten
+    traerFotosQueFaltan();
     sincronizarFotos(r.fotos, path.join(r.respaldos, 'Fotos'));
     if (carpetaExtraDestino) sincronizarFotos(r.fotos, path.join(carpetaExtraDestino, 'Fotos'));
   } catch (e) { console.error('No se pudieron copiar las fotos:', e); }
+}
+
+/** Borra las fotos que ningún producto usa desde hace más días que los respaldos guardados. */
+function limpiarFotos(textoDatos) {
+  const enUso = fotosEnUso(textoDatos);
+  if (!enUso) return;
+  const r = rutas();
+  const carpetas = [r.fotos, path.join(r.respaldos, 'Fotos'), carpetaFotosExtra()].filter((c) => c && fs.existsSync(c));
+  const presentes = new Set(carpetas.flatMap((c) => fs.readdirSync(c).filter((f) => NOMBRE_FOTO.test(f))));
+  const plan = planLimpiezaFotos(almacen.ajuste('fotosHuerfanas') || {}, enUso, presentes, Date.now(), RESPALDOS_A_CONSERVAR + 7);
+  for (const f of plan.borrar) for (const c of carpetas) { try { fs.unlinkSync(path.join(c, f)); } catch (e) { /* no estaba */ } }
+  almacen.ponerAjuste('fotosHuerfanas', plan.huerfanas);
 }
 
 /** Hace el respaldo del día si todavía no existe (o siempre, si forzar) y lo copia a la carpeta extra. */
@@ -147,6 +182,7 @@ async function hacerRespaldo(forzar = false) {
       podar(respaldos);
       almacen.ponerAjuste('ultimoRespaldo', { fecha: new Date().toISOString(), archivo });
       nuevo = true;
+      try { limpiarFotos(texto); } catch (e) { console.error('No se pudieron limpiar las fotos:', e); }
     }
     respaldarFotos();
     const extra = almacen.ajuste('estadoExtra');
@@ -262,6 +298,8 @@ ipcMain.on('almacen:cambios', (e, cambios) => {
     }
     almacen.aplicar(cambios);
     e.returnValue = null;
+    // Al restaurar una copia completa, traer enseguida las fotos que use y falten en esta PC
+    if (cambios && cambios.completo) setImmediate(() => { try { traerFotosQueFaltan(); } catch (err) { /* se reintenta en el respaldo */ } });
     const ult = almacen.ajuste('ultimoRespaldo');
     if (!ult || !String(ult.archivo || '').includes(hoy())) programarRespaldo();
   } catch (err) {
@@ -442,8 +480,8 @@ if (!app.requestSingleInstanceLock()) {
         ],
       },
     ]));
-    // Fotos que falten en esta PC y estén en Respaldos\Fotos (PC nueva)
-    try { sincronizarFotos(path.join(rutas().respaldos, 'Fotos'), rutas().fotos); } catch (e) { /* nada */ }
+    // Fotos que falten en esta PC y estén en Respaldos\Fotos o en la carpeta extra (PC nueva)
+    try { traerFotosQueFaltan(); } catch (e) { /* nada */ }
     crearVentana();
     // Respaldo del día unos segundos después de abrir, sin demorar el arranque
     setTimeout(() => hacerRespaldo(), 8000);

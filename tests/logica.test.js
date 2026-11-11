@@ -646,3 +646,81 @@ test('tablero: promedio por día de la semana', () => {
   assert.equal(sem.find((x) => x.nombre === 'sábado').promedio, 400, '800 en 2 sábados');
   assert.ok(!sem.some((x) => x.nombre === 'domingo'), 'el domingo sin ventas no aparece');
 });
+
+// ---------- Revisión QA #2 (caja, PIN, precios, fotos) ----------
+
+test('QA2 M4: anular una venta en efectivo de una caja cerrada anota la devolución en la caja abierta', () => {
+  const d = base();
+  d.cajas = [];
+  app.abrirCaja(d, 2000, 'Marta');
+  const v = app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 290 }], 'Efectivo', '').venta;
+  const deb = app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 290 }], 'Débito', '').venta;
+  app.cerrarCaja(d, 2290, 'Marta');
+  const { caja } = app.abrirCaja(d, 2000, 'Jorge');
+  assert.deepEqual(app.devolucionEnOtraCaja(d, v), { caja, monto: 290 });
+  assert.equal(app.devolucionEnOtraCaja(d, deb), null, 'con débito no sale plata de la caja');
+  assert.equal(app.anularVenta(d, v.id, { devolucion: true, usuario: 'Jorge' }), null);
+  const r = app.resumenCaja(d, caja);
+  assert.equal(r.retiros, 290);
+  assert.equal(r.esperado, 1710);
+  assert.equal(caja.movs[0].motivo, `Devolución venta N.º ${v.numero}`);
+  // la caja vieja no cambia su cierre
+  assert.equal(d.cajas[0].diferencia, 0);
+  // una venta de la caja abierta no pide devolución aparte: el cierre ya la descuenta
+  const v3 = app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 290 }], 'Efectivo', '').venta;
+  assert.equal(app.devolucionEnOtraCaja(d, v3), null);
+  // sin caja abierta no se puede anotar
+  const v4 = app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 100 }], 'Efectivo', '').venta;
+  app.cerrarCaja(d, 0, 'Jorge');
+  assert.match(app.anularVenta(d, v4.id, { devolucion: true }), /caja abierta/);
+  assert.ok(!d.ventas.find((x) => x.id === v4.id).anulada, 'no se anuló a medias');
+});
+
+test('QA2 B4: los errores al autorizar no bloquean el ingreso del administrador, y quedan avisados', () => {
+  const d = base();
+  const ahora = Date.now();
+  for (let i = 0; i < 5; i++) app.fallarPin(d, 'aut:adm1', ahora);
+  assert.ok(app.esperaPin(d, 'aut:adm1', ahora) > 0);
+  assert.equal(app.esperaPin(d, 'adm1', ahora), 0, 'puede entrar al programa');
+  const b = app.bloqueosPendientes(d, 'adm1');
+  assert.equal(b.length, 1);
+  assert.equal(b[0].donde, 'autorizar');
+  assert.equal(app.bloqueosPendientes(d, 'adm1').length, 0, 'se avisa una sola vez');
+});
+
+test('QA2 B1/B2: precio bajo el costo y productos nuevos de un empleado', () => {
+  assert.equal(app.precioBajoCosto({ costo: 100, precio: 100 }), true);
+  assert.equal(app.precioBajoCosto({ costo: 100, precio: 90 }), true);
+  assert.equal(app.precioBajoCosto({ costo: 100, precio: 130 }), false);
+  assert.equal(app.precioBajoCosto({ costo: 0, precio: 50 }), false, 'sin costo cargado no se sabe');
+  const d = base();
+  const p = { id: 'n1', codigo: 'N1', nombre: 'Martillo barato', costo: 0, precio: 150 };
+  d.productos.push(p);
+  app.marcarProductoNuevo(d, p, 'Empleado', 'empleado', 'agregado desde la venta');
+  assert.equal(p.revisar, true);
+  assert.equal(p.creadoPor, 'Empleado');
+  const h = d.historialPrecios[d.historialPrecios.length - 1];
+  assert.deepEqual([h.producto, h.antes, h.despues, h.usuario], ['Martillo barato', null, 150, 'Empleado']);
+  assert.match(h.motivo, /Producto nuevo/);
+  const q = { id: 'n2', codigo: 'N2', nombre: 'Otro', costo: 0, precio: 10 };
+  app.marcarProductoNuevo(d, q, 'Administrador', 'admin');
+  assert.equal(q.revisar, undefined, 'lo que crea un administrador no queda para revisar');
+});
+
+test('QA2 B5: las fotos sin usar se borran recién cuando ningún respaldo guardado puede usarlas', () => {
+  const { fotosEnUso, planLimpiezaFotos } = require('../electron/fotos.js');
+  const usadas = fotosEnUso(JSON.stringify({ productos: [{ foto: 'a.jpg' }, { foto: '' }, {}] }));
+  assert.deepEqual([...usadas], ['a.jpg']);
+  assert.equal(fotosEnUso('{roto'), null, 'si no se puede leer, no se borra nada');
+  const dia = 864e5, ahora = Date.UTC(2026, 10, 11);
+  const p1 = planLimpiezaFotos({}, usadas, new Set(['a.jpg', 'b.jpg']), ahora, 67);
+  assert.deepEqual(p1.borrar, []);
+  assert.ok(p1.huerfanas['b.jpg'], 'se anota desde cuándo no se usa');
+  const p2 = planLimpiezaFotos(p1.huerfanas, usadas, new Set(['a.jpg', 'b.jpg']), ahora + 66 * dia, 67);
+  assert.deepEqual(p2.borrar, []);
+  const p3 = planLimpiezaFotos(p2.huerfanas, usadas, new Set(['a.jpg', 'b.jpg']), ahora + 68 * dia, 67);
+  assert.deepEqual(p3.borrar, ['b.jpg']);
+  // si se vuelve a usar (por ejemplo, al restaurar un respaldo), deja de estar anotada
+  const p4 = planLimpiezaFotos(p1.huerfanas, new Set(['a.jpg', 'b.jpg']), new Set(['a.jpg', 'b.jpg']), ahora + 68 * dia, 67);
+  assert.deepEqual([p4.borrar, p4.huerfanas], [[], {}]);
+});
