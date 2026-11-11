@@ -1,0 +1,128 @@
+/* Lector de facturas: de los renglones leídos del PDF a la lista de productos para el Excel.
+ * Sin pantalla, para poder probarlo (tests/herramientas.test.js). Lo usa lector.html.
+ *
+ * La clave de cada producto es el código del proveedor: la columna «Código» de la factura, el código de
+ * modelo de Uruimporta (LH-5563) o el número al principio de la descripción. Si no hay, la descripción completa.
+ * Las palabras de presentación o medida (X100, X100M, G120, 8MM, 8X1/2…) nunca son el código: así dos
+ * productos distintos que terminan en «X100» no se juntan. */
+(function (global) {
+  'use strict';
+
+  const normal = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const red2 = (x) => Math.round(x * 100) / 100;
+
+  const MARCAS = ['TOYOKI', 'MAKAWA', 'UYUSTOOLS', 'UYUS', 'PENNSYLVANIA', 'CONDOR', 'KAMASA', 'ARCAL', 'CABLINUR', 'DENZEL', 'ODIM', 'CLARA', 'TIGON', 'GAOQIANG', 'HORUSDY', 'CHALIMEX', 'TIMELIN', 'CORO', 'TOOLS', 'GREEN', 'KILLER', 'MAUSER', 'STANLEY', 'BOSCH', 'TRAMONTINA', 'TRUPER', 'INCOLOR', 'SHERWIN', 'SINTEPLAST', 'CALOPLAST', 'TIGRE', 'NICOLL', 'DUKE', 'PRETUL', 'BLACK', 'DECKER', 'DEWALT', 'MAKITA', 'GAMMA', 'LUSQTOFF', 'SICA', 'ACRILEX', 'FISCHER', 'POXIPOL', 'LOCTITE', 'WD-40', 'TEKNO', 'ACQUAFLEX'];
+
+  /** ¿Es una palabra de presentación o medida? (X100, X50, X100M, G120, P80, M8, 8MM, 200MM, 8X1/2, 2,5MM…) */
+  function esMedida(w) {
+    const u = String(w || '').toUpperCase().replace(/^[("'”]+|[)"'”.,;:]+$/g, '');
+    if (!u) return false;
+    return /^\d/.test(u) // empieza con número: 8MM, 200MM, 8X1/2, 100M, 2,5MM
+      || /^X\s?\d/.test(u) // cantidad por paquete: X100, X50, X100M
+      || /^[A-Z]\d{1,4}[A-Z]{0,2}$/.test(u) // una letra y números: G120 (lija), P80, M8, E27, T20
+      || /^(MM|CM|MTS?|KG|GR|LTS?|ML|HP|CC|PULG)\d/.test(u);
+  }
+
+  /** Código de modelo al final de la descripción: MK-0099, EBM301, AB-1234. Con una sola letra, solo con guion (A-1234). */
+  const RE_MODELO = /^(?:[A-Z]{2,5}-?\d{2,7}[A-Z]{0,2}|[A-Z]-\d{2,7}[A-Z]?)$/;
+  // Número del proveedor al principio, salvo que sea una medida: «1234 TORNILLO…» sí; «250 GR …» no
+  const RE_INTERNO = /^(\d{3,8})\s+(?!(?:MM|CM|M|MTS?|KG|GR|G|L|LTS?|ML|UN|UNID|U|X)\b)(?=\D)/i;
+
+  /**
+   * Separa el código del proveedor de la descripción.
+   * Prioridad: columna «Código» de la factura → LH-xxxx → número al principio → código de modelo al final.
+   * Devuelve { codigo, nombre } (el nombre conserva la presentación: «… x100m»).
+   */
+  function separarCodigo(desc, codigoColumna) {
+    let d = String(desc || '').replace(/\s+/g, ' ').trim();
+    let interno = '';
+    const mi = RE_INTERNO.exec(d);
+    if (mi) { interno = mi[1]; d = d.slice(mi[0].length); }
+    const pal = d.split(' ').filter(Boolean);
+    const col = String(codigoColumna || '').trim().toUpperCase();
+    let codigo = '';
+    const lh = pal.findIndex((w) => /^LH-?\d+$/i.test(w));
+    if (col) codigo = col;
+    else if (lh >= 0) { codigo = pal[lh].toUpperCase().replace(/^LH-?/, 'LH-'); pal.splice(lh, 1); }
+    else if (interno) codigo = interno;
+    else if (pal.length > 2) {
+      const ult = pal[pal.length - 1].toUpperCase();
+      if (RE_MODELO.test(ult) && !esMedida(ult)) codigo = pal.pop().toUpperCase();
+    }
+    return { codigo, nombre: pal.join(' ').trim() };
+  }
+
+  /** Clave para juntar renglones: el mismo código del proveedor, o si no hay, la misma descripción completa. */
+  function claveProducto(desc, codigoColumna) {
+    const s = separarCodigo(desc, codigoColumna);
+    if (s.codigo) return 'c:' + s.codigo.toUpperCase().replace(/\s+/g, '');
+    return 'd:' + normal(desc).replace(/[^a-z0-9]/g, '');
+  }
+
+  /** «CABLE UNIPOLAR 2,5MM ROJO X100M» → «Cable unipolar 2,5mm rojo x100m». Los códigos con letras y números quedan en mayúscula. */
+  function nombreLindo(t) {
+    return String(t || '').split(/\s+/).filter(Boolean).map((w, i) => {
+      if (/^\d/.test(w) || /^x\d/i.test(w)) return w.toLowerCase();
+      if (/\d/.test(w)) return w.toUpperCase();
+      if (MARCAS.includes(w.toUpperCase())) return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+      const l = w.toLowerCase();
+      return i === 0 ? l.charAt(0).toUpperCase() + l.slice(1) : l;
+    }).join(' ').replace(/”/g, '"');
+  }
+
+  /** Número de factura para mostrar y para el Excel: «A 1234». Vacío si no se pudo leer el número. */
+  const numeroFactura = (r) => (r && r.numero ? `${r.serie || ''} ${r.numero}`.trim() : '');
+
+  /** ¿Son la misma factura? Solo si las dos tienen número: sin número no se puede saber. */
+  function mismaFactura(a, b) {
+    if (!a || !b || !a.numero || !b.numero) return false;
+    const k = (r) => `${String(r.rucEmisor || '').replace(/\D/g, '')}|${normal(r.serie).trim()}|${String(r.numero).replace(/^0+/, '')}`;
+    return k(a) === k(b);
+  }
+
+  const esNotaCredito = (r) => !!(r && r.notaCredito);
+  const enDolares = (r) => !!(r && r.dolares);
+
+  /** Motivo para no cargar una factura (texto), o '' si se puede cargar. */
+  function problemaFactura(r) {
+    if (esNotaCredito(r)) return 'Es una nota de crédito (devolución), no se carga como mercadería que llegó.';
+    if (!r || !r.items || !r.items.length) return 'No encontré la lista de productos.';
+    return '';
+  }
+
+  /**
+   * Junta los renglones de las facturas en productos.
+   * facturas: [{ r }] (r = lo que devuelve LectorPdf.leerFactura, con r.numero corregido a mano si hizo falta).
+   * opc.iva(f): % de IVA a sumar a esa factura (0 si ya viene incluido). opc.tipoCambio: pesos por dólar.
+   * Devuelve { productos, error }. Con facturas en dólares y sin tipo de cambio, error y sin productos.
+   */
+  function armarProductos(facturas, opc = {}) {
+    const ivaDe = opc.iva || (() => 0);
+    const tc = Number(opc.tipoCambio);
+    if (facturas.some((f) => enDolares(f.r)) && !(tc > 0)) {
+      return { productos: [], error: 'Hay facturas en dólares: escribí el tipo de cambio (cuántos pesos vale un dólar) para pasar los costos a pesos.' };
+    }
+    const porClave = new Map();
+    const ordenadas = facturas.slice().sort((a, b) => (a.r.fecha || '').localeCompare(b.r.fecha || ''));
+    for (const f of ordenadas) {
+      const iva = ivaDe(f) || 0;
+      const cambio = enDolares(f.r) ? tc : 1;
+      const nf = numeroFactura(f.r);
+      for (const it of f.r.items) {
+        const s = separarCodigo(it.descripcion, it.codigo);
+        const clave = claveProducto(it.descripcion, it.codigo);
+        const costo = red2(it.importe / it.cantidad * (1 + iva / 100) * cambio);
+        let p = porClave.get(clave);
+        if (!p) { p = { clave, codigo: s.codigo, nombre: nombreLindo(s.nombre), descripcion: s.nombre, cantidad: 0, facturas: [] }; porClave.set(clave, p); }
+        p.cantidad += it.cantidad;
+        p.costo = costo; // la factura más nueva queda última
+        if (nf && !p.facturas.includes(nf)) p.facturas.push(nf);
+      }
+    }
+    return { productos: [...porClave.values()], error: '' };
+  }
+
+  const api = { esMedida, separarCodigo, claveProducto, nombreLindo, numeroFactura, mismaFactura, problemaFactura, armarProductos, enDolares, esNotaCredito, MARCAS };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else global.LectorProductos = api;
+})(typeof window !== 'undefined' ? window : globalThis);

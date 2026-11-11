@@ -168,7 +168,8 @@
     ['cantidad', /^(cant|cantidad)\b/],
     ['unidad', /^(uni|unid|unidad|u\.m)/],
     ['descripcion', /^(descrip|detalle|articulo|producto|concepto)/],
-    ['codigo', /^(cod|codigo|item)$/],
+    ['codigo', /^(cod\.?|codigo|cod articulo|codigo articulo)$/],
+    ['item', /^(item|linea|renglon)$/], // número de renglón (1, 2, 3…): no es el código del producto
     ['unitario', /(unitario|p\.\s*unit|precio)/],
     ['descuento', /^(dto|desc\b|descuento|bonif)/],
     ['importe', /^(importe|total|monto|subtotal)/],
@@ -181,26 +182,57 @@
     const todo = [];
     paginas.forEach((pag, ip) => filas(pag).forEach((f) => todo.push({ ...f, pag: ip, texto: f.celdas.map((c) => c.t.trim()).join(' ') })));
     const plano = todo.map((f) => f.texto).join('\n');
-    const despues = (rotulo) => {
-      // el valor debajo de un rótulo (mismo x aproximado, fila siguiente)
-      for (let k = 0; k < todo.length; k++) {
-        const c = todo[k].celdas.find((x) => normal(x.t) === normal(rotulo));
-        if (!c) continue;
-        for (let j = k + 1; j < Math.min(todo.length, k + 3); j++) {
-          const v = todo[j].celdas.find((x) => Math.abs(x.x - c.x) < 12);
-          if (v && v.t.trim()) return v.t.trim();
+    // Los datos de la factura están arriba de la tabla de productos (en la primera página)
+    const iTabla = todo.findIndex((f) => f.celdas.some((c) => /^cantidad$|^cant\.?$/.test(normal(c.t))));
+    const cabecera = iTabla > 0 ? todo.slice(0, iTabla) : todo;
+    const textoCabecera = cabecera.map((f) => f.texto).join('\n');
+    // Rótulos sin puntos ni símbolos: «Nº», «N°» → «n»; «Nro.» → «nro»; «R.U.T.» → «r u t»
+    const sinPunt = (s) => normal(s).replace(/[.:ºª°#]/g, ' ').replace(/\s+/g, ' ').trim();
+    /** El valor de un rótulo: debajo (mismo x), a la derecha en la misma fila, o en la misma celda («Nº 5521»). */
+    const valorDe = (rotulos, valida) => {
+      const rs = rotulos.map(sinPunt);
+      for (let k = 0; k < cabecera.length; k++) {
+        const fila = cabecera[k];
+        for (const c of fila.celdas) {
+          const t = sinPunt(c.t);
+          for (const r of rs) {
+            if (t === r) {
+              for (let j = k + 1; j < Math.min(cabecera.length, k + 3); j++) {
+                const v = cabecera[j].celdas.find((x) => Math.abs(x.x - c.x) < 12);
+                if (v && valida(v.t.trim())) return v.t.trim();
+              }
+              const der = fila.celdas.find((x) => x.x > c.x);
+              if (der && valida(der.t.trim())) return der.t.trim();
+            } else if (t.startsWith(r + ' ')) {
+              const resto = t.slice(r.length + 1).toUpperCase();
+              if (valida(resto)) return resto;
+            }
+          }
         }
       }
       return '';
     };
-    r.rucEmisor = despues('RUC EMISOR') || ((plano.match(/RUC[^\d]{0,20}(\d{12})/) || [])[1] || '');
-    r.serie = despues('SERIE');
-    r.numero = despues('NÚMERO') || despues('NUMERO') || despues('Nro.');
-    r.tipo = despues('TIPO DE DOCUMENTO');
-    const fecha = despues('FECHA DOCUMENTO') || despues('FECHA') || ((plano.match(/\b(\d{2}\/\d{2}\/\d{4})\b/) || [])[1] || '');
+    const esNumero = (v) => /^([A-Z]{1,2}[\s-]?)?\d{1,9}$/i.test(String(v).trim());
+    const esRut = (v) => /^\d{12}$/.test(String(v).replace(/[\s.-]/g, ''));
+    r.rucEmisor = valorDe(['RUC EMISOR', 'RUT EMISOR', 'R.U.T. EMISOR', 'R.U.C. EMISOR', 'RUC', 'RUT', 'R.U.T.', 'R.U.C.'], esRut).replace(/[\s.-]/g, '')
+      || ((plano.match(/R\.?\s?U\.?\s?[CT]\.?[^\d]{0,20}(\d{12})/i) || [])[1] || '');
+    r.serie = valorDe(['SERIE'], (v) => /^[A-Z]{1,2}$/i.test(v)).toUpperCase();
+    let numero = valorDe(['NÚMERO', 'NUMERO', 'NRO', 'Nº', 'N°', 'NUM', 'NÚMERO DE DOCUMENTO', 'NRO DOCUMENTO', 'NRO. DE DOCUMENTO'], esNumero)
+      || ((/\bN(?:[º°o]|RO\.?|[ÚU]MERO)\s*[.:]?\s*([A-Z]{0,2}[\s-]?\d{1,9})\b/i.exec(textoCabecera) || [])[1] || '');
+    // «A-5521» o «A 5521»: la letra es la serie
+    const ms = /^([A-Z]{1,2})[\s-]*(\d+)$/i.exec(numero.trim());
+    if (ms) { if (!r.serie) r.serie = ms[1].toUpperCase(); numero = ms[2]; }
+    r.numero = numero.trim();
+    r.tipo = valorDe(['TIPO DE DOCUMENTO', 'TIPO DE COMPROBANTE', 'TIPO CFE'], (v) => /[a-z]{3}/i.test(v));
+    // Nota de crédito (devolución): no es mercadería que llegó
+    r.notaCredito = /nota\s+de\s+cr[eé]dito|\bN\/C\b/i.test(r.tipo) || /\bnota\s+de\s+cr[eé]dito\b/i.test(textoCabecera);
+    const fecha = valorDe(['FECHA DOCUMENTO', 'FECHA DE EMISIÓN', 'FECHA EMISIÓN', 'FECHA'], (v) => /\d{2}\/\d{2}\/\d{4}/.test(v)) || ((plano.match(/\b(\d{2}\/\d{2}\/\d{4})\b/) || [])[1] || '');
     const mf = /(\d{2})\/(\d{2})\/(\d{4})/.exec(fecha);
     r.fecha = mf ? `${mf[3]}-${mf[2]}-${mf[1]}` : '';
-    r.moneda = despues('MONEDA') || 'UYU';
+    r.moneda = valorDe(['MONEDA'], (v) => /[a-z$]/i.test(v)) || ((/MONEDA\s*:?\s*([A-Z$]{1,4}\$?S?)/i.exec(textoCabecera) || [])[1] || '') || 'UYU';
+    r.dolares = /USD|U\$S|US\$|D[OÓ]LAR/i.test(r.moneda);
+    const tc = valorDe(['TIPO DE CAMBIO', 'T. CAMBIO', 'T/C', 'COTIZACIÓN', 'COTIZACION'], (v) => numUy(v) > 0);
+    r.tipoCambio = tc ? numUy(tc) : null;
     const email = (plano.match(/[\w.-]+@([\w-]+)\.[\w.]+/) || []);
     r.email = email[0] || '';
     r.dominio = email[1] || '';

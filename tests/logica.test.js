@@ -724,3 +724,50 @@ test('QA2 B5: las fotos sin usar se borran recién cuando ningún respaldo guard
   const p4 = planLimpiezaFotos(p1.huerfanas, new Set(['a.jpg', 'b.jpg']), new Set(['a.jpg', 'b.jpg']), ahora + 68 * dia, 67);
   assert.deepEqual([p4.borrar, p4.huerfanas], [[], {}]);
 });
+
+// ---------- Revisión QA #2: importación ----------
+test('QA2 M1: importar dos veces la misma factura no suma la mercadería dos veces', () => {
+  const d = base();
+  const filas = [{ 'Código': 'MAR-16', 'Producto': 'Martillo 16 oz', 'Proveedor': 'Herramientas Sur', 'Costo': 400, 'Llegó': 30, 'Factura': 'A 1234' }];
+  let plan = app.planImportacion(d, filas);
+  assert.deepEqual(plan.facturasRepetidas, []);
+  app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+  assert.equal(d.productos[0].stock, 40);
+  // la segunda vez: avisa con la fecha y por defecto no suma
+  plan = app.planImportacion(d, filas);
+  assert.equal(plan.facturasRepetidas.length, 1);
+  assert.equal(plan.facturasRepetidas[0].factura, 'A 1234');
+  assert.equal(plan.facturasRepetidas[0].fecha, d.movimientos.at(-1).fecha);
+  const r = app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+  assert.equal(r.llegadas, 0);
+  assert.equal(d.productos[0].stock, 40, 'no vuelve a sumar');
+  // marcando la casilla a propósito, sí
+  app.aplicarImportacion(d, app.planImportacion(d, filas), { ...app.CAMPOS_IMPORTAR, repetidas: true });
+  assert.equal(d.productos[0].stock, 70);
+  // «A-1234» es la misma factura; otra factura u otro proveedor con el mismo número, no
+  assert.equal(app.planImportacion(d, [{ ...filas[0], 'Factura': 'A-1234' }]).facturasRepetidas.length, 1);
+  assert.equal(app.planImportacion(d, [{ ...filas[0], 'Factura': 'A 1300' }]).facturasRepetidas.length, 0);
+  d.proveedores.push({ id: 'v2', nombre: 'Otro Proveedor' });
+  assert.equal(app.planImportacion(d, [{ ...filas[0], 'Proveedor': 'Otro Proveedor' }]).facturasRepetidas.length, 0);
+});
+
+test('QA2 B3: el conteo del Cargador se aplica al importar sin tocar nada; un Excel común no cambia el stock', () => {
+  const d = base();
+  const cargador = [
+    { 'Código': 'MAR-16', 'Producto': 'Martillo 16 oz', 'Stock': 7, 'Precio': '', 'Contado': 'Sí' },
+    { 'Código': 'NUEVO-1', 'Producto': 'Pinza', 'Stock': 3, 'Precio': 500, 'Contado': 'Sí' },
+  ];
+  const plan = app.planImportacion(d, cargador);
+  assert.equal(plan.deConteo, true, 'se reconoce el Excel del Cargador');
+  assert.deepEqual(app.cambiosStockImportacion(plan), [{ codigo: 'MAR-16', nombre: 'Martillo 16 oz', antes: 10, despues: 7 }], 'la vista previa muestra qué stock cambia');
+  // la ventana marca «Stock» sola cuando plan.deConteo (mostrarPlan); así se importa
+  app.aplicarImportacion(d, plan, { ...app.CAMPOS_IMPORTAR, stock: plan.deConteo });
+  assert.equal(d.productos.find((p) => p.codigo === 'MAR-16').stock, 7);
+  assert.equal(d.productos.find((p) => p.codigo === 'NUEVO-1').stock, 3);
+  assert.equal(d.productos[0].precio, 620, 'sin precio en la planilla, no lo cambia');
+  // Excel común: sin «Contado» el stock sigue apagado
+  const comun = app.planImportacion(d, [{ 'Código': 'MAR-16', 'Producto': 'Martillo 16 oz', 'Stock': 99 }]);
+  assert.equal(comun.deConteo, false);
+  app.aplicarImportacion(d, comun, { ...app.CAMPOS_IMPORTAR, stock: comun.deConteo });
+  assert.equal(d.productos[0].stock, 7);
+});

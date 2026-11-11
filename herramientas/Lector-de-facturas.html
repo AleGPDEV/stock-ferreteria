@@ -90,6 +90,8 @@ main.una { grid-template-columns: minmax(0, 1fr); }
 .factura { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
 .factura .sp { flex: 1; }
 .factura.repetida { border-color: var(--warn); background: var(--warn-soft); }
+.num-mano { font-weight: 600; }
+.num-mano input { width: 9em; margin-left: 6px; }
 .opciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
 .radio { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; font-size: 15.5px; cursor: pointer; }
 .radio input { width: 20px; height: 20px; margin-top: 2px; flex: none; }
@@ -138,6 +140,7 @@ tr.fuera td { opacity: .45; }
         </select>
         <small id="iva-ayuda"></small>
       </label>
+      <label class="f" for="cambio" id="cambio-campo" hidden>Tipo de cambio (pesos por dólar)<input id="cambio" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej.: 40,25"><small>Hay facturas en dólares: los costos se pasan a pesos con este valor.</small><small class="err" id="cambio-err" role="alert"></small></label>
       <label class="f" for="margen">Ganancia para el precio de venta (%)<input id="margen" type="text" inputmode="decimal" value="0"><small>0 = precio de venta igual al costo (después lo cambiás en el programa).</small></label>
       <label class="f" for="redondeo">Redondear el precio de venta
         <select id="redondeo"><option value="0">No redondear</option><option value="1">Al peso</option><option value="5">De a $ 5</option><option value="10">De a $ 10</option></select>
@@ -364,7 +367,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     ['cantidad', /^(cant|cantidad)\b/],
     ['unidad', /^(uni|unid|unidad|u\.m)/],
     ['descripcion', /^(descrip|detalle|articulo|producto|concepto)/],
-    ['codigo', /^(cod|codigo|item)$/],
+    ['codigo', /^(cod\.?|codigo|cod articulo|codigo articulo)$/],
+    ['item', /^(item|linea|renglon)$/], // número de renglón (1, 2, 3…): no es el código del producto
     ['unitario', /(unitario|p\.\s*unit|precio)/],
     ['descuento', /^(dto|desc\b|descuento|bonif)/],
     ['importe', /^(importe|total|monto|subtotal)/],
@@ -377,26 +381,57 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     const todo = [];
     paginas.forEach((pag, ip) => filas(pag).forEach((f) => todo.push({ ...f, pag: ip, texto: f.celdas.map((c) => c.t.trim()).join(' ') })));
     const plano = todo.map((f) => f.texto).join('\n');
-    const despues = (rotulo) => {
-      // el valor debajo de un rótulo (mismo x aproximado, fila siguiente)
-      for (let k = 0; k < todo.length; k++) {
-        const c = todo[k].celdas.find((x) => normal(x.t) === normal(rotulo));
-        if (!c) continue;
-        for (let j = k + 1; j < Math.min(todo.length, k + 3); j++) {
-          const v = todo[j].celdas.find((x) => Math.abs(x.x - c.x) < 12);
-          if (v && v.t.trim()) return v.t.trim();
+    // Los datos de la factura están arriba de la tabla de productos (en la primera página)
+    const iTabla = todo.findIndex((f) => f.celdas.some((c) => /^cantidad$|^cant\.?$/.test(normal(c.t))));
+    const cabecera = iTabla > 0 ? todo.slice(0, iTabla) : todo;
+    const textoCabecera = cabecera.map((f) => f.texto).join('\n');
+    // Rótulos sin puntos ni símbolos: «Nº», «N°» → «n»; «Nro.» → «nro»; «R.U.T.» → «r u t»
+    const sinPunt = (s) => normal(s).replace(/[.:ºª°#]/g, ' ').replace(/\s+/g, ' ').trim();
+    /** El valor de un rótulo: debajo (mismo x), a la derecha en la misma fila, o en la misma celda («Nº 5521»). */
+    const valorDe = (rotulos, valida) => {
+      const rs = rotulos.map(sinPunt);
+      for (let k = 0; k < cabecera.length; k++) {
+        const fila = cabecera[k];
+        for (const c of fila.celdas) {
+          const t = sinPunt(c.t);
+          for (const r of rs) {
+            if (t === r) {
+              for (let j = k + 1; j < Math.min(cabecera.length, k + 3); j++) {
+                const v = cabecera[j].celdas.find((x) => Math.abs(x.x - c.x) < 12);
+                if (v && valida(v.t.trim())) return v.t.trim();
+              }
+              const der = fila.celdas.find((x) => x.x > c.x);
+              if (der && valida(der.t.trim())) return der.t.trim();
+            } else if (t.startsWith(r + ' ')) {
+              const resto = t.slice(r.length + 1).toUpperCase();
+              if (valida(resto)) return resto;
+            }
+          }
         }
       }
       return '';
     };
-    r.rucEmisor = despues('RUC EMISOR') || ((plano.match(/RUC[^\d]{0,20}(\d{12})/) || [])[1] || '');
-    r.serie = despues('SERIE');
-    r.numero = despues('NÚMERO') || despues('NUMERO') || despues('Nro.');
-    r.tipo = despues('TIPO DE DOCUMENTO');
-    const fecha = despues('FECHA DOCUMENTO') || despues('FECHA') || ((plano.match(/\b(\d{2}\/\d{2}\/\d{4})\b/) || [])[1] || '');
+    const esNumero = (v) => /^([A-Z]{1,2}[\s-]?)?\d{1,9}$/i.test(String(v).trim());
+    const esRut = (v) => /^\d{12}$/.test(String(v).replace(/[\s.-]/g, ''));
+    r.rucEmisor = valorDe(['RUC EMISOR', 'RUT EMISOR', 'R.U.T. EMISOR', 'R.U.C. EMISOR', 'RUC', 'RUT', 'R.U.T.', 'R.U.C.'], esRut).replace(/[\s.-]/g, '')
+      || ((plano.match(/R\.?\s?U\.?\s?[CT]\.?[^\d]{0,20}(\d{12})/i) || [])[1] || '');
+    r.serie = valorDe(['SERIE'], (v) => /^[A-Z]{1,2}$/i.test(v)).toUpperCase();
+    let numero = valorDe(['NÚMERO', 'NUMERO', 'NRO', 'Nº', 'N°', 'NUM', 'NÚMERO DE DOCUMENTO', 'NRO DOCUMENTO', 'NRO. DE DOCUMENTO'], esNumero)
+      || ((/\bN(?:[º°o]|RO\.?|[ÚU]MERO)\s*[.:]?\s*([A-Z]{0,2}[\s-]?\d{1,9})\b/i.exec(textoCabecera) || [])[1] || '');
+    // «A-5521» o «A 5521»: la letra es la serie
+    const ms = /^([A-Z]{1,2})[\s-]*(\d+)$/i.exec(numero.trim());
+    if (ms) { if (!r.serie) r.serie = ms[1].toUpperCase(); numero = ms[2]; }
+    r.numero = numero.trim();
+    r.tipo = valorDe(['TIPO DE DOCUMENTO', 'TIPO DE COMPROBANTE', 'TIPO CFE'], (v) => /[a-z]{3}/i.test(v));
+    // Nota de crédito (devolución): no es mercadería que llegó
+    r.notaCredito = /nota\s+de\s+cr[eé]dito|\bN\/C\b/i.test(r.tipo) || /\bnota\s+de\s+cr[eé]dito\b/i.test(textoCabecera);
+    const fecha = valorDe(['FECHA DOCUMENTO', 'FECHA DE EMISIÓN', 'FECHA EMISIÓN', 'FECHA'], (v) => /\d{2}\/\d{2}\/\d{4}/.test(v)) || ((plano.match(/\b(\d{2}\/\d{2}\/\d{4})\b/) || [])[1] || '');
     const mf = /(\d{2})\/(\d{2})\/(\d{4})/.exec(fecha);
     r.fecha = mf ? `${mf[3]}-${mf[2]}-${mf[1]}` : '';
-    r.moneda = despues('MONEDA') || 'UYU';
+    r.moneda = valorDe(['MONEDA'], (v) => /[a-z$]/i.test(v)) || ((/MONEDA\s*:?\s*([A-Z$]{1,4}\$?S?)/i.exec(textoCabecera) || [])[1] || '') || 'UYU';
+    r.dolares = /USD|U\$S|US\$|D[OÓ]LAR/i.test(r.moneda);
+    const tc = valorDe(['TIPO DE CAMBIO', 'T. CAMBIO', 'T/C', 'COTIZACIÓN', 'COTIZACION'], (v) => numUy(v) > 0);
+    r.tipoCambio = tc ? numUy(tc) : null;
     const email = (plano.match(/[\w.-]+@([\w-]+)\.[\w.]+/) || []);
     r.email = email[0] || '';
     r.dominio = email[1] || '';
@@ -471,6 +506,136 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script>
+/* Lector de facturas: de los renglones leídos del PDF a la lista de productos para el Excel.
+ * Sin pantalla, para poder probarlo (tests/herramientas.test.js). Lo usa lector.html.
+ *
+ * La clave de cada producto es el código del proveedor: la columna «Código» de la factura, el código de
+ * modelo de Uruimporta (LH-5563) o el número al principio de la descripción. Si no hay, la descripción completa.
+ * Las palabras de presentación o medida (X100, X100M, G120, 8MM, 8X1/2…) nunca son el código: así dos
+ * productos distintos que terminan en «X100» no se juntan. */
+(function (global) {
+  'use strict';
+
+  const normal = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const red2 = (x) => Math.round(x * 100) / 100;
+
+  const MARCAS = ['TOYOKI', 'MAKAWA', 'UYUSTOOLS', 'UYUS', 'PENNSYLVANIA', 'CONDOR', 'KAMASA', 'ARCAL', 'CABLINUR', 'DENZEL', 'ODIM', 'CLARA', 'TIGON', 'GAOQIANG', 'HORUSDY', 'CHALIMEX', 'TIMELIN', 'CORO', 'TOOLS', 'GREEN', 'KILLER', 'MAUSER', 'STANLEY', 'BOSCH', 'TRAMONTINA', 'TRUPER', 'INCOLOR', 'SHERWIN', 'SINTEPLAST', 'CALOPLAST', 'TIGRE', 'NICOLL', 'DUKE', 'PRETUL', 'BLACK', 'DECKER', 'DEWALT', 'MAKITA', 'GAMMA', 'LUSQTOFF', 'SICA', 'ACRILEX', 'FISCHER', 'POXIPOL', 'LOCTITE', 'WD-40', 'TEKNO', 'ACQUAFLEX'];
+
+  /** ¿Es una palabra de presentación o medida? (X100, X50, X100M, G120, P80, M8, 8MM, 200MM, 8X1/2, 2,5MM…) */
+  function esMedida(w) {
+    const u = String(w || '').toUpperCase().replace(/^[("'”]+|[)"'”.,;:]+$/g, '');
+    if (!u) return false;
+    return /^\d/.test(u) // empieza con número: 8MM, 200MM, 8X1/2, 100M, 2,5MM
+      || /^X\s?\d/.test(u) // cantidad por paquete: X100, X50, X100M
+      || /^[A-Z]\d{1,4}[A-Z]{0,2}$/.test(u) // una letra y números: G120 (lija), P80, M8, E27, T20
+      || /^(MM|CM|MTS?|KG|GR|LTS?|ML|HP|CC|PULG)\d/.test(u);
+  }
+
+  /** Código de modelo al final de la descripción: MK-0099, EBM301, AB-1234. Con una sola letra, solo con guion (A-1234). */
+  const RE_MODELO = /^(?:[A-Z]{2,5}-?\d{2,7}[A-Z]{0,2}|[A-Z]-\d{2,7}[A-Z]?)$/;
+  // Número del proveedor al principio, salvo que sea una medida: «1234 TORNILLO…» sí; «250 GR …» no
+  const RE_INTERNO = /^(\d{3,8})\s+(?!(?:MM|CM|M|MTS?|KG|GR|G|L|LTS?|ML|UN|UNID|U|X)\b)(?=\D)/i;
+
+  /**
+   * Separa el código del proveedor de la descripción.
+   * Prioridad: columna «Código» de la factura → LH-xxxx → número al principio → código de modelo al final.
+   * Devuelve { codigo, nombre } (el nombre conserva la presentación: «… x100m»).
+   */
+  function separarCodigo(desc, codigoColumna) {
+    let d = String(desc || '').replace(/\s+/g, ' ').trim();
+    let interno = '';
+    const mi = RE_INTERNO.exec(d);
+    if (mi) { interno = mi[1]; d = d.slice(mi[0].length); }
+    const pal = d.split(' ').filter(Boolean);
+    const col = String(codigoColumna || '').trim().toUpperCase();
+    let codigo = '';
+    const lh = pal.findIndex((w) => /^LH-?\d+$/i.test(w));
+    if (col) codigo = col;
+    else if (lh >= 0) { codigo = pal[lh].toUpperCase().replace(/^LH-?/, 'LH-'); pal.splice(lh, 1); }
+    else if (interno) codigo = interno;
+    else if (pal.length > 2) {
+      const ult = pal[pal.length - 1].toUpperCase();
+      if (RE_MODELO.test(ult) && !esMedida(ult)) codigo = pal.pop().toUpperCase();
+    }
+    return { codigo, nombre: pal.join(' ').trim() };
+  }
+
+  /** Clave para juntar renglones: el mismo código del proveedor, o si no hay, la misma descripción completa. */
+  function claveProducto(desc, codigoColumna) {
+    const s = separarCodigo(desc, codigoColumna);
+    if (s.codigo) return 'c:' + s.codigo.toUpperCase().replace(/\s+/g, '');
+    return 'd:' + normal(desc).replace(/[^a-z0-9]/g, '');
+  }
+
+  /** «CABLE UNIPOLAR 2,5MM ROJO X100M» → «Cable unipolar 2,5mm rojo x100m». Los códigos con letras y números quedan en mayúscula. */
+  function nombreLindo(t) {
+    return String(t || '').split(/\s+/).filter(Boolean).map((w, i) => {
+      if (/^\d/.test(w) || /^x\d/i.test(w)) return w.toLowerCase();
+      if (/\d/.test(w)) return w.toUpperCase();
+      if (MARCAS.includes(w.toUpperCase())) return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+      const l = w.toLowerCase();
+      return i === 0 ? l.charAt(0).toUpperCase() + l.slice(1) : l;
+    }).join(' ').replace(/”/g, '"');
+  }
+
+  /** Número de factura para mostrar y para el Excel: «A 1234». Vacío si no se pudo leer el número. */
+  const numeroFactura = (r) => (r && r.numero ? `${r.serie || ''} ${r.numero}`.trim() : '');
+
+  /** ¿Son la misma factura? Solo si las dos tienen número: sin número no se puede saber. */
+  function mismaFactura(a, b) {
+    if (!a || !b || !a.numero || !b.numero) return false;
+    const k = (r) => `${String(r.rucEmisor || '').replace(/\D/g, '')}|${normal(r.serie).trim()}|${String(r.numero).replace(/^0+/, '')}`;
+    return k(a) === k(b);
+  }
+
+  const esNotaCredito = (r) => !!(r && r.notaCredito);
+  const enDolares = (r) => !!(r && r.dolares);
+
+  /** Motivo para no cargar una factura (texto), o '' si se puede cargar. */
+  function problemaFactura(r) {
+    if (esNotaCredito(r)) return 'Es una nota de crédito (devolución), no se carga como mercadería que llegó.';
+    if (!r || !r.items || !r.items.length) return 'No encontré la lista de productos.';
+    return '';
+  }
+
+  /**
+   * Junta los renglones de las facturas en productos.
+   * facturas: [{ r }] (r = lo que devuelve LectorPdf.leerFactura, con r.numero corregido a mano si hizo falta).
+   * opc.iva(f): % de IVA a sumar a esa factura (0 si ya viene incluido). opc.tipoCambio: pesos por dólar.
+   * Devuelve { productos, error }. Con facturas en dólares y sin tipo de cambio, error y sin productos.
+   */
+  function armarProductos(facturas, opc = {}) {
+    const ivaDe = opc.iva || (() => 0);
+    const tc = Number(opc.tipoCambio);
+    if (facturas.some((f) => enDolares(f.r)) && !(tc > 0)) {
+      return { productos: [], error: 'Hay facturas en dólares: escribí el tipo de cambio (cuántos pesos vale un dólar) para pasar los costos a pesos.' };
+    }
+    const porClave = new Map();
+    const ordenadas = facturas.slice().sort((a, b) => (a.r.fecha || '').localeCompare(b.r.fecha || ''));
+    for (const f of ordenadas) {
+      const iva = ivaDe(f) || 0;
+      const cambio = enDolares(f.r) ? tc : 1;
+      const nf = numeroFactura(f.r);
+      for (const it of f.r.items) {
+        const s = separarCodigo(it.descripcion, it.codigo);
+        const clave = claveProducto(it.descripcion, it.codigo);
+        const costo = red2(it.importe / it.cantidad * (1 + iva / 100) * cambio);
+        let p = porClave.get(clave);
+        if (!p) { p = { clave, codigo: s.codigo, nombre: nombreLindo(s.nombre), descripcion: s.nombre, cantidad: 0, facturas: [] }; porClave.set(clave, p); }
+        p.cantidad += it.cantidad;
+        p.costo = costo; // la factura más nueva queda última
+        if (nf && !p.facturas.includes(nf)) p.facturas.push(nf);
+      }
+    }
+    return { productos: [...porClave.values()], error: '' };
+  }
+
+  const api = { esMedida, separarCodigo, claveProducto, nombreLindo, numeroFactura, mismaFactura, problemaFactura, armarProductos, enDolares, esNotaCredito, MARCAS };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else global.LectorProductos = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>
 'use strict';
 const $ = (s) => document.querySelector(s);
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -491,30 +656,9 @@ function parseNum(v) {
 }
 const fechaUy = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
 
-/* ---------- Nombres, códigos y categorías ---------- */
-const MARCAS = ['TOYOKI', 'MAKAWA', 'UYUSTOOLS', 'UYUS', 'PENNSYLVANIA', 'CONDOR', 'KAMASA', 'ARCAL', 'CABLINUR', 'DENZEL', 'ODIM', 'CLARA', 'TIGON', 'GAOQIANG', 'HORUSDY', 'CHALIMEX', 'TIMELIN', 'CORO', 'TOOLS', 'GREEN', 'KILLER', 'MAUSER', 'STANLEY', 'BOSCH', 'TRAMONTINA', 'TRUPER', 'INCOLOR', 'SHERWIN', 'SINTEPLAST', 'CALOPLAST', 'TIGRE', 'NICOLL', 'DUKE', 'PRETUL', 'BLACK', 'DECKER', 'DEWALT', 'MAKITA', 'GAMMA', 'LUSQTOFF', 'SICA', 'ACRILEX', 'FISCHER', 'POXIPOL', 'LOCTITE', 'WD-40', 'TEKNO', 'ACQUAFLEX'];
-function nombreLindo(t) {
-  return String(t).split(/\s+/).filter(Boolean).map((w, i) => {
-    if (/\d/.test(w)) return w.toUpperCase();
-    if (MARCAS.includes(w.toUpperCase())) return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-    const l = w.toLowerCase();
-    return i === 0 ? l.charAt(0).toUpperCase() + l.slice(1) : l;
-  }).join(' ').replace(/”/g, '"');
-}
-// Código del modelo: LH-1234, MK-0153, EBM301… (la última palabra con letras y números)
-const RE_COD = /^[A-Z]{1,4}-?\d{2,6}[A-Z]?$/;
-function separarCodigo(desc) {
-  let d = String(desc).trim();
-  let interno = '';
-  const mi = /^(\d{3,6})\s+(?=\D)/.exec(d); // código interno del proveedor al principio
-  if (mi) { interno = mi[1]; d = d.slice(mi[0].length); }
-  const pal = d.split(' ');
-  let codigo = '';
-  const lh = pal.findIndex((w) => /^LH-?\d+$/i.test(w));
-  if (lh >= 0) { codigo = pal[lh].toUpperCase().replace(/^LH-?/, 'LH-'); pal.splice(lh, 1); }
-  else if (pal.length > 2 && RE_COD.test(pal[pal.length - 1])) codigo = pal.pop().toUpperCase();
-  return { codigo, interno, nombre: pal.join(' ').trim() };
-}
+/* ---------- Nombres, códigos y categorías ----------
+ * Los códigos, nombres y cómo se juntan los renglones están en lector-productos.js (LectorProductos). */
+const { nombreLindo, numeroFactura, mismaFactura, problemaFactura, armarProductos, enDolares } = LectorProductos;
 const CATS = [
   ['Mascotas', /MASCOTA/], ['Limpieza', /PALA CON CEPILLO/],
   ['Cerrajería', /CANDADO|CERRADURA|CERROJO|PASADOR|BANDOLA|LLAVE DE PUERTA|CILINDRO/],
@@ -562,23 +706,10 @@ function ivaDe(f) {
 }
 
 function armar() {
-  const porClave = new Map();
-  const ordenadas = facturas.slice().sort((a, b) => (a.r.fecha || '').localeCompare(b.r.fecha || ''));
-  for (const f of ordenadas) {
-    const iva = ivaDe(f);
-    for (const it of f.r.items) {
-      const s = separarCodigo(it.descripcion);
-      const clave = s.codigo || normal(s.nombre).replace(/[^a-z0-9]/g, '');
-      const costo = red2(it.importe / it.cantidad * (1 + iva / 100));
-      let p = porClave.get(clave);
-      if (!p) { p = { clave, codigo: s.codigo, nombre: nombreLindo(s.nombre), categoria: categoria(s.nombre), cantidad: 0, facturas: [] }; porClave.set(clave, p); }
-      p.cantidad += it.cantidad;
-      p.costo = costo; // la más nueva queda última
-      const nf = `${f.r.serie || ''} ${f.r.numero || ''}`.trim();
-      if (nf && !p.facturas.includes(nf)) p.facturas.push(nf);
-    }
-  }
-  productos = [...porClave.values()];
+  const r = armarProductos(facturas, { iva: ivaDe, tipoCambio: parseNum($('#cambio').value) });
+  productos = r.productos;
+  productos.forEach((p) => { p.categoria = categoria(p.descripcion); });
+  $('#cambio-err').textContent = r.error;
   pintar();
 }
 
@@ -593,19 +724,22 @@ const valor = (p, k) => { const e = editados[p.clave] || {}; return e[k] != null
 const incluido = (p) => (editados[p.clave] || {}).incluir !== false;
 
 function pintarFacturas() {
-  const vistas = new Map();
   $('#facturas').innerHTML = facturas.map((f, i) => {
-    const id = `${f.r.rucEmisor}|${f.r.serie}|${f.r.numero}`;
-    const rep = vistas.has(id); vistas.set(id, true);
+    const rep = facturas.slice(0, i).some((g) => mismaFactura(g.r, f.r));
     const ivaTxt = f.r.ivaIncluido === true ? '<span class="chip ok">IVA incluido</span>' : f.r.ivaIncluido === false ? '<span class="chip warn">sin IVA: se suma</span>' : '<span class="chip warn">IVA: revisar</span>';
-    return `<div class="factura${rep ? ' repetida' : ''}"><strong>${esc(f.r.tipo || 'Factura')} ${esc(f.r.serie)} ${esc(f.r.numero)}</strong>
+    const num = f.r.numero && !f.r.numeroAMano ? `<strong>${esc(f.r.tipo || 'Factura')} ${esc(numeroFactura(f.r))}</strong>`
+      : `<label class="num-mano">Número de la factura <input type="text" data-numero="${i}" value="${esc(numeroFactura(f.r))}" placeholder="Ej.: A 1234" autocomplete="off"></label>${f.r.numero ? '' : '<span class="chip warn">no pude leer el número: escribilo</span>'}`;
+    return `<div class="factura${rep ? ' repetida' : ''}">${num}
       <span>${esc(f.r.emisor)}</span><span>${fechaUy(f.r.fecha)}</span><span>${f.r.items.length} productos</span>
-      ${f.r.total ? `<span>Total ${plata.format(f.r.total)}</span>` : ''} ${ivaTxt} ${rep ? '<span class="chip warn">repetida: se cuenta una vez</span>' : ''}
+      ${f.r.total ? `<span>Total ${plata.format(f.r.total)}</span>` : ''} ${ivaTxt} ${enDolares(f.r) ? '<span class="chip warn">en dólares</span>' : ''} ${rep ? '<span class="chip warn">repetida: se cuenta una vez</span>' : ''}
       <span class="sp"></span><button class="btn sm danger" type="button" data-quitar="${i}">Quitar</button></div>`;
   }).join('');
   const hay = facturas.length > 0;
   $('#paso2').hidden = !hay;
   $('#paso3').hidden = !hay;
+  $('#cambio-campo').hidden = !facturas.some((f) => enDolares(f.r));
+  const tcFactura = (facturas.find((f) => enDolares(f.r) && f.r.tipoCambio) || {}).r;
+  if (tcFactura && !$('#cambio').value) $('#cambio').value = String(tcFactura.tipoCambio).replace('.', ',');
   const est = facturas.map((f) => f.r.ivaIncluido);
   $('#iva-ayuda').textContent = est.every((x) => x === true) ? 'Detectado: los precios de las facturas ya incluyen IVA (no se suma).'
     : est.every((x) => x === false) ? 'Detectado: los precios no incluyen IVA (se suma).' : 'No pude saberlo en todas: revisá esta opción.';
@@ -614,12 +748,12 @@ function pintarFacturas() {
 function pintar() {
   const q = normal($('#buscar').value.trim());
   $('#cuenta').textContent = productos.filter(incluido).length;
-  $('#descargar').disabled = !productos.some(incluido);
+  $('#descargar').disabled = !productos.some(incluido) || !!$('#cambio-err').textContent;
   const lista = productos.filter((p) => !q || normal(`${p.codigo} ${valor(p, 'nombre')} ${valor(p, 'categoria')}`).includes(q));
   $('#lista').innerHTML = lista.map((p) => `
     <tr class="${incluido(p) ? '' : 'fuera'}" data-clave="${esc(p.clave)}">
       <td class="chk"><input type="checkbox" data-k="incluir" ${incluido(p) ? 'checked' : ''} aria-label="Incluir"></td>
-      <td><input type="text" data-k="nombre" value="${esc(valor(p, 'nombre'))}" aria-label="Nombre"><div class="meta"><span class="mono">${esc(p.codigo || 'sin código')}</span> · factura ${esc(p.facturas.join(', '))}</div></td>
+      <td><input type="text" data-k="nombre" value="${esc(valor(p, 'nombre'))}" aria-label="Nombre"><div class="meta"><span class="mono">${esc(p.codigo || 'sin código')}</span> · factura ${esc(p.facturas.join(', ') || 'sin número')}</div></td>
       <td><input class="cat" type="text" list="lista-cat" data-k="categoria" value="${esc(valor(p, 'categoria'))}" aria-label="Categoría"></td>
       <td class="num">${numero.format(p.cantidad)}</td>
       <td class="num"><input class="num" type="text" inputmode="decimal" data-k="costo" value="${String(costoDe(p)).replace('.', ',')}" aria-label="Costo"></td>
@@ -636,9 +770,11 @@ async function cargarArchivos(lista) {
     if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') { errores.push(`${file.name}: no es un PDF.`); continue; }
     try {
       const r = await LectorPdf.leerPdf(new Uint8Array(await file.arrayBuffer()));
-      if (!r.items.length) { errores.push(`${file.name}: no encontré la lista de productos.`); continue; }
-      const id = `${r.rucEmisor}|${r.serie}|${r.numero}`;
-      if (facturas.some((f) => `${f.r.rucEmisor}|${f.r.serie}|${f.r.numero}` === id)) { errores.push(`${file.name}: esa factura ya está cargada.`); continue; }
+      const problema = problemaFactura(r);
+      if (problema) { errores.push(`${file.name}: ${problema}`); continue; }
+      // Solo se compara si se pudo leer el número: sin número no se sabe si es la misma
+      if (facturas.some((f) => mismaFactura(f.r, r))) { errores.push(`${file.name}: esa factura ya está cargada.`); continue; }
+      if (!r.numero) r.numeroAMano = true;
       facturas.push({ archivo: file.name, r });
     } catch (e) {
       errores.push(`${file.name}: ${e.message || 'no se pudo leer.'}`);
@@ -656,7 +792,7 @@ function descargar() {
   const llego = document.querySelector('input[name=modo]:checked').value === 'llego';
   const prov = $('#proveedor').value.trim();
   const sel = productos.filter(incluido);
-  if (!sel.length) return;
+  if (!sel.length || $('#cambio-err').textContent) return;
   const cab = ['Código', 'Producto', 'Categoría', 'Unidad', 'Proveedor', 'Costo', 'Precio', 'Llegó', 'Factura'];
   const filas = sel.map((p) => ({
     'Código': p.codigo, 'Producto': valor(p, 'nombre'), 'Categoría': valor(p, 'categoria'), 'Unidad': 'unidad', 'Proveedor': prov,
@@ -667,7 +803,7 @@ function descargar() {
   hoja['!cols'] = [12, 50, 18, 9, 16, 10, 10, 8, 16].map((wch) => ({ wch }));
   const libro = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(libro, hoja, 'Productos');
-  const nums = facturas.map((f) => f.r.numero).filter(Boolean).slice(0, 3).join('-');
+  const nums = facturas.map((f) => String(f.r.numero || '').replace(/[^\w-]+/g, '')).filter(Boolean).slice(0, 3).join('-');
   XLSX.writeFile(libro, `factura_${(prov || 'proveedor').replace(/[^\w-]+/g, '_')}_${nums || 'productos'}.xlsx`);
   toast(`Excel descargado con ${sel.length} productos${llego ? ' y las cantidades que llegaron' : ''}.`);
 }
@@ -686,6 +822,17 @@ $('#facturas').addEventListener('click', (e) => {
   pintarFacturas();
   armar();
 });
+$('#facturas').addEventListener('change', (e) => {
+  const inp = e.target.closest('[data-numero]');
+  if (!inp) return;
+  const f = facturas[Number(inp.dataset.numero)];
+  // «A 1234», «A-1234» o «1234»
+  const m = /^\s*([A-Za-z]{1,2})?[\s-]*(\d{1,9})\s*$/.exec(inp.value);
+  if (m) { f.r.serie = (m[1] || f.r.serie || '').toUpperCase(); f.r.numero = m[2]; } else { f.r.numero = ''; if (inp.value.trim()) toast('Escribí el número así: A 1234'); }
+  pintarFacturas();
+  armar();
+});
+$('#cambio').addEventListener('input', () => { Object.values(editados).forEach((x) => { delete x.costo; delete x.precio; }); armar(); });
 $('#iva').addEventListener('change', () => { Object.values(editados).forEach((x) => { delete x.costo; delete x.precio; }); armar(); });
 $('#margen').addEventListener('input', () => { Object.values(editados).forEach((x) => { delete x.precio; }); pintar(); });
 $('#redondeo').addEventListener('change', () => { Object.values(editados).forEach((x) => { delete x.precio; }); pintar(); });

@@ -159,7 +159,7 @@ label.btn input { display: none; }
     <p class="ayuda" id="catalogo-estado">Si cargás el Excel de <strong>Inventario completo</strong> del programa (Reportes y copias → Exportar Excel), al escanear algo que ya existe aparece su nombre y solo tenés que poner la cantidad. Sirve para contar el stock.</p>
   </section>
 
-  <p class="pie">Lo cargado se guarda solo en esta computadora mientras no toques «Empezar una lista nueva». En Stock Ferretería: Productos → Importar desde Excel. Para que tome las cantidades de productos que ya existen, marcá «Stock» al importar.</p>
+  <p class="pie">Lo cargado se guarda solo en esta computadora mientras no toques «Empezar una lista nueva». En Stock Ferretería: Productos → Importar desde Excel. Al importarlo, el stock de los productos que ya existen se cambia por lo que contaste (antes te muestra qué cambia).</p>
 </main>
 
 <datalist id="lista-cat"></datalist>
@@ -393,11 +393,13 @@ function descargarExcel() {
   const filas = datos.items.map((x) => ({
     'Código': x.codigo, 'Códigos de barras': (x.barras || []).join(' '), 'Producto': x.nombre, 'Categoría': x.categoria, 'Unidad': x.unidad, 'Proveedor': x.proveedor, 'Ubicación': x.ubicacion,
     'Stock': x.cantidad, 'Stock mínimo': x.minimo ?? '', 'Costo': x.costo ?? '', 'Precio': x.precio ?? '',
+    // «Contado: Sí» le avisa al programa que el Stock es lo que se contó: lo aplica sin tener que marcar nada
+    'Contado': 'Sí',
   }));
-  const hoja = XLSX.utils.json_to_sheet(filas, { header: ['Código', 'Códigos de barras', 'Producto', 'Categoría', 'Unidad', 'Proveedor', 'Ubicación', 'Stock', 'Stock mínimo', 'Costo', 'Precio'] });
+  const hoja = XLSX.utils.json_to_sheet(filas, { header: ['Código', 'Códigos de barras', 'Producto', 'Categoría', 'Unidad', 'Proveedor', 'Ubicación', 'Stock', 'Stock mínimo', 'Costo', 'Precio', 'Contado'] });
   // El código como texto, para que Excel no le saque los ceros ni lo pase a notación científica
   filas.forEach((f, i) => { const c = hoja[XLSX.utils.encode_cell({ r: i + 1, c: 0 })]; if (c) { c.t = 's'; c.v = String(f['Código'] || ''); c.z = '@'; } });
-  hoja['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 42 }, { wch: 16 }, { wch: 9 }, { wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
+  hoja['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 42 }, { wch: 16 }, { wch: 9 }, { wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 9 }];
   const libro = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(libro, hoja, 'Productos');
   XLSX.writeFile(libro, `productos_cargados_${hoy()}.xlsx`);
