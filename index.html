@@ -613,6 +613,11 @@
     <p class="sub">Sirve para cargar muchos productos de una vez. La planilla lleva un producto por fila y estas columnas: Código, Producto, Categoría, Unidad, Proveedor, Ubicación, Stock, Stock mínimo, Costo y Precio. Para productos nuevos hace falta la columna Producto; para actualizar precios alcanza con Código y Precio.</p>
   </header>
   <div class="dlg-b imp-b">
+    <div class="imp-herr solo-escritorio">
+      <span>Para armar la planilla:</span>
+      <button class="btn sm" type="button" data-herramienta="lector">Lector de facturas (PDF)</button>
+      <button class="btn sm" type="button" data-herramienta="cargador">Cargador con el lector de códigos</button>
+    </div>
     <div class="botonera">
       <button class="btn" type="button" id="imp-modelo">Descargar planilla modelo</button>
       <label class="btn primary" for="imp-archivo">Elegir la planilla</label>
@@ -620,12 +625,14 @@
     </div>
     <div id="imp-resumen" class="imp-resumen"></div>
     <fieldset id="imp-campos" class="imp-campos" hidden>
-      <legend>En los productos que ya existen, cambiar:</legend>
-      <label class="check"><input type="checkbox" data-campo="precio" checked> Precio de venta</label>
-      <label class="check"><input type="checkbox" data-campo="costo" checked> Costo</label>
-      <label class="check"><input type="checkbox" data-campo="stock"> Stock (reemplaza el stock por el de la planilla)</label>
-      <label class="check"><input type="checkbox" data-campo="nombre"> Nombre del producto</label>
-      <label class="check"><input type="checkbox" data-campo="otros"> Categoría, unidad, proveedor, ubicación y stock mínimo</label>
+      <legend>Qué cambiar</legend>
+      <label class="check" id="imp-entrada" hidden><input type="checkbox" data-campo="entrada" checked> <span><strong>Sumar al stock lo que llegó</strong> (columna «Llegó»)</span></label>
+      <p class="muted solo-existentes">En los productos que ya existen:</p>
+      <label class="check solo-existentes"><input type="checkbox" data-campo="precio" checked> Precio de venta</label>
+      <label class="check solo-existentes"><input type="checkbox" data-campo="costo" checked> Costo</label>
+      <label class="check solo-existentes"><input type="checkbox" data-campo="stock"> Stock (reemplaza el stock por el de la planilla)</label>
+      <label class="check solo-existentes"><input type="checkbox" data-campo="nombre"> Nombre del producto</label>
+      <label class="check solo-existentes"><input type="checkbox" data-campo="otros"> Categoría, unidad, proveedor, ubicación y stock mínimo</label>
       <div id="imp-stock" class="imp-stock"></div>
     </fieldset>
   </div>

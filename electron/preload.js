@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('almacen', {
   quitarCarpetaExtra: () => ipcRenderer.invoke('almacen:quitarCarpetaExtra'),
   respaldarAhora: () => ipcRenderer.invoke('almacen:respaldarAhora'),
   guardarFoto: (nombre, bytes) => ipcRenderer.invoke('fotos:guardar', nombre, bytes),
+  abrirHerramienta: (nombre) => ipcRenderer.send('herramienta:abrir', nombre),
   reparar: () => ipcRenderer.sendSync('almacen:reparar'),
   marcarDanada: () => ipcRenderer.sendSync('almacen:marcarDanada'),
   // Tamaño de letra: zoom real de la ventana, para que toda la pantalla se acomode

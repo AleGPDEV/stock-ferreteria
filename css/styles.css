@@ -506,3 +506,7 @@ textarea { width: 100%; resize: vertical; }
 .dlg-foto img { display: block; max-width: 100%; max-height: 65vh; margin: 0 auto; border-radius: 10px; object-fit: contain; }
 .link-btn { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--accent); text-decoration: underline; cursor: pointer; }
 .qm-sug { line-height: 1.5; }
+
+/* Herramientas aparte */
+.imp-herr { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); font-size: 14.5px; }
+body:not(.es-escritorio) .solo-escritorio { display: none !important; }

@@ -603,6 +603,8 @@ const COLUMNAS = {
   minimo: ['stock minimo', 'minimo', 'stock min', 'min'],
   costo: ['costo', 'precio de costo', 'costo unitario', 'precio costo'],
   precio: ['precio', 'precio de venta', 'precio venta', 'pvp', 'venta'],
+  entrada: ['llego', 'entrada', 'cantidad que llego', 'sumar al stock', 'llegada'],
+  factura: ['factura', 'comprobante', 'documento'],
 };
 const UNIDADES = ['unidad', 'kg', 'm', 'litro', 'caja', 'paquete', 'rollo', 'par'];
 const ALIAS_UNIDAD = { u: 'unidad', un: 'unidad', und: 'unidad', unid: 'unidad', unidades: 'unidad', kilo: 'kg', kilos: 'kg', kgs: 'kg', metro: 'm', metros: 'm', mt: 'm', mts: 'm', l: 'litro', lt: 'litro', lts: 'litro', litros: 'litro', cajas: 'caja', paq: 'paquete', paquetes: 'paquete', rollos: 'rollo', pares: 'par' };
@@ -627,7 +629,7 @@ function parseNum(v) {
 }
 
 /** Campos que se pueden cambiar en los productos que ya existen al importar. */
-const CAMPOS_IMPORTAR = { precio: true, costo: true, stock: false, nombre: false, otros: false };
+const CAMPOS_IMPORTAR = { precio: true, costo: true, stock: false, nombre: false, otros: false, entrada: true };
 
 /** Lee las filas de la planilla y arma qué se agregaría y qué se actualizaría, sin tocar los datos.
  *  Si la planilla no tiene columna «Producto» pero sí «Código», solo actualiza productos que ya existen. */
@@ -646,6 +648,8 @@ function planImportacion(d, filas) {
     return plan;
   }
   plan.soloActualiza = !mapa.nombre;
+  plan.conEntrada = !!mapa.entrada;
+  plan.deFactura = !!mapa.factura;
   const porCodigo = new Map(d.productos.map((p) => [String(p.codigo).toUpperCase(), p]));
   const porNombre = new Map(d.productos.map((p) => [normal(p.nombre), p]));
   const vistos = new Set();
@@ -665,6 +669,7 @@ function planImportacion(d, filas) {
     const datos = {
       nombre, categoria: txt('categoria'), unidad: txt('unidad') ? normUnidad(txt('unidad')) : '', proveedor: txt('proveedor'),
       ubicacion: txt('ubicacion'), stock: num('stock'), minimo: num('minimo'), costo: num('costo'), precio: num('precio'),
+      entrada: num('entrada'), factura: txt('factura'),
     };
     if (existente) plan.actualizados.push({ id: existente.id, codigo: existente.codigo, nombreActual: existente.nombre, stockActual: existente.stock, precioActual: existente.precio, datos });
     else {
@@ -685,7 +690,14 @@ function cambiosStockImportacion(plan) {
 /** campos: qué se cambia en los productos que ya existen ({ precio, costo, stock, nombre, otros }).
  *  Sin campos, se cambia todo (comportamiento de las versiones anteriores). Los productos nuevos se cargan completos. */
 function aplicarImportacion(d, plan, campos) {
-  const c = campos || { precio: true, costo: true, stock: true, nombre: true, otros: true };
+  const c = campos || { precio: true, costo: true, stock: true, nombre: true, otros: true, entrada: true };
+  let llegadas = 0;
+  // Mercadería que llegó (columna «Llegó»): se suma al stock como una entrada, con su costo y su factura
+  const sumarLlegada = (p, x) => {
+    if (!(c.entrada && x.entrada > 0)) return;
+    const err = registrar(d, { tipo: 'entrada', productoId: p.id, cantidad: x.entrada, costoUnit: c.costo && x.costo > 0 ? x.costo : '', proveedorId: p.proveedorId, nota: x.factura ? `Factura ${x.factura}` : 'Llegó (importado)' });
+    if (!err) llegadas++;
+  };
   const provId = (nombre) => {
     if (!nombre) return '';
     let v = d.proveedores.find((x) => normal(x.nombre) === normal(nombre));
@@ -701,6 +713,7 @@ function aplicarImportacion(d, plan, campos) {
     };
     d.productos.push(p);
     if (x.stock > 0) registrar(d, { tipo: 'entrada', productoId: p.id, cantidad: x.stock, costoUnit: p.costo, proveedorId: p.proveedorId, nota: 'Stock inicial (importado)', origen: 'inicial' });
+    sumarLlegada(p, x);
   }
   for (const act of plan.actualizados) {
     const p = d.productos.find((q) => q.id === act.id);
@@ -717,8 +730,9 @@ function aplicarImportacion(d, plan, campos) {
     if (c.costo && pos(x.costo) != null) p.costo = x.costo;
     if (c.precio && x.precio > 0 && x.precio !== p.precio) { anotarPrecio(d, p, x.precio, 'Importación'); p.precio = x.precio; }
     if (c.stock && pos(x.stock) != null && red(x.stock) !== p.stock) registrar(d, { tipo: 'ajuste', productoId: p.id, cantidad: x.stock, nota: 'Corrección por importación' });
+    sumarLlegada(p, x);
   }
-  return { nuevos: plan.nuevos.length, actualizados: plan.actualizados.length };
+  return { nuevos: plan.nuevos.length, actualizados: plan.actualizados.length, llegadas };
 }
 
 /* ---------- Datos de ejemplo ---------- */
@@ -2412,8 +2426,12 @@ function mostrarPlan(nombreArchivo) {
       <tbody>${muestra.map((m) => `<tr><td class="mono">${esc(m.codigo)}</td><td>${esc(m.datos.nombre || m.nombreActual || '')}</td><td class="num">${m.datos.stock == null ? '—' : n(m.datos.stock)}</td><td class="num">${m.datos.precio == null ? '—' : $u(m.datos.precio)}</td></tr>`).join('')}
       ${total > muestra.length ? `<tr><td colspan="4" class="muted">… y ${total - muestra.length} más</td></tr>` : ''}</tbody></table></div>
     ${db.ejemplo ? '<p class="nota-edit">Estás con los datos de ejemplo: lo importado se va a mezclar con ellos. Si no querés eso, cancelá y tocá primero «Empezar de cero».</p>' : ''}`;
-  if (planImp.actualizados.length) {
-    $$('#imp-campos [data-campo]').forEach((x) => { x.checked = !!CAMPOS_IMPORTAR[x.dataset.campo]; });
+  $$('#imp-campos [data-campo]').forEach((x) => { x.checked = !!CAMPOS_IMPORTAR[x.dataset.campo]; });
+  // Planilla del Lector de facturas: el precio de venta de los que ya existen no se toca
+  if (planImp.deFactura) $('#imp-campos [data-campo=precio]').checked = false;
+  $('#imp-entrada').hidden = !planImp.conEntrada;
+  $$('#imp-campos .solo-existentes').forEach((x) => { x.hidden = !planImp.actualizados.length; });
+  if (planImp.actualizados.length || planImp.conEntrada) {
     $('#imp-campos').hidden = false;
     mostrarCambiosStock();
   }
@@ -2458,6 +2476,7 @@ function iniciarImportacion() {
     lector.readAsArrayBuffer(file);
   });
   $$('#imp-campos [data-campo]').forEach((x) => x.addEventListener('change', mostrarCambiosStock));
+  $$('[data-herramienta]').forEach((b) => b.addEventListener('click', () => { if (escritorio() && window.almacen.abrirHerramienta) window.almacen.abrirHerramienta(b.dataset.herramienta); }));
   $('#imp-ok').addEventListener('click', () => {
     if (!planImp || planImp.error) return;
     const r = aplicarImportacion(db, planImp, camposImportar());
@@ -2465,7 +2484,7 @@ function iniciarImportacion() {
     guardar();
     $('#dlg-import').close();
     render();
-    toast(`Importación lista: ${r.nuevos} productos nuevos y ${r.actualizados} actualizados.`);
+    toast(`Importación lista: ${r.nuevos} productos nuevos y ${r.actualizados} actualizados${r.llegadas ? `; mercadería sumada a ${r.llegadas}` : ''}.`);
   });
 }
 
@@ -2988,6 +3007,7 @@ function iniciarAperturaCaja() {
 }
 
 function iniciar() {
+  document.body.classList.toggle('es-escritorio', escritorio() && !!window.almacen.abrirHerramienta);
   iniciarAperturaCaja();
   $('#banner-stock-ver').addEventListener('click', verParaReponer);
   $('#banner-stock-ocultar').addEventListener('click', () => {

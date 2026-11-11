@@ -7,7 +7,7 @@ Programa para controlar el stock de una ferretería y cobrar en el mostrador. Se
 - **Vender**: buscás el producto por nombre o código (sirve un lector de código de barras USB), armás el ticket, elegís cómo paga (efectivo, débito, crédito o transferencia) y calcula el vuelto. Al **cobrar**, el stock se descuenta solo. La lista se puede **filtrar** por categoría, proveedor y stock, y ordenar por nombre, precio o más vendidos. Si el producto no está cargado, se agrega ahí mismo con **nombre y precio** y entra a la venta. Si el programa dice que no hay stock, se puede **vender igual** después de confirmar (el stock queda en negativo hasta que se corrija contando). Si el lector de códigos escribe en otro campo (por ejemplo «¿Con cuánto paga?»), el programa se da cuenta, deja el campo como estaba y agrega el producto. Permite hacer un **descuento** en porcentaje, **imprimir el ticket** y el **cierre de caja**, ver las ventas de cualquier día y **anular** una venta (el stock vuelve).
 - **Apertura y cierre de caja**: al entrar a Vender con la caja cerrada se pide el efectivo inicial. Mientras está abierta se anotan retiros e ingresos de efectivo. Al cerrar se cuenta el efectivo y el programa calcula lo que debería haber (inicial + ventas en efectivo + ingresos − retiros) y la diferencia. Para el empleado el cierre es a ciegas: anota lo que contó y la diferencia la ve solo el administrador, en **Reportes y copias → Cierres de caja**, con impresión y exportación a Excel.
 - **Productos**: foto, código, nombre, categoría, unidad (unidad, kg, m, litro, caja…), proveedor, ubicación en el local, costo, precio de venta y stock mínimo. Avisa cuando un producto está bajo el mínimo o sin stock: un aviso arriba de todas las pantallas (rojo si hay productos sin stock), un contador en Productos, el detalle en la ventana de venta cobrada y el filtro **Para reponer**. Lo ven también los empleados.
-  - **Importar desde Excel**: carga cientos de productos de una vez desde una planilla `.xlsx` o `.csv` (también el `.csv` de Excel en español, con punto y coma y coma decimal). Trae una planilla modelo. Si el código ya existe, actualiza el producto en lugar de duplicarlo, y se elige qué cambiar: por defecto solo precio y costo; el stock y el nombre solo si se marcan, y antes se muestra la lista de stocks que cambian. Con una planilla de solo **Código y Precio** se actualizan los precios de la lista de un proveedor.
+  - **Importar desde Excel**: carga cientos de productos de una vez desde una planilla `.xlsx` o `.csv` (también el `.csv` de Excel en español, con punto y coma y coma decimal). Trae una planilla modelo. Si el código ya existe, actualiza el producto en lugar de duplicarlo, y se elige qué cambiar: por defecto solo precio y costo; el stock y el nombre solo si se marcan, y antes se muestra la lista de stocks que cambian. Con una planilla de solo **Código y Precio** se actualizan los precios de la lista de un proveedor. La planilla se puede armar con el **Lector de facturas** o el **Cargador de productos** (ver más abajo); si trae la columna **Llegó**, esas cantidades se suman al stock como mercadería que llegó.
   - **Actualizar precios**: sube o baja un porcentaje a todos los productos, a una categoría o a un proveedor, con redondeo. Los precios bajos no se redondean de a $ 5 o $ 10 (un artículo de $ 2 no pasa a $ 10), y la vista previa muestra el cambio real más chico y más grande.
   - **Fotos**: en **Editar** se elige una foto (la que se pasó del teléfono a la computadora, en JPG o PNG) o se arrastra al recuadro. El programa la achica (unos 900 px, 50 a 150 KB) y la guarda en `%APPDATA%\Stock Ferreteria\Fotos`. Se ve en la lista de Vender, en el ticket y en Productos; tocándola se agranda. El filtro **Sin foto** muestra los que faltan. Las fotos HEIC del iPhone no se pueden abrir: en el iPhone, Ajustes → Cámara → Formatos → «Más compatible».
   - **Historial de precios**: cada cambio de precio queda anotado con fecha y usuario, en **Reportes y copias → Cambios de precio**.
@@ -63,14 +63,28 @@ Después de 5 PIN equivocados seguidos, ese usuario tiene que esperar 5 minutos 
 
 Abrí `index.html` con doble clic. **Sirve solo para probar el programa**: los datos quedan en el navegador de esa PC, que guarda unos 5 MB (más o menos un mes de ventas de un comercio). Para usarlo en el negocio, instalá la versión de Windows.
 
-## Cargador de productos (programa aparte)
+## Herramientas aparte: Lector de facturas y Cargador de productos
+
+Son dos programas chicos que **arman el Excel** para importar en **Productos → Importar desde Excel**. Vienen dentro del instalador (menú **Herramientas** del programa, o los botones de la ventana de importar) y se abren en su propia ventana, sin tocar los datos: si una falla, la caja sigue funcionando. También se pueden descargar sueltos de **Releases** (`Lector-de-facturas.html`, `Cargador-de-productos.html`) y abrir con doble clic en Chrome o Edge en cualquier PC, sin internet.
+
+### Lector de facturas
+
+1. Elegí (o arrastrá) los PDF de las e-facturas del proveedor; pueden ser varias. Lee la tabla de productos sola, aunque ocupe varias páginas.
+2. Revisá el proveedor (lo sugiere a partir del email de la factura), el IVA y la ganancia para el precio de venta (0 % = igual al costo).
+   - **IVA**: compara la suma de las líneas con el total a pagar. Si ya incluyen IVA (como en las facturas de Uruimporta), no lo suma; si no, suma el 22 % (o lo que diga la opción).
+   - **Costo**: lo que se pagó por unidad, con el descuento de la factura. Si un producto está en varias facturas, se toma el de la más nueva.
+3. Elegí qué hacer con las cantidades: **solo cargar los productos** (facturas viejas) o **es mercadería que acaba de llegar** (se suma al stock, con el número de factura en el historial).
+4. Corregí nombres o categorías si hace falta y tocá **Descargar Excel**. Al importarlo, a los productos que ya existen se les actualiza el costo pero no el precio de venta.
+
+Usa el código del modelo del proveedor (por ejemplo `LH-5283`) como código del producto, así la próxima factura actualiza el mismo producto. Funciona con e-facturas en PDF generadas por sistema (con texto); una foto o un escaneo no se puede leer.
+
+### Cargador de productos
 
 Para cargar el local recorriéndolo con el lector de códigos y una notebook, sin tocar la PC del mostrador.
 
-1. Descargá `Cargador-de-productos.html` de **Releases** (o de la carpeta `cargador/` de este repositorio) y abrilo con doble clic en Chrome o Edge. No necesita internet ni instalación.
-2. Escaneá un producto: aparece el formulario con el código puesto. Escribí el nombre, Enter, el precio, Enter. La categoría y la ubicación quedan puestas para el siguiente, así se carga estante por estante.
-3. Si volvés a escanear un producto que ya cargaste, se le suma 1 a la cantidad. Para lo que no tiene código, **Producto sin código** (el programa le pone uno al importar).
-4. Al terminar, **Descargar Excel** y en Stock Ferretería: **Productos → Importar desde Excel**.
+1. Escaneá un producto: aparece el formulario con el código puesto. Escribí el nombre, Enter, el precio, Enter. La categoría y la ubicación quedan puestas para el siguiente, así se carga estante por estante.
+2. Si volvés a escanear un producto que ya cargaste, se le suma 1 a la cantidad. Para lo que no tiene código, **Producto sin código** (el programa le pone uno al importar).
+3. Al terminar, **Descargar Excel** e importalo.
 
 Lo cargado queda guardado en esa computadora aunque se cierre. Para **contar el stock** de lo que ya está cargado: exportá **Inventario completo** desde Reportes y copias, y en el cargador tocá **Cargar los productos del programa**; al escanear aparece el nombre y solo ponés la cantidad. Al importar, marcá **Stock** para que se corrija.
 
@@ -120,7 +134,7 @@ electron/datos.js         Base SQLite: guarda solo lo que cambió
 electron/preload.js       Puente entre la página y el disco
 build/icon.*              Ícono del programa (logo de Grupo Muros Prontos)
 img/logo.png              Logo que se ve en la barra y en el ingreso
-cargador/cargador.html    Cargador de productos (fuente); npm run cargador arma el archivo único
+herramientas/fuentes/      Lector de facturas y Cargador de productos (fuente); npm run herramientas arma los archivos únicos
 tests/logica.test.js      Pruebas automáticas de la lógica
 tests/almacen.test.js     Pruebas de la base SQLite
 ```

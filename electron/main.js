@@ -312,6 +312,34 @@ ipcMain.handle('almacen:respaldarAhora', async () => hacerRespaldo(true));
 
 /* ---------- Ventana ---------- */
 
+/* ---------- Herramientas aparte (Cargador de productos y Lector de facturas) ----------
+ * Se abren en su propia ventana, sin acceso a los datos del programa: solo arman un Excel.
+ * Si una falla, la caja sigue funcionando. */
+const HERRAMIENTAS = {
+  cargador: { archivo: 'Cargador-de-productos.html', titulo: 'Cargador de productos' },
+  lector: { archivo: 'Lector-de-facturas.html', titulo: 'Lector de facturas' },
+};
+const abiertas = {};
+function abrirHerramienta(nombre) {
+  const h = HERRAMIENTAS[nombre];
+  if (!h) return;
+  if (abiertas[nombre] && !abiertas[nombre].isDestroyed()) { abiertas[nombre].show(); abiertas[nombre].focus(); return; }
+  const w = new BrowserWindow({
+    width: 1280, height: 860, minWidth: 700, minHeight: 500,
+    title: h.titulo,
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
+    backgroundColor: '#e2e7ed',
+    autoHideMenuBar: true,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, devTools: !app.isPackaged },
+  });
+  w.setMenuBarVisibility(false);
+  w.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
+  w.webContents.on('will-navigate', (e) => e.preventDefault());
+  w.loadFile(path.join(__dirname, '..', 'herramientas', h.archivo));
+  abiertas[nombre] = w;
+}
+ipcMain.on('herramienta:abrir', (e, nombre) => abrirHerramienta(String(nombre)));
+
 function crearVentana() {
   ventana = new BrowserWindow({
     width: 1360,
@@ -334,6 +362,8 @@ function crearVentana() {
   });
   ventana.once('ready-to-show', () => { ventana.maximize(); ventana.show(); });
   ventana.loadFile(path.join(__dirname, '..', 'index.html'));
+  // Al cerrar el programa se cierran también las herramientas
+  ventana.on('closed', () => app.quit());
 
   // Los enlaces externos se abren en el navegador
   ventana.webContents.setWindowOpenHandler(({ url }) => {
@@ -376,6 +406,13 @@ if (!app.requestSingleInstanceLock()) {
           { label: 'Abrir carpeta de fotos', click: () => shell.openPath((fs.mkdirSync(rutas().fotos, { recursive: true }), rutas().fotos)) },
           { type: 'separator' },
           { role: 'quit', label: 'Salir' },
+        ],
+      },
+      {
+        label: 'Herramientas',
+        submenu: [
+          { label: 'Lector de facturas (PDF → Excel)', click: () => abrirHerramienta('lector') },
+          { label: 'Cargador de productos (con el lector de códigos)', click: () => abrirHerramienta('cargador') },
         ],
       },
       {
