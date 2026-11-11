@@ -17,16 +17,23 @@
   function esMedida(w) {
     const u = String(w || '').toUpperCase().replace(/^[("'”]+|[)"'”.,;:]+$/g, '');
     if (!u) return false;
-    return /^\d/.test(u) // empieza con número: 8MM, 200MM, 8X1/2, 100M, 2,5MM
+    return esNorma(u)
+      || /^\d/.test(u) // empieza con número: 8MM, 200MM, 8X1/2, 100M, 2,5MM
       || /^X\s?\d/.test(u) // cantidad por paquete: X100, X50, X100M
       || /^[A-Z]\d{1,4}[A-Z]{0,2}$/.test(u) // una letra y números: G120 (lija), P80, M8, E27, T20
       || /^(MM|CM|MTS?|KG|GR|LTS?|ML|HP|CC|PULG)\d/.test(u);
   }
 
+  /** Normas y grados: DIN933, ISO4017, PN10, RAL9010, IP65, RJ45, AWG12, IEC60309, NEMA5, SCH40, CAT6, SAE1020… */
+  const NORMAS = ['DIN', 'ISO', 'PN', 'RAL', 'IP', 'RJ', 'AWG', 'IEC', 'NEMA', 'SCH', 'CAT', 'ANSI', 'ASTM', 'SAE', 'UNE', 'UNIT', 'NBR', 'EN', 'BS', 'JIS', 'NPT', 'BSP', 'UL'];
+  const RE_NORMA = new RegExp(`^(?:${NORMAS.join('|')})-?\\d`);
+  function esNorma(w) { return RE_NORMA.test(String(w || '').toUpperCase()); }
+
   /** Código de modelo al final de la descripción: MK-0099, EBM301, AB-1234. Con una sola letra, solo con guion (A-1234). */
   const RE_MODELO = /^(?:[A-Z]{2,5}-?\d{2,7}[A-Z]{0,2}|[A-Z]-\d{2,7}[A-Z]?)$/;
-  // Número del proveedor al principio, salvo que sea una medida: «1234 TORNILLO…» sí; «250 GR …» no
-  const RE_INTERNO = /^(\d{3,8})\s+(?!(?:MM|CM|M|MTS?|KG|GR|G|L|LTS?|ML|UN|UNID|U|X)\b)(?=\D)/i;
+  // Número del proveedor al principio, salvo que sea una medida («250 GR …») o una cantidad seguida de un plural
+  // («100 TORNILLOS …», «100 TARUGOS …»): «1234 TORNILLO …» sí es código
+  const RE_INTERNO = /^(\d{3,8})\s+(?!(?:MM|CM|M|MTS?|KG|GR|G|L|LTS?|ML|UN|UNID|U|X)\b)(?![A-ZÁÉÍÓÚÑ]{2,}S\b)(?=\D)/i;
 
   /**
    * Separa el código del proveedor de la descripción.
@@ -90,6 +97,9 @@
     return '';
   }
 
+  const AVISO_MISMO_CODIGO = 'Mismo código y descripción distinta: revisalos';
+  const descripcionComparable = (t) => String(t || '').toUpperCase().replace(/\s+/g, '');
+
   /**
    * Junta los renglones de las facturas en productos.
    * facturas: [{ r }] (r = lo que devuelve LectorPdf.leerFactura, con r.numero corregido a mano si hizo falta).
@@ -103,6 +113,7 @@
       return { productos: [], error: 'Hay facturas en dólares: escribí el tipo de cambio (cuántos pesos vale un dólar) para pasar los costos a pesos.' };
     }
     const porClave = new Map();
+    let aviso = false;
     const ordenadas = facturas.slice().sort((a, b) => (a.r.fecha || '').localeCompare(b.r.fecha || ''));
     for (const f of ordenadas) {
       const iva = ivaDe(f) || 0;
@@ -110,10 +121,19 @@
       const nf = numeroFactura(f.r);
       for (const it of f.r.items) {
         const s = separarCodigo(it.descripcion, it.codigo);
-        const clave = claveProducto(it.descripcion, it.codigo);
+        let clave = claveProducto(it.descripcion, it.codigo);
+        // Red de seguridad: mismo código pero otra descripción (sin contar mayúsculas y espacios) → no se juntan
+        const desc = descripcionComparable(s.nombre);
+        const primero = porClave.get(clave);
+        if (primero && primero.desc !== desc) {
+          primero.aviso = AVISO_MISMO_CODIGO;
+          clave = `${clave}#${desc}`;
+          if (!porClave.has(clave)) aviso = true;
+        }
         const costo = red2(it.importe / it.cantidad * (1 + iva / 100) * cambio);
         let p = porClave.get(clave);
-        if (!p) { p = { clave, codigo: s.codigo, nombre: nombreLindo(s.nombre), descripcion: s.nombre, cantidad: 0, facturas: [] }; porClave.set(clave, p); }
+        if (!p) { p = { clave, codigo: s.codigo, nombre: nombreLindo(s.nombre), descripcion: s.nombre, desc, cantidad: 0, facturas: [] }; porClave.set(clave, p); }
+        if (aviso) { p.aviso = AVISO_MISMO_CODIGO; aviso = false; }
         p.cantidad += it.cantidad;
         p.costo = costo; // la factura más nueva queda última
         if (nf && !p.facturas.includes(nf)) p.facturas.push(nf);
@@ -122,7 +142,25 @@
     return { productos: [...porClave.values()], error: '' };
   }
 
-  const api = { esMedida, separarCodigo, claveProducto, nombreLindo, numeroFactura, mismaFactura, problemaFactura, armarProductos, enDolares, esNotaCredito, MARCAS };
+  /** Columnas del Excel que arma el Lector (el programa lo importa con «Importar desde Excel»). */
+  const COLUMNAS_EXCEL = ['Código', 'Código del proveedor', 'Producto', 'Categoría', 'Unidad', 'Proveedor', 'Costo', 'Precio', 'Llegó', 'Factura'];
+
+  /**
+   * Filas del Excel. lista: [{ codigo, nombre, categoria, costo, precio, cantidad, facturas }] (ya con lo que se editó).
+   * El programa busca cada producto por «Código del proveedor» + «Proveedor», así que el proveedor es obligatorio.
+   * «Código» queda como antes (compatibilidad); «Código del proveedor» va vacío si no hay código (se usó la descripción).
+   */
+  function filasExcel(lista, opc = {}) {
+    const proveedor = String(opc.proveedor || '').trim();
+    if (!proveedor) return { filas: [], error: 'Escribí el proveedor (el mismo nombre que en el programa).' };
+    const filas = lista.map((p) => ({
+      'Código': p.codigo || '', 'Código del proveedor': p.codigo || '', 'Producto': p.nombre, 'Categoría': p.categoria || '', 'Unidad': 'unidad',
+      'Proveedor': proveedor, 'Costo': p.costo, 'Precio': p.precio, 'Llegó': opc.llego ? p.cantidad : '', 'Factura': (p.facturas || []).join(', '),
+    }));
+    return { filas, error: '' };
+  }
+
+  const api = { filasExcel, COLUMNAS_EXCEL, esNorma, AVISO_MISMO_CODIGO, esMedida, separarCodigo, claveProducto, nombreLindo, numeroFactura, mismaFactura, problemaFactura, armarProductos, enDolares, esNotaCredito, MARCAS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.LectorProductos = api;
 })(typeof window !== 'undefined' ? window : globalThis);

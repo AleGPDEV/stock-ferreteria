@@ -229,8 +229,12 @@
     const fecha = valorDe(['FECHA DOCUMENTO', 'FECHA DE EMISIÓN', 'FECHA EMISIÓN', 'FECHA'], (v) => /\d{2}\/\d{2}\/\d{4}/.test(v)) || ((plano.match(/\b(\d{2}\/\d{2}\/\d{4})\b/) || [])[1] || '');
     const mf = /(\d{2})\/(\d{2})\/(\d{4})/.exec(fecha);
     r.fecha = mf ? `${mf[3]}-${mf[2]}-${mf[1]}` : '';
-    r.moneda = valorDe(['MONEDA'], (v) => /[a-z$]/i.test(v)) || ((/MONEDA\s*:?\s*([A-Z$]{1,4}\$?S?)/i.exec(textoCabecera) || [])[1] || '') || 'UYU';
-    r.dolares = /USD|U\$S|US\$|D[OÓ]LAR/i.test(r.moneda);
+    const RE_USD = /U\$S|US\$|U\$D|\bUSD\b|D[OÓ]LAR/i;
+    const monedaLeida = valorDe(['MONEDA'], (v) => /[a-z$]/i.test(v)) || ((/MONEDA\s*:?\s*([A-Z$]{1,4}\$?S?)/i.exec(textoCabecera) || [])[1] || '');
+    // Sin campo «Moneda»: se mira si los títulos de las columnas («Importe U$S») o el total («TOTAL US$ …») dicen dólares
+    const dolaresEnTabla = !monedaLeida && ((iTabla >= 0 && RE_USD.test(todo[iTabla].texto)) || todo.some((f) => /total/i.test(f.texto) && RE_USD.test(f.texto)));
+    r.moneda = monedaLeida || (dolaresEnTabla ? 'USD' : 'UYU');
+    r.dolares = RE_USD.test(r.moneda);
     const tc = valorDe(['TIPO DE CAMBIO', 'T. CAMBIO', 'T/C', 'COTIZACIÓN', 'COTIZACION'], (v) => numUy(v) > 0);
     r.tipoCambio = tc ? numUy(tc) : null;
     const email = (plano.match(/[\w.-]+@([\w-]+)\.[\w.]+/) || []);
