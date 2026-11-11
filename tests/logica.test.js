@@ -557,3 +557,92 @@ test('Excel: texto del período', () => {
   assert.equal(app.textoPeriodo('2026-11-11', '2026-11-11'), 'Día 11/11/2026');
   assert.equal(app.textoPeriodo('', ''), '');
 });
+
+// ---------- Reportes: moverse día a día, comparar y resumen del día ----------
+
+test('períodos: un día se mueve de a un día, un mes de a un mes y una franja de a su largo; no pasa de hoy', () => {
+  const hoy = '2026-11-11';
+  assert.deepEqual(app.moverPeriodo('2026-11-10', '2026-11-10', -1, hoy), { desde: '2026-11-09', hasta: '2026-11-09' });
+  assert.deepEqual(app.moverPeriodo('2026-11-10', '2026-11-10', 1, hoy), { desde: '2026-11-11', hasta: '2026-11-11' });
+  assert.equal(app.moverPeriodo('2026-11-11', '2026-11-11', 1, hoy), null, 'mañana no');
+  assert.deepEqual(app.moverPeriodo('2026-03-01', '2026-03-01', -1, hoy), { desde: '2026-02-28', hasta: '2026-02-28' });
+  assert.deepEqual(app.moverPeriodo('2026-10-01', '2026-10-31', -1, hoy), { desde: '2026-09-01', hasta: '2026-09-30' });
+  assert.deepEqual(app.moverPeriodo('2026-10-01', '2026-10-31', 1, hoy), { desde: '2026-11-01', hasta: '2026-11-11' }, 'el mes en curso llega hasta hoy');
+  assert.deepEqual(app.moverPeriodo('2026-11-01', '2026-11-11', -1, hoy), { desde: '2026-10-01', hasta: '2026-10-31' });
+  assert.deepEqual(app.moverPeriodo('2026-10-05', '2026-10-11', 1, hoy), { desde: '2026-10-12', hasta: '2026-10-18' });
+});
+
+test('períodos: con qué se compara', () => {
+  const hoy = '2026-11-11';
+  const d = app.periodoComparable('2026-11-07', '2026-11-07', hoy); // sábado
+  assert.deepEqual([d.desde, d.hasta], ['2026-10-31', '2026-10-31']);
+  assert.equal(d.texto, 'vs. el sábado anterior');
+  const m = app.periodoComparable('2026-10-01', '2026-10-31', hoy);
+  assert.deepEqual([m.desde, m.hasta, m.texto], ['2026-09-01', '2026-09-30', 'vs. septiembre']);
+  const encurso = app.periodoComparable('2026-11-01', '2026-11-11', hoy);
+  assert.deepEqual([encurso.desde, encurso.hasta], ['2026-10-01', '2026-10-11']);
+  const marzo = app.periodoComparable('2026-03-01', '2026-03-31', hoy);
+  assert.deepEqual([marzo.desde, marzo.hasta], ['2026-02-01', '2026-02-28']);
+  const f = app.periodoComparable('2026-10-05', '2026-10-11', hoy);
+  assert.deepEqual([f.desde, f.hasta, f.texto], ['2026-09-28', '2026-10-04', 'vs. los 7 días anteriores']);
+});
+
+test('tablero: tramos de crecimiento al día elegido', () => {
+  const t = app.tramosCrecimiento('2026-10-15'); // jueves
+  const por = Object.fromEntries(t.map((x) => [x.clave, x]));
+  assert.deepEqual([por.dia.antDesde, por.dia.antHasta], ['2026-10-08', '2026-10-08']);
+  assert.deepEqual([por.semana.desde, por.semana.antDesde, por.semana.antHasta], ['2026-10-12', '2026-10-05', '2026-10-08']);
+  assert.deepEqual([por.mes.desde, por.mes.antDesde, por.mes.antHasta], ['2026-10-01', '2026-09-01', '2026-09-15']);
+  assert.deepEqual([por.anio.desde, por.anio.antDesde, por.anio.antHasta], ['2026-01-01', '2025-01-01', '2025-10-15']);
+  const fin = Object.fromEntries(app.tramosCrecimiento('2026-03-31').map((x) => [x.clave, x]));
+  assert.equal(fin.mes.antHasta, '2026-02-28', 'el mes anterior más corto no se pasa');
+});
+
+test('tablero: subas y bajas ordenadas, y lo nuevo sin porcentaje', () => {
+  const r = app.subasYBajas({ a: { nombre: 'A', vendido: 300 }, b: { nombre: 'B', vendido: 50 }, c: { nombre: 'C', vendido: 80 } },
+    { a: { nombre: 'A', vendido: 100 }, b: { nombre: 'B', vendido: 200 }, d: { nombre: 'D', vendido: 40 } });
+  assert.deepEqual(r.map((x) => x.clave), ['a', 'c', 'd', 'b']);
+  assert.equal(r[0].pct, 200);
+  assert.equal(r.find((x) => x.clave === 'c').pct, null, 'no se vendía antes');
+  assert.equal(r.find((x) => x.clave === 'b').dif, -150);
+});
+
+test('reportes: un solo día se grafica por hora', () => {
+  const ini = new Date(2026, 9, 15).getTime(), fin = new Date(2026, 9, 15, 23, 59, 59).getTime();
+  const s = app.serieVentas({ '2026-10-15': 500 }, ini, fin, { '2026-10-15': 3 }, { 9: 200, 21: 300 }, { 9: 1, 21: 2 });
+  assert.equal(s.escala, 'hora');
+  assert.equal(s.serie[0].hora, 8);
+  assert.equal(s.serie[s.serie.length - 1].hora, 21, 'se estira si hubo ventas tarde');
+  assert.equal(s.serie.find((x) => x.hora === 21).cant, 2);
+});
+
+test('resumen del día: ventas, anuladas, comparación con la semana anterior y por hora', () => {
+  const d = base();
+  const v1 = app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 620 }], 'Efectivo', '').venta;
+  const v2 = app.cobrar(d, [{ productoId: 'a', cantidad: 2, precio: 620 }], 'Débito', '').venta;
+  const v3 = app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 620 }], 'Efectivo', '').venta;
+  const dia = '2026-10-15';
+  v1.fecha = new Date(2026, 9, 15, 10, 5).toISOString();
+  v2.fecha = new Date(2026, 9, 15, 17, 40).toISOString();
+  v3.fecha = new Date(2026, 9, 8, 11, 0).toISOString(); // jueves anterior
+  app.anularVenta(d, v2.id);
+  const r = app.resumenDia(d, dia);
+  assert.equal(r.a.cantidad, 1);
+  assert.equal(r.a.total, 620);
+  assert.equal(r.ventas.length, 2, 'la lista también muestra la anulada');
+  assert.equal(r.anuladas.length, 1);
+  assert.equal(r.totalAnulado, 1240);
+  assert.equal(r.ant.total, 620, 'el jueves anterior');
+  assert.equal(r.a.porHora[10], 620);
+  assert.equal(r.comp.texto, 'vs. el jueves anterior');
+});
+
+test('tablero: promedio por día de la semana', () => {
+  const d = base();
+  const v = app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 800 }], 'Efectivo', '').venta;
+  v.fecha = new Date(2026, 10, 7, 10, 0).toISOString(); // sábado
+  const sem = app.promedioPorDiaSemana(d, '2026-11-11', 2);
+  assert.equal(sem[0].nombre, 'lunes');
+  assert.equal(sem.find((x) => x.nombre === 'sábado').promedio, 400, '800 en 2 sábados');
+  assert.ok(!sem.some((x) => x.nombre === 'domingo'), 'el domingo sin ventas no aparece');
+});

@@ -2184,7 +2184,7 @@ const SIN_CAT = 'Sin categoría';
 function analisisVentas(d, desde, hasta) {
   const prods = new Map(d.productos.map((p) => [p.id, p]));
   const ventas = d.ventas.filter((v) => { const t = Date.parse(v.fecha); return !v.anulada && t >= desde && t <= hasta; });
-  const r = { cantidad: ventas.length, total: 0, descuentos: 0, porMedio: {}, porVendedor: {}, porDia: {}, porDiaCant: {}, porCategoria: {}, porProducto: {}, ventas };
+  const r = { cantidad: ventas.length, total: 0, descuentos: 0, porMedio: {}, porVendedor: {}, porDia: {}, porDiaCant: {}, porHora: {}, porHoraCant: {}, porCategoria: {}, porProducto: {}, ventas };
   ventas.forEach((v) => {
     r.total += v.total;
     r.descuentos += v.descuento || 0;
@@ -2196,6 +2196,9 @@ function analisisVentas(d, desde, hasta) {
     const dia = isoLocal(new Date(v.fecha));
     r.porDia[dia] = (r.porDia[dia] || 0) + v.total;
     r.porDiaCant[dia] = (r.porDiaCant[dia] || 0) + 1;
+    const hora = new Date(v.fecha).getHours();
+    r.porHora[hora] = (r.porHora[hora] || 0) + v.total;
+    r.porHoraCant[hora] = (r.porHoraCant[hora] || 0) + 1;
     const factor = v.subtotal > 0 ? v.total / v.subtotal : 1; // reparte el descuento entre los productos
     v.items.forEach((it) => {
       const p = prods.get(it.productoId);
@@ -2228,12 +2231,22 @@ function analisisVentas(d, desde, hasta) {
   return r;
 }
 
-/** Barras del gráfico: por día si el período es de hasta 62 días; si no, por mes. */
-function serieVentas(porDia, desde, hasta, porDiaCant = {}) {
+/** Barras del gráfico: por hora si es un solo día; por día si el período es de hasta 62 días; si no, por mes. */
+function serieVentas(porDia, desde, hasta, porDiaCant = {}, porHora = null, porHoraCant = {}) {
   const ini = new Date(desde); ini.setHours(0, 0, 0, 0);
   const fin = new Date(hasta);
   const dias = Math.round((fin - ini) / DIA) + 1;
   const serie = [];
+  if (isoLocal(ini) === isoLocal(fin) && porHora) {
+    // De 8 a 19 h, o más si hubo ventas fuera de ese horario
+    const horas = Object.keys(porHora).map(Number);
+    const de = Math.min(8, ...horas), a = Math.max(19, ...horas);
+    for (let h = de; h <= a; h++) {
+      const f = new Date(ini); f.setHours(h);
+      serie.push({ clave: String(h), hora: h, fecha: f, total: red2(porHora[h] || 0), cant: porHoraCant[h] || 0 });
+    }
+    return { escala: 'hora', serie };
+  }
   if (dias <= 62) {
     for (let t = new Date(ini); t <= fin; t.setDate(t.getDate() + 1)) {
       const k = isoLocal(t);
@@ -2264,25 +2277,144 @@ function mercaderiaParada(d, dias, ahora = Date.now()) {
     .sort((a, b) => b.valorCosto - a.valorCosto || b.valorVenta - a.valorVenta);
 }
 
+/* ---------- Períodos: moverse día a día y con qué comparar ---------- */
+
+const fechaDe = (iso) => new Date(iso + 'T12:00:00');
+/** Suma (o resta) días a una fecha AAAA-MM-DD. */
+const sumarDias = (iso, dias) => { const f = fechaDe(iso); f.setDate(f.getDate() + dias); return isoLocal(f); };
+const diasEntre = (a, b) => Math.round((fechaDe(b) - fechaDe(a)) / DIA);
+const ultimoDelMes = (y, m) => new Date(y, m + 1, 0).getDate();
+/** «desde» es el 1 y «hasta» el último día del mes (o hoy, si es el mes en curso). */
+function esMesEntero(desde, hasta, hoy = isoLocal()) {
+  const a = fechaDe(desde), b = fechaDe(hasta);
+  if (a.getDate() !== 1 || a.getMonth() !== b.getMonth() || a.getFullYear() !== b.getFullYear()) return false;
+  return b.getDate() === ultimoDelMes(b.getFullYear(), b.getMonth()) || hasta === hoy;
+}
+
+/**
+ * Corre el período su mismo largo hacia atrás (dir −1) o adelante (dir 1): un día pasa al día siguiente,
+ * un mes entero al mes siguiente y una franja a la franja siguiente. No pasa de hoy; devuelve null si no se puede.
+ */
+function moverPeriodo(desde, hasta, dir, hoy = isoLocal()) {
+  let d, h;
+  if (desde !== hasta && esMesEntero(desde, hasta, hoy)) {
+    const a = fechaDe(desde);
+    const ini = new Date(a.getFullYear(), a.getMonth() + dir, 1);
+    d = isoLocal(ini);
+    h = isoLocal(new Date(ini.getFullYear(), ini.getMonth(), ultimoDelMes(ini.getFullYear(), ini.getMonth())));
+  } else {
+    const largo = diasEntre(desde, hasta) + 1;
+    d = sumarDias(desde, dir * largo);
+    h = sumarDias(hasta, dir * largo);
+  }
+  if (d > hoy) return null;
+  return { desde: d, hasta: h > hoy ? hoy : h };
+}
+
+const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+/**
+ * Con qué se compara un período. Un día, con el mismo día de la semana anterior (un sábado con otro sábado);
+ * un mes, con el mismo tramo del mes anterior; cualquier otra franja, con los días de antes del mismo largo.
+ */
+function periodoComparable(desde, hasta, hoy = isoLocal()) {
+  if (desde === hasta) {
+    const ant = sumarDias(desde, -7);
+    return { desde: ant, hasta: ant, texto: `vs. el ${DIAS_SEMANA[fechaDe(desde).getDay()]} anterior` };
+  }
+  if (esMesEntero(desde, hasta, hoy)) {
+    const a = fechaDe(desde), b = fechaDe(hasta);
+    const y = a.getFullYear(), m = a.getMonth() - 1;
+    const ini = new Date(y, m, 1);
+    const tope = ultimoDelMes(ini.getFullYear(), ini.getMonth());
+    const entero = b.getDate() === ultimoDelMes(b.getFullYear(), b.getMonth());
+    const fin = new Date(ini.getFullYear(), ini.getMonth(), entero ? tope : Math.min(b.getDate(), tope));
+    return { desde: isoLocal(ini), hasta: isoLocal(fin), texto: entero ? `vs. ${MESES[ini.getMonth()]}` : `vs. el 1 al ${fin.getDate()} de ${MESES[ini.getMonth()]}` };
+  }
+  const largo = diasEntre(desde, hasta) + 1;
+  return { desde: sumarDias(desde, -largo), hasta: sumarDias(desde, -1), texto: `vs. los ${largo} días anteriores` };
+}
+
+/** Día, semana, mes y año hasta «fecha», cada uno contra su tramo comparable de antes. */
+function tramosCrecimiento(fecha) {
+  const f = fechaDe(fecha);
+  const lunes = sumarDias(fecha, -((f.getDay() + 6) % 7));
+  const y = f.getFullYear(), m = f.getMonth(), dd = f.getDate();
+  const mesAnt = new Date(y, m - 1, 1);
+  const finMesAnt = new Date(y, m - 1, Math.min(dd, ultimoDelMes(mesAnt.getFullYear(), mesAnt.getMonth())));
+  const finAnioAnt = new Date(y - 1, m, Math.min(dd, ultimoDelMes(y - 1, m)));
+  return [
+    { clave: 'dia', nombre: 'El día', desde: fecha, hasta: fecha, antDesde: sumarDias(fecha, -7), antHasta: sumarDias(fecha, -7), textoAnt: `el ${DIAS_SEMANA[f.getDay()]} anterior` },
+    { clave: 'semana', nombre: 'La semana', desde: lunes, hasta: fecha, antDesde: sumarDias(lunes, -7), antHasta: sumarDias(fecha, -7), textoAnt: 'los mismos días de la semana anterior' },
+    { clave: 'mes', nombre: 'El mes', desde: isoLocal(new Date(y, m, 1)), hasta: fecha, antDesde: isoLocal(mesAnt), antHasta: isoLocal(finMesAnt), textoAnt: `del 1 al ${finMesAnt.getDate()} de ${MESES[mesAnt.getMonth()]}` },
+    { clave: 'anio', nombre: 'El año', desde: `${y}-01-01`, hasta: fecha, antDesde: `${y - 1}-01-01`, antHasta: isoLocal(finAnioAnt), textoAnt: `hasta el ${finAnioAnt.getDate()} de ${MESES[m]} de ${y - 1}` },
+  ];
+}
+
+/** Qué subió y qué bajó entre dos períodos. grupos: { clave: { nombre, vendido } }. Ordenado de la mayor suba a la mayor baja. */
+function subasYBajas(ahora, antes) {
+  const claves = new Set([...Object.keys(ahora), ...Object.keys(antes)]);
+  return [...claves].map((k) => {
+    const a = ahora[k] ? ahora[k].vendido : 0, b = antes[k] ? antes[k].vendido : 0;
+    return { clave: k, nombre: (ahora[k] || antes[k]).nombre || (ahora[k] || antes[k]).categoria, ahora: red2(a), antes: red2(b), dif: red2(a - b), pct: b ? (a - b) / b * 100 : null };
+  }).filter((x) => Math.abs(x.dif) >= 0.01).sort((x, y) => y.dif - x.dif);
+}
+
+/** Promedio vendido por día de la semana en las «semanas» semanas que terminan en «hasta» (AAAA-MM-DD). */
+function promedioPorDiaSemana(d, hasta, semanas = 8) {
+  const desde = sumarDias(hasta, -(semanas * 7 - 1));
+  const a = analisisVentas(d, inicioDia(desde), finDia(hasta));
+  const suma = [0, 0, 0, 0, 0, 0, 0], dias = [0, 0, 0, 0, 0, 0, 0];
+  for (let k = desde; k <= hasta; k = sumarDias(k, 1)) {
+    const w = fechaDe(k).getDay();
+    suma[w] += a.porDia[k] || 0;
+    dias[w]++;
+  }
+  // Lunes primero; el domingo solo si hubo ventas
+  return [1, 2, 3, 4, 5, 6, 0].map((w) => ({ dia: w, nombre: DIAS_SEMANA[w], promedio: dias[w] ? red2(suma[w] / dias[w]) : 0, total: red2(suma[w]) }))
+    .filter((x) => x.dia !== 0 || x.total > 0);
+}
+
+/** Todo lo de un día: análisis, comparación con el mismo día de la semana anterior, ventas (también anuladas) y cajas. */
+function resumenDia(d, dia) {
+  const a = analisisVentas(d, inicioDia(dia), finDia(dia));
+  const comp = periodoComparable(dia, dia);
+  const ant = analisisVentas(d, inicioDia(comp.desde), finDia(comp.hasta));
+  const ventas = d.ventas.filter((v) => isoLocal(new Date(v.fecha)) === dia).sort((x, y) => x.fecha.localeCompare(y.fecha));
+  const anuladas = ventas.filter((v) => v.anulada);
+  const cajas = (d.cajas || []).filter((c) => isoLocal(new Date(c.abierta)) === dia || (c.cerrada && isoLocal(new Date(c.cerrada)) === dia));
+  return { dia, a, ant, comp, ventas, anuladas, totalAnulado: red2(anuladas.reduce((s, v) => s + v.total, 0)), cajas };
+}
+
 /* ---------- Pantalla de reportes ---------- */
 
-let tabReportes = 'ventas';
-try { tabReportes = localStorage.getItem('ferreteria-tab-reportes') || 'ventas'; } catch (e) { /* nada */ }
+const TABS_REPORTES = ['tablero', 'ventas', 'ganancias', 'stock', 'caja', 'precios'];
+let tabReportes = 'tablero';
+try { const t = localStorage.getItem('ferreteria-tab-rep'); if (TABS_REPORTES.includes(t)) tabReportes = t; } catch (e) { /* nada */ }
 
 function periodoReportes() {
-  const desde = inicioDia($('#rep-desde').value), hasta = finDia($('#rep-hasta').value);
-  const largo = hasta - desde + 1;
-  return { desde, hasta, antDesde: desde - largo, antHasta: desde - 1 };
+  const dDesde = $('#rep-desde').value, dHasta = $('#rep-hasta').value;
+  const comp = periodoComparable(dDesde, dHasta);
+  return { dDesde, dHasta, desde: inicioDia(dDesde), hasta: finDia(dHasta), antDesde: inicioDia(comp.desde), antHasta: finDia(comp.hasta), textoAnt: comp.texto };
 }
 
-function chipCambio(actual, anterior, plata = false) {
+const claseCambio = (actual, anterior) => {
   if (!anterior) return '';
   const pct = (actual - anterior) / Math.abs(anterior) * 100;
-  const cls = Math.abs(pct) < 0.5 ? 'neutro' : pct > 0 ? 'sube' : 'baja';
+  return Math.abs(pct) < 0.5 ? 'neutro' : pct > 0 ? 'sube' : 'baja';
+};
+function chipCambio(actual, anterior, plata = false, texto = 'vs. período anterior') {
+  if (!anterior) return '';
+  const pct = (actual - anterior) / Math.abs(anterior) * 100;
+  const cls = claseCambio(actual, anterior);
   const flecha = cls === 'sube' ? '▲' : cls === 'baja' ? '▼' : '＝';
-  return `<span class="delta ${cls}" title="Período anterior: ${plata ? $u(anterior) : n(anterior)}">${flecha} ${n(Math.abs(Math.round(pct)))} % vs. período anterior</span>`;
+  return `<span class="delta ${cls}" title="Antes: ${plata ? $u(anterior) : n(anterior)}">${flecha} ${n(Math.abs(Math.round(pct)))} % <span class="delta-txt">${esc(texto)}</span></span>`;
 }
-const kpi = (lbl, val, extra = '') => `<div class="kpi"><div class="lbl">${lbl}</div><div class="val">${val}</div>${extra}</div>`;
+const kpi = (lbl, val, extra = '', cls = '') => `<div class="kpi ${cls}"><div class="lbl">${lbl}</div><div class="val">${val}</div>${extra}</div>`;
+/** Tarjeta con el valor, cuánto cambió y el borde de color: verde si subió, rojo si bajó. */
+const kpiCambio = (lbl, actual, anterior, fmt, texto, plata = true) =>
+  kpi(lbl, fmt(actual), anterior ? `${chipCambio(actual, anterior, plata, texto)}<span class="det">Antes: ${fmt(anterior)}</span>` : '<span class="det">Sin datos para comparar</span>', `k-${claseCambio(actual, anterior) || 'neutro'}`);
 const pct1 = (x) => (x == null ? '—' : `${n(Math.round(x * 10) / 10)} %`);
 
 function barrasHtml(items, valor, texto) {
@@ -2307,31 +2439,35 @@ function escalaEje(max) {
 /** Plata corta para ejes y etiquetas: $ 900, $ 4.500, $ 25 mil, $ 1,2 M. */
 const plataCorta = (x) => (x >= 1e6 ? `$ ${n(Math.round(x / 1e5) / 10)} M` : x >= 1e4 ? `$ ${n(Math.round(x / 100) / 10)} mil` : `$ ${n(Math.round(x))}`);
 
-function graficoVentas(serieInfo) {
+function graficoVentas(serieInfo, opc = {}) {
   const { escala, serie } = serieInfo;
   const max = Math.max(...serie.map((x) => x.total), 0);
-  if (!max) return '<p class="vacio">No hubo ventas en este período.</p>';
+  if (!max) return `<p class="vacio">${escala === 'hora' ? 'No hubo ventas este día.' : 'No hubo ventas en este período.'}</p>`;
   const { tope, paso } = escalaEje(max);
   const marcas = [];
   for (let v = 0; v <= tope + 1e-9; v += paso) marcas.push(v);
   const iMax = serie.findIndex((x) => x.total === max);
-  const cada = Math.max(1, Math.ceil(serie.length / 10)); // etiquetas del eje x que entran sin pisarse
-  const corta = (x) => (escala === 'día'
+  const cada = Math.max(1, Math.ceil(serie.length / (escala === 'hora' ? 12 : 10))); // etiquetas del eje x que entran sin pisarse
+  const corta = (x) => (escala === 'hora' ? `${x.hora} h` : escala === 'día'
     ? x.fecha.toLocaleDateString('es-UY', { day: 'numeric', month: 'short' }).replace('.', '')
     : x.fecha.toLocaleDateString('es-UY', { month: 'short', year: '2-digit' }).replace('.', ''));
-  const larga = (x) => (escala === 'día'
+  const larga = (x) => (escala === 'hora' ? `De ${x.hora} a ${x.hora + 1} h` : escala === 'día'
     ? x.fecha.toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long' })
     : x.fecha.toLocaleDateString('es-UY', { month: 'long', year: 'numeric' }));
+  // Las barras de días y de meses se pueden tocar: un día abre su resumen; un mes pasa a ese mes
+  const accion = (x) => (opc.sinClic ? '' : escala === 'día' ? `data-dia="${x.clave}"` : escala === 'mes' ? `data-mes="${x.clave}"` : '');
+  const pista = opc.sinClic ? '' : escala === 'día' ? 'Clic para ver el resumen del día' : escala === 'mes' ? 'Clic para ver ese mes' : '';
   const pct = (v) => (v / tope) * 100;
-  const tabla = `<details class="g-datos"><summary>Ver los datos en una tabla</summary><div class="table-wrap"><table class="tabla">
-    <thead><tr><th>${escala === 'día' ? 'Día' : 'Mes'}</th><th class="num">Ventas</th><th class="num">Total</th></tr></thead>
-    <tbody>${serie.map((x) => `<tr><td>${esc(larga(x))}</td><td class="num">${n(x.cant)}</td><td class="num">${$u(x.total)}</td></tr>`).join('')}</tbody></table></div></details>`;
-  return `<div class="g" role="group" aria-label="Ventas por ${escala}">
+  const tabla = opc.sinTabla ? '' : `<details class="g-datos"><summary>Ver los datos en una tabla</summary><div class="table-wrap"><table class="tabla">
+    <thead><tr><th>${{ hora: 'Hora', día: 'Día', mes: 'Mes' }[escala]}</th><th class="num">Ventas</th><th class="num">Total</th></tr></thead>
+    <tbody>${serie.map((x) => `<tr><td>${escala === 'día' && !opc.sinClic && x.cant ? `<button class="link-btn" type="button" data-dia="${x.clave}">${esc(larga(x))}</button>` : esc(larga(x))}</td><td class="num">${n(x.cant)}</td><td class="num">${$u(x.total)}</td></tr>`).join('')}</tbody></table></div></details>`;
+  return `<div class="g" role="group" aria-label="Ventas por ${escala}"${opc.alto ? ` style="--g-alto:${opc.alto}px"` : ''}>
     <div class="g-plot">
       ${marcas.map((v) => `<div class="g-grid" style="bottom:${pct(v)}%"><span>${v ? plataCorta(v) : '$ 0'}</span></div>`).join('')}
       <div class="g-cols" style="--n:${serie.length}">${serie.map((x, i) => `
-        <div class="g-col" tabindex="0" data-g="${i}" aria-label="${esc(larga(x))}: ${$u(x.total)}, ${n(x.cant)} ventas"
-          data-titulo="${esc(larga(x))}" data-total="${esc($u(x.total))}" data-cant="${x.cant}">
+        <div class="g-col${accion(x) ? ' g-click' : ''}" tabindex="0" data-g="${i}" ${accion(x)} ${accion(x) ? 'role="button"' : ''}
+          aria-label="${esc(larga(x))}: ${$u(x.total)}, ${n(x.cant)} ventas${pista ? `. ${pista}` : ''}"
+          data-titulo="${esc(larga(x))}" data-total="${esc($u(x.total))}" data-cant="${x.cant}" data-pista="${pista}">
           ${x.total ? `<div class="g-bar" style="height:${pct(x.total)}%">${i === iMax ? `<span class="g-max">${plataCorta(x.total)}</span>` : ''}</div>` : ''}
         </div>`).join('')}</div>
       <div class="g-tip" hidden></div>
@@ -2347,7 +2483,7 @@ function iniciarGraficos() {
     const tip = plot.querySelector('.g-tip');
     plot.querySelectorAll('.g-col.activa').forEach((c) => c.classList.remove('activa'));
     col.classList.add('activa');
-    tip.innerHTML = `<strong>${esc(col.dataset.titulo)}</strong><span>${esc(col.dataset.total)}</span><span class="muted">${n(Number(col.dataset.cant))} venta${col.dataset.cant === '1' ? '' : 's'}</span>`;
+    tip.innerHTML = `<strong>${esc(col.dataset.titulo)}</strong><span>${esc(col.dataset.total)}</span><span class="muted">${n(Number(col.dataset.cant))} venta${col.dataset.cant === '1' ? '' : 's'}</span>${col.dataset.pista ? `<em>${esc(col.dataset.pista)}</em>` : ''}`;
     tip.hidden = false;
     const r = col.getBoundingClientRect(), rp = plot.getBoundingClientRect();
     const bar = col.querySelector('.g-bar');
@@ -2366,13 +2502,218 @@ function iniciarGraficos() {
   document.addEventListener('focusin', (e) => { const c = e.target.closest && e.target.closest('.g-col'); if (c) mostrar(c); });
   document.addEventListener('mouseout', (e) => { const p = e.target.closest && e.target.closest('.g-plot'); if (p && !p.contains(e.relatedTarget)) ocultar(p); });
   document.addEventListener('focusout', (e) => { const p = e.target.closest && e.target.closest('.g-plot'); if (p && !p.contains(e.relatedTarget)) ocultar(p); });
+  // Tocar un día abre su resumen; tocar un mes pasa los reportes a ese mes
+  const tocar = (el) => {
+    if (el.dataset.dia) abrirResumenDia(el.dataset.dia);
+    else if (el.dataset.mes) {
+      const [y, m] = el.dataset.mes.split('-').map(Number);
+      ponerPeriodo(isoLocal(new Date(y, m - 1, 1)), isoLocal(new Date(y, m - 1, ultimoDelMes(y, m - 1))));
+    }
+  };
+  document.addEventListener('click', (e) => { const el = e.target.closest && e.target.closest('[data-dia], [data-mes]'); if (el && (el.classList.contains('g-col') || el.classList.contains('link-btn'))) tocar(el); });
+  document.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('g-click')) { e.preventDefault(); tocar(e.target); } });
+}
+
+/** «Miércoles 11 de noviembre», «Del 1 al 31 de octubre», «Del 28 de octubre al 3 de noviembre». */
+function tituloPeriodo(desde, hasta) {
+  const a = fechaDe(desde), b = fechaDe(hasta);
+  const anio = (f) => (f.getFullYear() !== new Date().getFullYear() ? ` de ${f.getFullYear()}` : '');
+  if (desde === hasta) {
+    const t = `${DIAS_SEMANA[a.getDay()]} ${a.getDate()} de ${MESES[a.getMonth()]}${anio(a)}`;
+    return t[0].toUpperCase() + t.slice(1);
+  }
+  if (a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()) return `Del ${a.getDate()} al ${b.getDate()} de ${MESES[b.getMonth()]}${anio(b)}`;
+  if (a.getFullYear() !== b.getFullYear()) return `Del ${a.getDate()} de ${MESES[a.getMonth()]} de ${a.getFullYear()} al ${b.getDate()} de ${MESES[b.getMonth()]} de ${b.getFullYear()}`;
+  return `Del ${a.getDate()} de ${MESES[a.getMonth()]} al ${b.getDate()} de ${MESES[b.getMonth()]}${anio(b)}`;
+}
+
+/** Barra de arriba: el día (o la franja) que se está viendo y las flechas. */
+function renderBarraPeriodo() {
+  const d = $('#rep-desde').value, h = $('#rep-hasta').value, hoy = isoLocal();
+  const unDia = d === h;
+  $('#rep-titulo').textContent = tituloPeriodo(d, h);
+  const dias = diasEntre(d, h) + 1;
+  $('#rep-titulo-sub').textContent = unDia
+    ? (d === hoy ? 'Hoy' : d === sumarDias(hoy, -1) ? 'Ayer' : `Hace ${diasEntre(d, hoy)} días`)
+    : !esMesEntero(d, h, hoy) ? `${dias} días`
+      : fechaDe(h).getDate() === ultimoDelMes(fechaDe(h).getFullYear(), fechaDe(h).getMonth()) ? 'Mes completo' : `Mes en curso · ${dias} días`;
+  const que = unDia ? 'Día' : esMesEntero(d, h, hoy) ? 'Mes' : 'Período';
+  $('#rep-ant').title = `${que} anterior (flecha ←)`; $('#rep-ant').setAttribute('aria-label', `${que} anterior`);
+  $('#rep-sig').title = `${que} siguiente (flecha →)`; $('#rep-sig').setAttribute('aria-label', `${que} siguiente`);
+  $('#rep-sig').disabled = !moverPeriodo(d, h, 1, hoy) || h >= hoy;
+  $('#rep-hoy').disabled = unDia && d === hoy;
+}
+
+function ponerPeriodo(desde, hasta) {
+  $('#rep-desde').value = desde;
+  $('#rep-hasta').value = hasta;
+  renderReportes();
+}
+
+function moverReportes(dir) {
+  const r = moverPeriodo($('#rep-desde').value, $('#rep-hasta').value, dir);
+  if (r) ponerPeriodo(r.desde, r.hasta);
 }
 
 function renderReportes() {
+  // Fechas que no tienen sentido: se corrigen en lugar de mostrar un reporte vacío
+  const hoy = isoLocal();
+  if (!$('#rep-desde').value) $('#rep-desde').value = $('#rep-hasta').value || hoy;
+  if (!$('#rep-hasta').value) $('#rep-hasta').value = $('#rep-desde').value;
+  if ($('#rep-desde').value > $('#rep-hasta').value) $('#rep-hasta').value = $('#rep-desde').value;
+  renderBarraPeriodo();
   $$('.tabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tabReportes)));
   $$('#v-reportes .tab-panel').forEach((p) => { p.hidden = p.dataset.panel !== tabReportes; });
   const per = periodoReportes();
-  ({ ventas: renderRepVentas, ganancias: renderRepGanancias, stock: renderRepStock, caja: renderCierresCaja, precios: renderCambiosPrecio })[tabReportes](per);
+  ({ tablero: renderRepTablero, ventas: renderRepVentas, ganancias: renderRepGanancias, stock: renderRepStock, caja: renderCierresCaja, precios: renderCambiosPrecio })[tabReportes](per);
+}
+
+/* ---------- Tablero: lo importante de un vistazo ---------- */
+
+const signoPlata = (x) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${$u(Math.abs(x))}`;
+const pctCambio = (pct) => (pct == null ? 'nuevo' : `${pct > 0 ? '▲' : pct < 0 ? '▼' : '＝'} ${n(Math.abs(Math.round(pct)))} %`);
+
+function renderRepTablero(per) {
+  const a = analisisVentas(db, per.desde, per.hasta);
+  const ant = analisisVentas(db, per.antDesde, per.antHasta);
+  const t = per.textoAnt;
+  const margenTxt = (x) => pct1(x);
+  // Margen: se compara en puntos, no en %
+  const dm = a.margen != null && ant.margen != null ? Math.round((a.margen - ant.margen) * 10) / 10 : null;
+  const clsM = dm == null || Math.abs(dm) < 0.5 ? 'neutro' : dm > 0 ? 'sube' : 'baja';
+  $('#tab-kpis').innerHTML = [
+    kpiCambio('Vendido', a.total, ant.total, $u, t),
+    kpiCambio('Ganancia bruta', a.ganancia, ant.ganancia, $u, t),
+    kpi('Margen', margenTxt(a.margen), dm == null ? '<span class="det">Sin datos para comparar</span>'
+      : `<span class="delta ${clsM}">${clsM === 'sube' ? '▲' : clsM === 'baja' ? '▼' : '＝'} ${n(Math.abs(dm))} puntos <span class="delta-txt">${esc(t)}</span></span><span class="det">Antes: ${margenTxt(ant.margen)}</span>`, `k-${clsM}`),
+    kpiCambio('Ventas', a.cantidad, ant.cantidad, n, t, false),
+    kpiCambio('Ticket promedio', a.ticketPromedio, ant.ticketPromedio, $u, t),
+  ].join('');
+
+  // Crecimiento al último día del período: día, semana, mes y año
+  const tramos = tramosCrecimiento(per.dHasta).map((x) => {
+    const ahora = analisisVentas(db, inicioDia(x.desde), finDia(x.hasta)).total;
+    const antes = analisisVentas(db, inicioDia(x.antDesde), finDia(x.antHasta)).total;
+    return { ...x, ahora, antes, dif: red2(ahora - antes), pct: antes ? (ahora - antes) / antes * 100 : null };
+  });
+  $('#tab-crec-sub').textContent = `Hasta el ${tituloPeriodo(per.dHasta, per.dHasta).toLowerCase()}, comparado con el mismo tramo de antes.`;
+  $('#tab-crec').innerHTML = `<div class="table-wrap"><table class="tabla crec">
+    <thead><tr><th>Tramo</th><th class="num">Ahora</th><th class="num">Antes</th><th class="num">Diferencia</th><th class="num">Cambio</th></tr></thead>
+    <tbody>${tramos.map((x) => {
+      const cls = x.pct == null ? (x.ahora ? 'sube' : 'neutro') : Math.abs(x.pct) < 0.5 ? 'neutro' : x.pct > 0 ? 'sube' : 'baja';
+      return `<tr class="fila-${cls}">
+        <td><div class="nom">${x.nombre}</div><div class="meta">${esc(tituloPeriodo(x.desde, x.hasta))} · contra ${esc(x.textoAnt)}</div>
+          <div class="par"><i class="ahora" style="width:${x.ahora / Math.max(1, x.ahora, x.antes) * 100}%"></i><i class="antes" style="width:${x.antes / Math.max(1, x.ahora, x.antes) * 100}%"></i></div></td>
+        <td class="num"><strong>${$u(x.ahora)}</strong></td>
+        <td class="num muted">${$u(x.antes)}</td>
+        <td class="num"><span class="delta ${cls}">${signoPlata(x.dif)}</span></td>
+        <td class="num"><span class="pill ${cls}">${x.antes ? pctCambio(x.pct) : x.ahora ? 'nuevo' : '—'}</span></td>
+      </tr>`;
+    }).join('')}</tbody></table></div>
+    <p class="leyenda"><span><i class="ahora"></i>Ahora</span><span><i class="antes"></i>Antes</span></p>`;
+
+  // Subas y bajas por categoría y por producto
+  const lista = (items, cuantos) => {
+    const suben = items.filter((x) => x.dif > 0).slice(0, cuantos);
+    const bajan = items.filter((x) => x.dif < 0).reverse().slice(0, cuantos);
+    const max = Math.max(1, ...[...suben, ...bajan].map((x) => Math.abs(x.dif)));
+    const fila = (x, cls) => `<li class="${cls}"><div class="b-txt"><span>${esc(x.nombre)}</span><strong class="num delta ${cls}">${signoPlata(x.dif)}</strong></div>
+      <div class="barra ${cls}"><i style="width:${Math.abs(x.dif) / max * 100}%"></i></div>
+      <div class="b-meta">${$u(x.antes)} → ${$u(x.ahora)}${x.antes ? ` · <span class="delta ${cls}">${pctCambio(x.pct)}</span>` : ' · <span class="delta sube">nuevo en el período</span>'}</div></li>`;
+    if (!suben.length && !bajan.length) return '<p class="vacio">Sin cambios para comparar.</p>';
+    return `<div class="sube-baja">
+      <div><h3 class="subt sube">▲ Suben</h3>${suben.length ? `<ul class="barras">${suben.map((x) => fila(x, 'sube')).join('')}</ul>` : '<p class="muted">Ninguna.</p>'}</div>
+      <div><h3 class="subt baja">▼ Bajan</h3>${bajan.length ? `<ul class="barras">${bajan.map((x) => fila(x, 'baja')).join('')}</ul>` : '<p class="muted">Ninguna.</p>'}</div>
+    </div>`;
+  };
+  $('#tab-cat-sub').textContent = `Lo vendido en cada categoría, ${t}.`;
+  $('#tab-prod-sub').textContent = `Los que más cambiaron en plata, ${t}.`;
+  $('#tab-cat').innerHTML = lista(subasYBajas(a.porCategoria, ant.porCategoria), 4);
+  $('#tab-prod').innerHTML = lista(subasYBajas(a.porProducto, ant.porProducto), 5);
+
+  // Para prestar atención
+  const alertas = [];
+  const ult30 = analisisVentas(db, inicioDia(sumarDias(per.dHasta, -29)), finDia(per.dHasta));
+  const prods = new Map(db.productos.map((p) => [p.id, p]));
+  const buenosSinStock = Object.values(ult30.porProducto).sort((x, y) => y.vendido - x.vendido).slice(0, 40)
+    .map((x) => prods.get(x.id)).filter((p) => p && estado(p) !== 'ok');
+  if (buenosSinStock.length) alertas.push(['baja', `${buenosSinStock.length} de los más vendidos se están quedando sin stock`, buenosSinStock.slice(0, 4).map((p) => `${p.nombre} (${n(p.stock)})`).join(', ') + (buenosSinStock.length > 4 ? '…' : ''), '#productos']);
+  const anuladas = db.ventas.filter((v) => v.anulada && Date.parse(v.fecha) >= per.desde && Date.parse(v.fecha) <= per.hasta);
+  if (anuladas.length) alertas.push(['aviso', `${anuladas.length} venta${anuladas.length === 1 ? ' anulada' : 's anuladas'}`, `Por ${$u(anuladas.reduce((x, v) => x + v.total, 0))} en total.`]);
+  const cajasDif = (db.cajas || []).filter((c) => c.cerrada && Math.abs(c.diferencia || 0) >= 0.01 && Date.parse(c.cerrada) >= per.desde && Date.parse(c.cerrada) <= per.hasta);
+  if (cajasDif.length) alertas.push(['baja', `${cajasDif.length} cierre${cajasDif.length === 1 ? '' : 's'} de caja con diferencia`, cajasDif.slice(0, 3).map((c) => `Caja ${String(c.numero).padStart(3, '0')}: ${signoPlata(c.diferencia)}`).join(' · ')]);
+  if (a.descuentos > 0) alertas.push([claseCambio(ant.descuentos, a.descuentos) === 'baja' ? 'aviso' : 'info', `Descuentos por ${$u(a.descuentos)}`, ant.descuentos ? `Antes: ${$u(ant.descuentos)} (${pctCambio((a.descuentos - ant.descuentos) / ant.descuentos * 100)})` : 'Lo que se dejó de cobrar en el período.']);
+  if (a.productosSinCosto) alertas.push(['aviso', `${a.productosSinCosto} producto${a.productosSinCosto === 1 ? '' : 's'} vendido${a.productosSinCosto === 1 ? '' : 's'} sin costo cargado`, `La ganancia no cuenta ${$u(a.vendidoSinCosto)}.`]);
+  const parada = mercaderiaParada(db, 90);
+  if (parada.length) alertas.push(['info', `${$u(parada.reduce((x, y) => x + y.valorCosto, 0))} en mercadería parada`, `${parada.length} producto${parada.length === 1 ? '' : 's'} con stock y sin ventas en 90 días.`]);
+  $('#tab-alertas').innerHTML = alertas.length
+    ? `<ul class="alertas">${alertas.map(([cls, tit, det]) => `<li class="al-${cls}"><span class="al-ico" aria-hidden="true">${{ baja: '!', aviso: '!', info: 'i' }[cls]}</span><div><strong>${esc(tit)}</strong><div class="meta">${esc(det)}</div></div></li>`).join('')}</ul>`
+    : '<p class="vacio">Nada para revisar. Todo en orden.</p>';
+
+  // Por día de la semana (8 semanas)
+  const sem = promedioPorDiaSemana(db, per.dHasta, 8);
+  const mejor = sem.reduce((m, x) => (x.promedio > m.promedio ? x : m), { promedio: 0 });
+  $('#tab-semana-sub').textContent = `Promedio vendido cada día, en las 8 semanas hasta el ${fechaDe(per.dHasta).getDate()} de ${MESES[fechaDe(per.dHasta).getMonth()]}.`;
+  $('#tab-semana').innerHTML = mejor.promedio
+    ? barrasHtml(sem, (x) => x.promedio, (x) => `<span>${x.nombre[0].toUpperCase() + x.nombre.slice(1)}${x === mejor ? ' <span class="chip ok">el mejor</span>' : ''}</span><strong class="num">${$u(x.promedio)}</strong>`)
+    : '<p class="vacio">Sin ventas en esas semanas.</p>';
+}
+
+/* ---------- Resumen de un día (se abre tocando una barra del gráfico) ---------- */
+
+let diaAbierto = '';
+function abrirResumenDia(dia) {
+  diaAbierto = dia;
+  const r = resumenDia(db, dia);
+  const { a, ant } = r;
+  const t = r.comp.texto;
+  $('#dia-titulo').textContent = tituloPeriodo(dia, dia);
+  $('#dia-sub').textContent = a.cantidad ? `${n(a.cantidad)} venta${a.cantidad === 1 ? '' : 's'}, comparado con el ${DIAS_SEMANA[fechaDe(dia).getDay()]} anterior` : 'No hubo ventas este día.';
+  $('#dia-sig').disabled = dia >= isoLocal();
+  const medios = Object.entries(a.porMedio).map(([m, v]) => ({ m, ...v })).sort((x, y) => y.total - x.total);
+  const vend = Object.entries(a.porVendedor).map(([u, v]) => ({ u, ...v })).sort((x, y) => y.total - x.total);
+  const top = Object.values(a.porProducto).sort((x, y) => y.vendido - x.vendido).slice(0, 8);
+  const hora = (iso) => new Date(iso).toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' });
+  $('#dia-cuerpo').innerHTML = `
+    <div class="kpis">${[
+      kpiCambio('Vendido', a.total, ant.total, $u, t),
+      kpiCambio('Ventas', a.cantidad, ant.cantidad, n, t, false),
+      kpiCambio('Ticket promedio', a.ticketPromedio, ant.ticketPromedio, $u, t),
+      kpiCambio('Ganancia bruta', a.ganancia, ant.ganancia, $u, t),
+    ].join('')}</div>
+    ${a.cantidad ? `
+    <section class="dia-sec"><h3 class="subt">Por hora</h3>${graficoVentas(serieVentas(a.porDia, inicioDia(dia), finDia(dia), a.porDiaCant, a.porHora, a.porHoraCant), { alto: 150, sinTabla: true, sinClic: true })}</section>
+    <div class="dia-cols">
+      <section class="dia-sec"><h3 class="subt">Por medio de pago</h3>${barrasHtml(medios, (x) => x.total, (x) => `<span>${esc(x.m)} <span class="muted">· ${n(x.cant)}</span></span><strong class="num">${$u(x.total)}</strong>`)}</section>
+      <section class="dia-sec"><h3 class="subt">Por vendedor</h3>${barrasHtml(vend, (x) => x.total, (x) => `<span>${esc(x.u)} <span class="muted">· ${n(x.cant)}</span></span><strong class="num">${$u(x.total)}</strong>`)}</section>
+    </div>
+    <section class="dia-sec"><h3 class="subt">Lo más vendido</h3><div class="table-wrap"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Cantidad</th><th class="num">Vendido</th></tr></thead>
+      <tbody>${top.map((x) => `<tr><td>${esc(x.nombre)}</td><td class="num">${n(x.cant)} <span class="u">${esc(x.unidad)}</span></td><td class="num">${$u(x.vendido)}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
+    ${r.cajas.length ? `<section class="dia-sec"><h3 class="subt">Caja</h3><ul class="lista">${r.cajas.map((c) => {
+      const rc = c.resumen || resumenCaja(db, c);
+      return `<li><div class="izq"><div class="nom">Caja ${String(c.numero).padStart(3, '0')}</div><div class="meta">Abrió ${esc(c.abiertaPor || '')} a las ${hora(c.abierta)}${c.cerrada ? ` · cerró ${esc(c.cerradaPor || '')} a las ${hora(c.cerrada)}` : ' · sigue abierta'}</div></div>
+        <div class="der">${c.cerrada ? `<span class="muted">Debía haber ${$u(rc.esperado)} · se contó ${$u(c.contado)}</span> ${chipDiferencia(c.diferencia)}` : '<span class="chip ok">Abierta</span>'}</div></li>`;
+    }).join('')}</ul></section>` : ''}
+    ${r.ventas.length ? `<section class="dia-sec"><h3 class="subt">Ventas del día${r.anuladas.length ? ` <span class="chip danger">${r.anuladas.length} anulada${r.anuladas.length === 1 ? '' : 's'} · ${$u(r.totalAnulado)}</span>` : ''}</h3>
+      <details class="g-datos"><summary>Ver las ${n(r.ventas.length)} ventas</summary><div class="table-wrap"><table class="tabla">
+      <thead><tr><th>Hora</th><th>N.º</th><th>Vendedor</th><th>Medio</th><th class="num">Productos</th><th class="num">Total</th></tr></thead>
+      <tbody>${r.ventas.map((v) => `<tr class="${v.anulada ? 'anulada' : ''}"><td>${hora(v.fecha)}</td><td class="mono">${v.numero}</td><td>${esc(v.usuario || '')}</td><td>${esc(v.medio)}${v.cliente ? `<div class="meta">${esc(v.cliente)}</div>` : ''}</td>
+        <td class="num">${n(v.items.length)}</td><td class="num">${v.anulada ? '<span class="chip danger">Anulada</span> ' : ''}${$u(v.total)}</td></tr>`).join('')}</tbody></table></div></details></section>` : ''}`;
+  const d = $('#dlg-dia');
+  if (!d.open) d.showModal();
+  $('#dia-cuerpo').scrollTop = 0;
+}
+
+function iniciarResumenDia() {
+  const mover = (dir) => { const k = sumarDias(diaAbierto, dir); if (k <= isoLocal()) abrirResumenDia(k); };
+  $('#dia-ant').addEventListener('click', () => mover(-1));
+  $('#dia-sig').addEventListener('click', () => mover(1));
+  $('#dlg-dia').addEventListener('keydown', (e) => {
+    if (e.target.closest('input, select, textarea, summary')) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); mover(-1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); mover(1); }
+  });
+  $('#dia-reportes').addEventListener('click', () => { $('#dlg-dia').close(); ponerPeriodo(diaAbierto, diaAbierto); });
 }
 
 function renderRepVentas(per) {
@@ -2380,17 +2721,19 @@ function renderRepVentas(per) {
   const ant = analisisVentas(db, per.antDesde, per.antHasta);
   const movs = db.movimientos.filter((m) => { const t = Date.parse(m.fecha); return t >= per.desde && t <= per.hasta; });
   const sinAnterior = !ant.cantidad;
+  const t = per.textoAnt;
   $('#rep-kpis').innerHTML = [
-    kpi('Total vendido', $u(a.total), chipCambio(a.total, ant.total, true)),
-    kpi('Ventas', n(a.cantidad), chipCambio(a.cantidad, ant.cantidad)),
-    kpi('Ticket promedio', $u(a.ticketPromedio), chipCambio(a.ticketPromedio, ant.ticketPromedio, true)),
-    kpi('Ganancia bruta', $u(a.ganancia), chipCambio(a.ganancia, ant.ganancia, true)),
-    kpi('Compras', $u(totalCompras(movs)), '<span class="delta neutro">mercadería que llegó</span>'),
-  ].join('') + (sinAnterior && a.cantidad ? '<p class="kpis-nota muted">No hay ventas en el período anterior para comparar.</p>' : '');
-  const s = serieVentas(a.porDia, per.desde, per.hasta, a.porDiaCant);
+    kpi('Total vendido', $u(a.total), chipCambio(a.total, ant.total, true, t), `k-${claseCambio(a.total, ant.total) || 'neutro'}`),
+    kpi('Ventas', n(a.cantidad), chipCambio(a.cantidad, ant.cantidad, false, t), `k-${claseCambio(a.cantidad, ant.cantidad) || 'neutro'}`),
+    kpi('Ticket promedio', $u(a.ticketPromedio), chipCambio(a.ticketPromedio, ant.ticketPromedio, true, t), `k-${claseCambio(a.ticketPromedio, ant.ticketPromedio) || 'neutro'}`),
+    kpi('Ganancia bruta', $u(a.ganancia), chipCambio(a.ganancia, ant.ganancia, true, t), `k-${claseCambio(a.ganancia, ant.ganancia) || 'neutro'}`),
+    kpi('Compras', $u(totalCompras(movs)), '<span class="delta neutro">mercadería que llegó</span>', 'k-neutro'),
+  ].join('') + (sinAnterior && a.cantidad ? `<p class="kpis-nota muted">No hay ventas para comparar (${esc(t)}).</p>` : '');
+  const s = serieVentas(a.porDia, per.desde, per.hasta, a.porDiaCant, a.porHora, a.porHoraCant);
   $('#rep-escala').textContent = s.escala;
   const mejor = s.serie.reduce((m, x) => (x.total > m.total ? x : m), { total: 0 });
-  $('#rep-dia-sub').textContent = mejor.total ? `El mejor ${s.escala}: ${mejor.fecha.toLocaleDateString('es-UY', s.escala === 'día' ? { weekday: 'long', day: 'numeric', month: 'long' } : { month: 'long', year: 'numeric' })}, con ${$u(mejor.total)}.` : '';
+  const nombreMejor = (x) => (s.escala === 'hora' ? `de ${x.hora} a ${x.hora + 1} h` : x.fecha.toLocaleDateString('es-UY', s.escala === 'día' ? { weekday: 'long', day: 'numeric', month: 'long' } : { month: 'long', year: 'numeric' }));
+  $('#rep-dia-sub').textContent = mejor.total ? `${s.escala === 'hora' ? 'La mejor hora' : `El mejor ${s.escala}`}: ${nombreMejor(mejor)}, con ${$u(mejor.total)}.${s.escala === 'día' ? ' Tocá una barra para ver el resumen de ese día.' : s.escala === 'mes' ? ' Tocá un mes para verlo.' : ''}` : '';
   $('#rep-grafico').innerHTML = graficoVentas(s);
   const medios = Object.entries(a.porMedio).map(([m, v]) => ({ m, ...v })).sort((x, y) => y.total - x.total);
   $('#rep-medios').innerHTML = medios.length
@@ -2415,9 +2758,9 @@ function renderRepGanancias(per) {
   const a = analisisVentas(db, per.desde, per.hasta);
   const ant = analisisVentas(db, per.antDesde, per.antHasta);
   $('#rep-gan-kpis').innerHTML = [
-    kpi('Vendido', $u(a.total), chipCambio(a.total, ant.total, true)),
-    kpi('Costo de lo vendido', $u(a.costoVendido)),
-    kpi('Ganancia bruta', $u(a.ganancia), chipCambio(a.ganancia, ant.ganancia, true)),
+    kpi('Vendido', $u(a.total), chipCambio(a.total, ant.total, true, per.textoAnt), `k-${claseCambio(a.total, ant.total) || 'neutro'}`),
+    kpi('Costo de lo vendido', $u(a.costoVendido), '', 'k-neutro'),
+    kpi('Ganancia bruta', $u(a.ganancia), chipCambio(a.ganancia, ant.ganancia, true, per.textoAnt), `k-${claseCambio(a.ganancia, ant.ganancia) || 'neutro'}`),
     kpi('Margen', pct1(a.margen), '<span class="delta neutro">ganancia sobre lo vendido</span>'),
   ].join('');
   $('#rep-gan-nota').innerHTML = a.productosSinCosto
@@ -3527,28 +3870,36 @@ function iniciar() {
   $('#venta-nueva').addEventListener('click', () => $('#dlg-venta').close());
   cargar();
   $('#fecha-hoy').textContent = new Date().toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long' });
-  $('#rep-desde').value = isoLocal(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  $('#rep-desde').value = isoLocal();
   $('#rep-hasta').value = isoLocal();
-  ['#rep-desde', '#rep-hasta', '#rep-parada-dias', '#rep-gan-orden'].forEach((s) => $(s).addEventListener('input', renderReportes));
+  ['#rep-parada-dias', '#rep-gan-orden'].forEach((s) => $(s).addEventListener('input', renderReportes));
+  // Al elegir solo «Desde» se ve ese día; con «Hasta» se arma la franja
+  $('#rep-desde').addEventListener('change', () => {
+    const d = $('#rep-desde').value;
+    if (d && $('#rep-hasta').value < d) $('#rep-hasta').value = d;
+    renderReportes();
+  });
+  $('#rep-hasta').addEventListener('change', () => {
+    const h = $('#rep-hasta').value;
+    if (h && $('#rep-desde').value > h) $('#rep-desde').value = h;
+    renderReportes();
+  });
+  $('#rep-ant').addEventListener('click', () => moverReportes(-1));
+  $('#rep-sig').addEventListener('click', () => moverReportes(1));
+  $('#rep-hoy').addEventListener('click', () => ponerPeriodo(isoLocal(), isoLocal()));
+  // Flechas del teclado en Reportes: día anterior / siguiente
+  document.addEventListener('keydown', (e) => {
+    if (location.hash !== '#reportes' || e.altKey || e.ctrlKey || e.metaKey || document.querySelector('dialog[open]')) return;
+    if (e.target.closest && e.target.closest('input, select, textarea, [role="tab"], .g-col')) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); moverReportes(-1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); moverReportes(1); }
+  });
   $$('.tabs [data-tab]').forEach((b) => b.addEventListener('click', () => {
     tabReportes = b.dataset.tab;
-    try { localStorage.setItem('ferreteria-tab-reportes', tabReportes); } catch (e) { /* nada */ }
+    try { localStorage.setItem('ferreteria-tab-rep', tabReportes); } catch (e) { /* nada */ }
     renderReportes();
   }));
-  $$('[data-periodo]').forEach((b) => b.addEventListener('click', () => {
-    const hoy = new Date();
-    const y = hoy.getFullYear(), m = hoy.getMonth();
-    const r = {
-      hoy: [hoy, hoy],
-      7: [new Date(y, m, hoy.getDate() - 6), hoy],
-      mes: [new Date(y, m, 1), hoy],
-      'mes-ant': [new Date(y, m - 1, 1), new Date(y, m, 0)],
-      anio: [new Date(y, 0, 1), hoy],
-    }[b.dataset.periodo];
-    $('#rep-desde').value = isoLocal(r[0]);
-    $('#rep-hasta').value = isoLocal(r[1]);
-    renderReportes();
-  }));
+  iniciarResumenDia();
   $$('[data-export]').forEach((b) => b.addEventListener('click', () => exportar(b.dataset.export)));
   $$('[data-cerrar]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
   iniciarCaja();
@@ -3563,7 +3914,7 @@ function iniciar() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo };
+  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

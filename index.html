@@ -285,27 +285,56 @@
         <div><h1>Reportes</h1><p class="sub">Elegí el período y la pestaña. Cada reporte se puede descargar como planilla de Excel.</p></div>
       </header>
       <div class="rep-periodo card">
+        <div class="rep-nav" role="group" aria-label="Moverse por los días">
+          <button class="btn flecha" type="button" id="rep-ant" title="Día anterior (flecha ←)" aria-label="Día anterior"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+          <div class="rep-actual" aria-live="polite"><strong id="rep-titulo"></strong><span id="rep-titulo-sub"></span></div>
+          <button class="btn flecha" type="button" id="rep-sig" title="Día siguiente (flecha →)" aria-label="Día siguiente"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+          <button class="btn sm" type="button" id="rep-hoy">Hoy</button>
+        </div>
         <div class="rep-fechas">
+          <span class="rep-fechas-lbl">Franja de días</span>
           <label class="f-inline" for="rep-desde">Desde <input type="date" id="rep-desde"></label>
           <label class="f-inline" for="rep-hasta">Hasta <input type="date" id="rep-hasta"></label>
         </div>
-        <div class="rep-rapidos" role="group" aria-label="Períodos rápidos">
-          <button class="btn sm" type="button" data-periodo="hoy">Hoy</button>
-          <button class="btn sm" type="button" data-periodo="7">Últimos 7 días</button>
-          <button class="btn sm" type="button" data-periodo="mes">Este mes</button>
-          <button class="btn sm" type="button" data-periodo="mes-ant">Mes anterior</button>
-          <button class="btn sm" type="button" data-periodo="anio">Este año</button>
-        </div>
       </div>
       <div class="tabs" role="tablist" aria-label="Reportes">
-        <button type="button" role="tab" data-tab="ventas" aria-selected="true">Ventas</button>
+        <button type="button" role="tab" data-tab="tablero" aria-selected="true">Tablero</button>
+        <button type="button" role="tab" data-tab="ventas" aria-selected="false">Ventas</button>
         <button type="button" role="tab" data-tab="ganancias" aria-selected="false">Ganancias</button>
         <button type="button" role="tab" data-tab="stock" aria-selected="false">Stock</button>
         <button type="button" role="tab" data-tab="caja" aria-selected="false">Cierres de caja</button>
         <button type="button" role="tab" data-tab="precios" aria-selected="false">Cambios de precio</button>
       </div>
 
-      <div class="tab-panel" data-panel="ventas">
+      <div class="tab-panel" data-panel="tablero">
+        <div id="tab-kpis" class="kpis"></div>
+        <article class="card">
+          <header class="card-h"><div><h2>Crecimiento de las ventas</h2><p class="sub" id="tab-crec-sub"></p></div></header>
+          <div id="tab-crec"></div>
+        </article>
+        <div class="reportes">
+          <article class="card">
+            <header class="card-h"><div><h2>Categorías que suben y bajan</h2><p class="sub" id="tab-cat-sub"></p></div></header>
+            <div id="tab-cat"></div>
+          </article>
+          <article class="card">
+            <header class="card-h"><div><h2>Productos que suben y bajan</h2><p class="sub" id="tab-prod-sub"></p></div></header>
+            <div id="tab-prod"></div>
+          </article>
+        </div>
+        <div class="reportes">
+          <article class="card">
+            <header class="card-h"><div><h2>Para prestar atención</h2><p class="sub">Cosas del período que conviene revisar.</p></div></header>
+            <div id="tab-alertas"></div>
+          </article>
+          <article class="card">
+            <header class="card-h"><div><h2>Ventas por día de la semana</h2><p class="sub" id="tab-semana-sub"></p></div></header>
+            <div id="tab-semana"></div>
+          </article>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="ventas" hidden>
         <div id="rep-kpis" class="kpis"></div>
         <article class="card">
           <header class="card-h">
@@ -537,6 +566,16 @@
 </dialog>
 
 <!-- Foto grande -->
+<dialog id="dlg-dia" class="dlg-dia" aria-labelledby="dia-titulo">
+  <header class="dlg-h dia-h">
+    <button class="btn flecha" type="button" id="dia-ant" title="Día anterior" aria-label="Día anterior"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <div class="dia-tit"><h2 id="dia-titulo"></h2><p class="sub" id="dia-sub"></p></div>
+    <button class="btn flecha" type="button" id="dia-sig" title="Día siguiente" aria-label="Día siguiente"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+  </header>
+  <div class="dlg-b" id="dia-cuerpo"></div>
+  <footer class="dlg-f"><button type="button" class="btn" id="dia-reportes">Ver este día en Reportes</button><span class="sp"></span><button type="button" class="btn primary" data-cerrar>Cerrar</button></footer>
+</dialog>
+
 <dialog id="dlg-foto" class="dlg-foto" aria-labelledby="foto-titulo">
   <header class="dlg-h"><h2 id="foto-titulo"></h2><p class="sub" id="foto-sub"></p></header>
   <div class="dlg-b"><img id="foto-grande" alt=""></div>
