@@ -441,3 +441,54 @@ test('importar: una fila con el código de barras actualiza el producto que lo t
   app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
   assert.equal(p.precio, 710);
 });
+
+test('reportes: análisis de ventas por medio, vendedor, categoría y producto, con el descuento repartido', () => {
+  const d = base();
+  const ahora = Date.now();
+  const v1 = app.cobrar(d, [{ productoId: 'a', cantidad: 2, precio: 620 }, { productoId: 'b', cantidad: 10, precio: 48 }], 'Efectivo', '', '', undefined, 10).venta;
+  v1.usuario = 'Ana';
+  const v2 = app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 620 }], 'Débito', '').venta;
+  v2.usuario = 'Beto';
+  const r = app.analisisVentas(d, ahora - 60000, ahora + 60000);
+  assert.equal(r.cantidad, 2);
+  assert.equal(r.total, 1548 + 620);
+  assert.equal(r.porMedio.Efectivo.total, 1548);
+  assert.equal(r.porVendedor.Ana.cant, 1);
+  assert.equal(r.porVendedor.Beto.total, 620);
+  const ma = r.porProducto.a;
+  assert.equal(ma.cant, 3);
+  assert.equal(ma.vendido, 1116 + 620); // 1240 con 10 % de descuento + 620
+  assert.equal(ma.ganancia, 1736 - 3 * 390);
+  const cat = r.porCategoria[d.productos[0].categoria || 'Sin categoría'];
+  assert.ok(cat.vendido >= 1736);
+  assert.equal(r.ticketPromedio, 1084);
+  // una venta anulada no cuenta
+  app.anularVenta(d, v2.id);
+  assert.equal(app.analisisVentas(d, ahora - 60000, ahora + 60000).cantidad, 1);
+});
+
+test('reportes: serie por día o por mes según el largo del período', () => {
+  const desde = new Date(2026, 9, 1).getTime(), hasta = new Date(2026, 9, 31, 23, 59).getTime();
+  const s = app.serieVentas({ '2026-10-05': 100, '2026-10-06': 50 }, desde, hasta);
+  assert.equal(s.escala, 'día');
+  assert.equal(s.serie.length, 31);
+  assert.equal(s.serie[4].total, 100);
+  const m = app.serieVentas({ '2026-02-05': 100, '2026-10-06': 50 }, new Date(2026, 0, 1).getTime(), hasta);
+  assert.equal(m.escala, 'mes');
+  assert.equal(m.serie.length, 10);
+  assert.equal(m.serie[1].total, 100);
+});
+
+test('reportes: mercadería parada (con stock, sin ventas en N días, sin contar lo recién cargado)', () => {
+  const d = base();
+  const DIA = 864e5, ahora = Date.now();
+  // el martillo se cargó hace 200 días y se vendió hace 120; el otro se cargó hace 10 días
+  d.movimientos.push({ id: 'm1', productoId: 'a', fecha: new Date(ahora - 200 * DIA).toISOString(), tipo: 'entrada', cantidad: 10 });
+  d.movimientos.push({ id: 'm2', productoId: 'b', fecha: new Date(ahora - 10 * DIA).toISOString(), tipo: 'entrada', cantidad: 50 });
+  d.ventas.push({ id: 'v', fecha: new Date(ahora - 120 * DIA).toISOString(), items: [{ productoId: 'a', cantidad: 1 }], total: 620 });
+  const p = app.mercaderiaParada(d, 90, ahora);
+  assert.deepEqual(p.map((x) => x.p.id), ['a']);
+  assert.equal(p[0].diasSinVenta, 120);
+  assert.equal(p[0].valorCosto, 10 * 390);
+  assert.equal(app.mercaderiaParada(d, 180, ahora).length, 0, 'se vendió hace 120 días');
+});

@@ -5,7 +5,7 @@
 'use strict';
 
 const CLAVE = 'ferreteria-stock-v1';
-const VISTAS = ['panel', 'caja', 'productos', 'movimientos', 'proveedores', 'reportes'];
+const VISTAS = ['panel', 'caja', 'productos', 'movimientos', 'proveedores', 'reportes', 'ajustes'];
 const DIA = 864e5;
 
 const $ = (s) => document.querySelector(s);
@@ -848,7 +848,7 @@ function confirmar(texto, okTexto = 'Confirmar', peligro = false) {
   });
 }
 
-const VISTAS_ADMIN = ['panel', 'reportes'];
+const VISTAS_ADMIN = ['panel', 'reportes', 'ajustes'];
 const esAdmin = () => !!sesion && sesion.rol === 'admin';
 
 function vistaActual() {
@@ -926,7 +926,7 @@ function render() {
   $('#marca-nombre').textContent = (db.negocio && db.negocio.nombre) || 'Stock Ferretería';
   renderAlertaStock();
   // Solo se dibuja la pantalla que se está viendo
-  ({ panel: renderPanel, caja: renderCaja, productos: renderProductos, movimientos: renderMovimientos, proveedores: renderProveedores, reportes: renderReportes })[vistaActual()]();
+  ({ panel: renderPanel, caja: renderCaja, productos: renderProductos, movimientos: renderMovimientos, proveedores: renderProveedores, reportes: renderReportes, ajustes: renderAjustes })[vistaActual()]();
 }
 
 function opcionesProv(sel, vacio = 'Sin proveedor') {
@@ -2170,48 +2170,222 @@ function renderCambiosPrecio() {
     : '<p class="vacio">No hubo cambios de precio en este período.</p>';
 }
 
-function renderReportes() {
-  renderUsuarios();
-  renderCambiosPrecio();
-  renderCierresCaja();
-  renderRespaldoExtra();
-  if (!$('#form-negocio').contains(document.activeElement)) {
-    ['nombre', 'direccion', 'telefono', 'rut', 'pie'].forEach((k) => { $('#n-' + k).value = (db.negocio || {})[k] || ''; });
-    $('#n-descmax').value = topeDescuentoEmpleado();
-  }
-  // Período
-  const ventas = ventasPeriodo();
-  const validas = ventas.filter((v) => !v.anulada);
-  const total = validas.reduce((s, v) => s + v.total, 0);
-  const g = gananciaBruta(validas);
-  const a = inicioDia($('#rep-desde').value), b = finDia($('#rep-hasta').value);
-  const movs = db.movimientos.filter((m) => { const t = Date.parse(m.fecha); return t >= a && t <= b; });
-  const compras = totalCompras(movs);
-  const porMedio = {};
-  validas.forEach((v) => { porMedio[v.medio] = (porMedio[v.medio] || 0) + v.total; });
-  const masVendidos = {};
-  validas.forEach((v) => v.items.forEach((it) => {
-    const k = it.productoId;
-    masVendidos[k] = masVendidos[k] || { nombre: it.nombre, unidad: it.unidad, cant: 0, total: 0 };
-    masVendidos[k].cant += it.cantidad;
-    masVendidos[k].total += it.subtotal;
-  }));
-  const top = Object.values(masVendidos).sort((x, y) => y.total - x.total).slice(0, 5);
-  $('#rep-periodo').innerHTML = `
-    <div class="resumen">
-      <div><div class="lbl">Ventas</div><div class="val">${validas.length}</div></div>
-      <div><div class="lbl">Total vendido</div><div class="val">${$u(total)}</div></div>
-      <div><div class="lbl">Ganancia bruta</div><div class="val">${$u(g.ganancia)}</div></div>
-      <div><div class="lbl">Compras</div><div class="val">${$u(compras)}</div></div>
-    </div>
-    ${g.sinCosto ? `<p class="nota-edit">La ganancia no cuenta ${$u(g.vendidoSinCosto)} vendidos de ${g.sinCosto} producto${g.sinCosto === 1 ? '' : 's'} sin costo cargado. Cargales el costo (en Productos, filtro «Sin costo») para que la ganancia sea exacta.</p>` : ''}
-    <p class="muted">Compras: mercadería que llegó en el período. No incluye el stock inicial ni lo importado de una planilla.</p>
-    ${Object.keys(porMedio).length ? `<p class="subt">Por medio de pago</p>
-      <ul class="lista">${Object.entries(porMedio).sort((x, y) => y[1] - x[1]).map(([m, t]) => `<li><span>${esc(m)}</span><span class="num">${$u(t)}</span></li>`).join('')}</ul>` : ''}
-    ${top.length ? `<p class="subt">Más vendidos</p>
-      <ul class="lista">${top.map((t) => `<li><div class="izq"><div class="nom">${esc(t.nombre)}</div><div class="meta">${n(t.cant)} ${esc(t.unidad)}</div></div><span class="num">${$u(t.total)}</span></li>`).join('')}</ul>`
-      : '<p class="vacio">No hubo ventas por la caja en este período.</p>'}`;
+/* ---------- Análisis de ventas (sin pantalla, para poder probarlo) ---------- */
 
+const SIN_CAT = 'Sin categoría';
+/** Todo lo que se necesita para los reportes de un período: totales, por medio, vendedor, día, categoría y producto. */
+function analisisVentas(d, desde, hasta) {
+  const prods = new Map(d.productos.map((p) => [p.id, p]));
+  const ventas = d.ventas.filter((v) => { const t = Date.parse(v.fecha); return !v.anulada && t >= desde && t <= hasta; });
+  const r = { cantidad: ventas.length, total: 0, descuentos: 0, porMedio: {}, porVendedor: {}, porDia: {}, porCategoria: {}, porProducto: {}, ventas };
+  ventas.forEach((v) => {
+    r.total += v.total;
+    r.descuentos += v.descuento || 0;
+    const m = r.porMedio[v.medio] || (r.porMedio[v.medio] = { cant: 0, total: 0 });
+    m.cant++; m.total += v.total;
+    const u = v.usuario || 'Sin nombre';
+    const ve = r.porVendedor[u] || (r.porVendedor[u] = { cant: 0, total: 0, descuentos: 0 });
+    ve.cant++; ve.total += v.total; ve.descuentos += v.descuento || 0;
+    const dia = isoLocal(new Date(v.fecha));
+    r.porDia[dia] = (r.porDia[dia] || 0) + v.total;
+    const factor = v.subtotal > 0 ? v.total / v.subtotal : 1; // reparte el descuento entre los productos
+    v.items.forEach((it) => {
+      const p = prods.get(it.productoId);
+      const neto = it.subtotal * factor;
+      const costo = it.costo > 0 ? it.cantidad * it.costo : null;
+      const pr = r.porProducto[it.productoId] || (r.porProducto[it.productoId] = { id: it.productoId, nombre: it.nombre, codigo: it.codigo || (p && p.codigo) || '', unidad: it.unidad, categoria: (p && p.categoria) || SIN_CAT, cant: 0, vendido: 0, costo: 0, vendidoConCosto: 0 });
+      pr.cant += it.cantidad; pr.vendido += neto;
+      if (costo != null) { pr.costo += costo; pr.vendidoConCosto += neto; }
+      const c = r.porCategoria[pr.categoria] || (r.porCategoria[pr.categoria] = { categoria: pr.categoria, vendido: 0, costo: 0, vendidoConCosto: 0 });
+      c.vendido += neto;
+      if (costo != null) { c.costo += costo; c.vendidoConCosto += neto; }
+    });
+  });
+  const lista = (o) => Object.values(o);
+  [...lista(r.porProducto), ...lista(r.porCategoria)].forEach((x) => {
+    x.ganancia = red2(x.vendidoConCosto - x.costo);
+    x.margen = x.vendidoConCosto > 0 ? x.ganancia / x.vendidoConCosto * 100 : null;
+    x.vendido = red2(x.vendido);
+  });
+  const g = gananciaBruta(ventas);
+  r.total = red2(r.total);
+  r.descuentos = red2(r.descuentos);
+  r.ganancia = g.ganancia;
+  r.vendidoSinCosto = g.vendidoSinCosto;
+  r.productosSinCosto = g.sinCosto;
+  r.costoVendido = red2(lista(r.porCategoria).reduce((s, c) => s + c.costo, 0));
+  r.vendidoConCosto = red2(lista(r.porCategoria).reduce((s, c) => s + c.vendidoConCosto, 0));
+  r.margen = r.vendidoConCosto > 0 ? r.ganancia / r.vendidoConCosto * 100 : null;
+  r.ticketPromedio = r.cantidad ? red2(r.total / r.cantidad) : 0;
+  return r;
+}
+
+/** Barras del gráfico: por día si el período es de hasta 62 días; si no, por mes. */
+function serieVentas(porDia, desde, hasta) {
+  const ini = new Date(desde); ini.setHours(0, 0, 0, 0);
+  const fin = new Date(hasta);
+  const dias = Math.round((fin - ini) / DIA) + 1;
+  const serie = [];
+  if (dias <= 62) {
+    for (let t = new Date(ini); t <= fin; t.setDate(t.getDate() + 1)) {
+      const k = isoLocal(t);
+      serie.push({ clave: k, fecha: new Date(t), total: red2(porDia[k] || 0) });
+    }
+    return { escala: 'día', serie };
+  }
+  const meses = {};
+  Object.entries(porDia).forEach(([k, v]) => { meses[k.slice(0, 7)] = (meses[k.slice(0, 7)] || 0) + v; });
+  for (let t = new Date(ini.getFullYear(), ini.getMonth(), 1); t <= fin; t.setMonth(t.getMonth() + 1)) {
+    const k = isoLocal(t).slice(0, 7);
+    serie.push({ clave: k, fecha: new Date(t), total: red2(meses[k] || 0) });
+  }
+  return { escala: 'mes', serie };
+}
+
+/** Productos con stock que no se vendieron en los últimos «dias» días (y que no se cargaron hace menos). */
+function mercaderiaParada(d, dias, ahora = Date.now()) {
+  const limite = ahora - dias * DIA;
+  const ultima = {}, primera = {};
+  d.ventas.forEach((v) => { if (v.anulada) return; const t = Date.parse(v.fecha); v.items.forEach((it) => { if (!(ultima[it.productoId] >= t)) ultima[it.productoId] = t; }); });
+  d.movimientos.forEach((m) => { const t = Date.parse(m.fecha); if (!(primera[m.productoId] <= t)) primera[m.productoId] = t; });
+  return d.productos
+    .filter((p) => p.stock > 0 && !(ultima[p.id] >= limite) && !(primera[p.id] >= limite))
+    .map((p) => ({ p, ultimaVenta: ultima[p.id] || null, diasSinVenta: ultima[p.id] ? Math.floor((ahora - ultima[p.id]) / DIA) : null, valorCosto: red2(p.stock * p.costo), valorVenta: red2(p.stock * p.precio) }))
+    .sort((a, b) => b.valorCosto - a.valorCosto || b.valorVenta - a.valorVenta);
+}
+
+/* ---------- Pantalla de reportes ---------- */
+
+let tabReportes = 'ventas';
+try { tabReportes = localStorage.getItem('ferreteria-tab-reportes') || 'ventas'; } catch (e) { /* nada */ }
+
+function periodoReportes() {
+  const desde = inicioDia($('#rep-desde').value), hasta = finDia($('#rep-hasta').value);
+  const largo = hasta - desde + 1;
+  return { desde, hasta, antDesde: desde - largo, antHasta: desde - 1 };
+}
+
+function chipCambio(actual, anterior, plata = false) {
+  if (!anterior) return actual ? '<span class="delta neutro">sin datos del período anterior</span>' : '';
+  const pct = (actual - anterior) / Math.abs(anterior) * 100;
+  const cls = Math.abs(pct) < 0.5 ? 'neutro' : pct > 0 ? 'sube' : 'baja';
+  const flecha = cls === 'sube' ? '▲' : cls === 'baja' ? '▼' : '＝';
+  return `<span class="delta ${cls}" title="Período anterior: ${plata ? $u(anterior) : n(anterior)}">${flecha} ${n(Math.abs(Math.round(pct)))} % vs. período anterior</span>`;
+}
+const kpi = (lbl, val, extra = '') => `<div class="kpi"><div class="lbl">${lbl}</div><div class="val">${val}</div>${extra}</div>`;
+const pct1 = (x) => (x == null ? '—' : `${n(Math.round(x * 10) / 10)} %`);
+
+function barrasHtml(items, valor, texto) {
+  const max = Math.max(1, ...items.map(valor));
+  return `<ul class="barras">${items.map((x) => `<li><div class="b-txt">${texto(x)}</div><div class="barra"><i style="width:${(valor(x) / max) * 100}%"></i></div></li>`).join('')}</ul>`;
+}
+
+function graficoVentas(serieInfo) {
+  const { escala, serie } = serieInfo;
+  const max = Math.max(...serie.map((x) => x.total), 0);
+  if (!max) return '<p class="vacio">No hubo ventas en este período.</p>';
+  const cada = Math.ceil(serie.length / 12); // cuántas etiquetas se saltean para que entren
+  const etiqueta = (x) => (escala === 'día'
+    ? x.fecha.toLocaleDateString('es-UY', { day: 'numeric', month: 'short' })
+    : x.fecha.toLocaleDateString('es-UY', { month: 'short', year: '2-digit' }));
+  const tope = Math.pow(10, Math.floor(Math.log10(max)));
+  const escalaMax = Math.ceil(max / tope) * tope;
+  const corto = (x) => (x >= 1e6 ? `$ ${n(Math.round(x / 1e5) / 10)} M` : x >= 1e4 ? `$ ${n(Math.round(x / 100) / 10)} mil` : $u(x).replace(/,00$/, ''));
+  return `<div class="g-wrap"><div class="g-eje"><span style="bottom:100%">${corto(escalaMax)}</span><span style="bottom:50%">${corto(escalaMax / 2)}</span><span style="bottom:0">$ 0</span></div>
+    <div class="g-barras" style="--n:${serie.length}"><i class="g-linea" style="bottom:calc(30px + 220px)"></i><i class="g-linea" style="bottom:calc(30px + 110px)"></i>${serie.map((x, i) => `
+      <div class="g-col${x.fecha.getDay() === 0 && escala === 'día' ? ' domingo' : ''}" title="${esc(etiqueta(x))}: ${$u(x.total)}">
+        <div class="g-bar" style="height:${(x.total / escalaMax) * 100}%"></div>
+        <div class="g-lbl">${i % cada === 0 ? esc(etiqueta(x)) : ''}</div>
+      </div>`).join('')}</div></div>`;
+}
+
+function renderReportes() {
+  $$('.tabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tabReportes)));
+  $$('#v-reportes .tab-panel').forEach((p) => { p.hidden = p.dataset.panel !== tabReportes; });
+  const per = periodoReportes();
+  ({ ventas: renderRepVentas, ganancias: renderRepGanancias, stock: renderRepStock, caja: renderCierresCaja, precios: renderCambiosPrecio })[tabReportes](per);
+}
+
+function renderRepVentas(per) {
+  const a = analisisVentas(db, per.desde, per.hasta);
+  const ant = analisisVentas(db, per.antDesde, per.antHasta);
+  const movs = db.movimientos.filter((m) => { const t = Date.parse(m.fecha); return t >= per.desde && t <= per.hasta; });
+  $('#rep-kpis').innerHTML = [
+    kpi('Total vendido', $u(a.total), chipCambio(a.total, ant.total, true)),
+    kpi('Ventas', n(a.cantidad), chipCambio(a.cantidad, ant.cantidad)),
+    kpi('Ticket promedio', $u(a.ticketPromedio), chipCambio(a.ticketPromedio, ant.ticketPromedio, true)),
+    kpi('Ganancia bruta', $u(a.ganancia), chipCambio(a.ganancia, ant.ganancia, true)),
+    kpi('Compras', $u(totalCompras(movs)), '<span class="delta neutro">mercadería que llegó</span>'),
+  ].join('');
+  const s = serieVentas(a.porDia, per.desde, per.hasta);
+  $('#rep-escala').textContent = s.escala;
+  const mejor = s.serie.reduce((m, x) => (x.total > m.total ? x : m), { total: 0 });
+  $('#rep-dia-sub').textContent = mejor.total ? `El mejor ${s.escala}: ${mejor.fecha.toLocaleDateString('es-UY', s.escala === 'día' ? { weekday: 'long', day: 'numeric', month: 'long' } : { month: 'long', year: 'numeric' })}, con ${$u(mejor.total)}.` : '';
+  $('#rep-grafico').innerHTML = graficoVentas(s);
+  const medios = Object.entries(a.porMedio).map(([m, v]) => ({ m, ...v })).sort((x, y) => y.total - x.total);
+  $('#rep-medios').innerHTML = medios.length
+    ? barrasHtml(medios, (x) => x.total, (x) => `<span>${esc(x.m)} <span class="muted">· ${n(x.cant)} venta${x.cant === 1 ? '' : 's'}</span></span><strong class="num">${$u(x.total)} <span class="muted">${pct1(x.total / a.total * 100)}</span></strong>`)
+    : '<p class="vacio">Sin ventas.</p>';
+  const vend = Object.entries(a.porVendedor).map(([u, v]) => ({ u, ...v })).sort((x, y) => y.total - x.total);
+  $('#rep-vendedores').innerHTML = vend.length
+    ? `<ul class="barras">${vend.map((v) => `<li><div class="b-txt"><span>${esc(v.u)} <span class="muted">· ${n(v.cant)} venta${v.cant === 1 ? '' : 's'} · promedio ${$u(v.total / v.cant)}${v.descuentos ? ` · descuentos ${$u(v.descuentos)}` : ''}</span></span><strong class="num">${$u(v.total)}</strong></div>
+        <div class="barra"><i style="width:${v.total / vend[0].total * 100}%"></i></div></li>`).join('')}</ul>`
+    : '<p class="vacio">Sin ventas.</p>';
+  const top = Object.values(a.porProducto).sort((x, y) => y.vendido - x.vendido).slice(0, 15);
+  const maxTop = Math.max(1, ...top.map((x) => x.vendido));
+  $('#rep-top').innerHTML = top.length
+    ? `<div class="table-wrap"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Cantidad</th><th class="num">Vendido</th><th class="num">Del total</th></tr></thead>
+      <tbody>${top.map((x, i) => `<tr><td><div class="nom">${i + 1}. ${esc(x.nombre)}</div><div class="barra"><i style="width:${x.vendido / maxTop * 100}%"></i></div></td>
+        <td class="num">${n(x.cant)} <span class="u">${esc(x.unidad)}</span></td><td class="num"><strong>${$u(x.vendido)}</strong></td><td class="num">${pct1(x.vendido / a.total * 100)}</td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="vacio">No hubo ventas por la caja en este período.</p>';
+}
+
+function renderRepGanancias(per) {
+  const a = analisisVentas(db, per.desde, per.hasta);
+  const ant = analisisVentas(db, per.antDesde, per.antHasta);
+  $('#rep-gan-kpis').innerHTML = [
+    kpi('Vendido', $u(a.total), chipCambio(a.total, ant.total, true)),
+    kpi('Costo de lo vendido', $u(a.costoVendido)),
+    kpi('Ganancia bruta', $u(a.ganancia), chipCambio(a.ganancia, ant.ganancia, true)),
+    kpi('Margen', pct1(a.margen), '<span class="delta neutro">ganancia sobre lo vendido</span>'),
+  ].join('');
+  $('#rep-gan-nota').innerHTML = a.productosSinCosto
+    ? `<p class="nota-edit">No se cuentan ${$u(a.vendidoSinCosto)} vendidos de ${a.productosSinCosto} producto${a.productosSinCosto === 1 ? '' : 's'} sin costo cargado. Cargales el costo (Productos, filtro «Sin costo cargado») para que la ganancia sea exacta.</p>` : '';
+  const cats = Object.values(a.porCategoria).sort((x, y) => y.ganancia - x.ganancia);
+  const maxG = Math.max(1, ...cats.map((c) => Math.max(c.ganancia, 0)));
+  $('#rep-gan-cat').innerHTML = cats.length
+    ? `<div class="table-wrap"><table class="tabla"><thead><tr><th>Categoría</th><th class="num">Vendido</th><th class="num">Costo</th><th class="num">Ganancia</th><th class="num">Margen</th></tr></thead>
+      <tbody>${cats.map((c) => `<tr><td>${esc(c.categoria)}<div class="barra"><i style="width:${Math.max(c.ganancia, 0) / maxG * 100}%"></i></div></td>
+        <td class="num">${$u(c.vendido)}</td><td class="num">${$u(c.costo)}</td><td class="num"><strong>${$u(c.ganancia)}</strong></td><td class="num">${pct1(c.margen)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>Total</td><td class="num">${$u(a.total)}</td><td class="num">${$u(a.costoVendido)}</td><td class="num">${$u(a.ganancia)}</td><td class="num">${pct1(a.margen)}</td></tr></tfoot></table></div>`
+    : '<p class="vacio">No hubo ventas en este período.</p>';
+  const orden = $('#rep-gan-orden').value;
+  const prods = Object.values(a.porProducto).filter((x) => x.vendidoConCosto > 0)
+    .sort(orden === 'menos' ? (x, y) => x.margen - y.margen : (x, y) => y.ganancia - x.ganancia).slice(0, 30);
+  $('#rep-gan-prod').innerHTML = prods.length
+    ? `<div class="table-wrap"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Cantidad</th><th class="num">Vendido</th><th class="num">Ganancia</th><th class="num">Margen</th></tr></thead>
+      <tbody>${prods.map((x) => `<tr><td><div class="nom">${esc(x.nombre)}</div><div class="meta">${esc(x.categoria)}</div></td><td class="num">${n(x.cant)}</td><td class="num">${$u(x.vendido)}</td>
+        <td class="num"><strong>${$u(x.ganancia)}</strong></td><td class="num"><span class="${x.margen < 15 ? 'stock-bajo' : ''}">${pct1(x.margen)}</span></td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="vacio">No hubo ventas de productos con costo cargado.</p>';
+}
+
+function renderRepStock() {
+  const dias = Number($('#rep-parada-dias').value) || 90;
+  const parada = mercaderiaParada(db, dias);
+  const tc = parada.reduce((s, x) => s + x.valorCosto, 0), tv = parada.reduce((s, x) => s + x.valorVenta, 0);
+  $('#rep-parada').innerHTML = parada.length
+    ? `<div class="kpis kpis-chicos">${kpi('Productos', n(parada.length))}${kpi('Plata quieta (a costo)', $u(tc))}${kpi('Valor a precio de venta', $u(tv))}</div>
+      <div class="table-wrap"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Stock</th><th>Última venta</th><th class="num">A costo</th></tr></thead>
+      <tbody>${parada.slice(0, 100).map((x) => `<tr><td><div class="nom">${esc(x.p.nombre)}</div><div class="meta"><span class="mono">${esc(x.p.codigo)}</span> · ${esc(x.p.categoria || SIN_CAT)}${x.p.ubicacion ? ' · ' + esc(x.p.ubicacion) : ''}</div></td>
+        <td class="num">${n(x.p.stock)} <span class="u">${esc(x.p.unidad)}</span></td>
+        <td>${x.ultimaVenta ? `${new Date(x.ultimaVenta).toLocaleDateString('es-UY')} <span class="muted">(hace ${n(x.diasSinVenta)} días)</span>` : '<span class="muted">Nunca se vendió</span>'}</td>
+        <td class="num"><strong>${$u(x.valorCosto)}</strong></td></tr>`).join('')}
+      ${parada.length > 100 ? `<tr><td colspan="4" class="muted">… y ${parada.length - 100} más (exportá a Excel para verlos todos)</td></tr>` : ''}</tbody></table></div>`
+    : `<p class="vacio">Todo lo que tiene stock se vendió en los últimos ${dias} días.</p>`;
+  renderReposicionYValor();
+}
+
+function renderReposicionYValor() {
   // Reposición
   const rep = db.productos.filter((p) => estado(p) !== 'ok').sort((x, y) => nombreProv(x.proveedorId).localeCompare(nombreProv(y.proveedorId)) || x.nombre.localeCompare(y.nombre));
   $('#rep-reposicion').innerHTML = rep.length
@@ -2248,6 +2422,16 @@ function renderReportes() {
         <tfoot><tr><td>Total</td><td class="num">${db.productos.length}</td><td class="num">${$u(tc)}</td><td class="num">${$u(tv)}</td></tr></tfoot>
       </table></div>`
     : '<p class="vacio">Sin productos cargados.</p>';
+}
+
+
+function renderAjustes() {
+  renderUsuarios();
+  renderRespaldoExtra();
+  if (!$('#form-negocio').contains(document.activeElement)) {
+    ['nombre', 'direccion', 'telefono', 'rut', 'pie'].forEach((k) => { $('#n-' + k).value = (db.negocio || {})[k] || ''; });
+    $('#n-descmax').value = topeDescuentoEmpleado();
+  }
 }
 
 /* ---------- Exportar a Excel ---------- */
@@ -2325,6 +2509,26 @@ function exportar(tipo) {
         'Ingresos': r.ingresos, 'Retiros': r.retiros, 'Debería haber': r.esperado, 'Se contó': c.cerrada ? c.contado : '', 'Diferencia': c.cerrada ? c.diferencia : '', 'Nota': c.nota || '',
       };
     }), 'Cierres de caja', 'cierres_de_caja');
+  } else if (tipo === 'vendedores' || tipo === 'masvendidos' || tipo === 'ganancias') {
+    const per = periodoReportes();
+    const a = analisisVentas(db, per.desde, per.hasta);
+    if (tipo === 'vendedores') {
+      descargarExcel(Object.entries(a.porVendedor).sort((x, y) => y[1].total - x[1].total).map(([u, v]) => ({
+        'Vendedor': u, 'Ventas': v.cant, 'Total': red2(v.total), 'Promedio por venta': red2(v.total / v.cant), 'Descuentos': red2(v.descuentos),
+      })), 'Por vendedor', 'ventas_por_vendedor');
+    } else {
+      descargarExcel(Object.values(a.porProducto).sort((x, y) => (tipo === 'ganancias' ? y.ganancia - x.ganancia : y.vendido - x.vendido)).map((x) => ({
+        'Código': x.codigo, 'Producto': x.nombre, 'Categoría': x.categoria, 'Cantidad': red(x.cant), 'Unidad': x.unidad, 'Vendido': x.vendido,
+        'Costo': x.vendidoConCosto > 0 ? red2(x.costo) : '', 'Ganancia': x.vendidoConCosto > 0 ? x.ganancia : '', 'Margen %': x.margen == null ? 'sin costo' : Math.round(x.margen * 10) / 10,
+      })), tipo === 'ganancias' ? 'Ganancias' : 'Más vendidos', tipo === 'ganancias' ? 'ganancia_por_producto' : 'mas_vendidos');
+    }
+  } else if (tipo === 'parada') {
+    const dias = Number($('#rep-parada-dias').value) || 90;
+    descargarExcel(mercaderiaParada(db, dias).map((x) => ({
+      'Código': x.p.codigo, 'Producto': x.p.nombre, 'Categoría': x.p.categoria, 'Proveedor': nombreProv(x.p.proveedorId), 'Ubicación': x.p.ubicacion,
+      'Stock': x.p.stock, 'Unidad': x.p.unidad, 'Última venta': x.ultimaVenta ? new Date(x.ultimaVenta).toLocaleDateString('es-UY') : 'Nunca',
+      'Días sin vender': x.diasSinVenta ?? '', 'Valor a costo': x.valorCosto, 'Valor a venta': x.valorVenta,
+    })), 'Mercadería parada', `mercaderia_parada_${dias}_dias`);
   } else if (tipo === 'precios') {
     descargarExcel(cambiosPrecioPeriodo().map((h) => ({
       'Fecha': f(h.fecha), 'Usuario': h.usuario || '', 'Código': h.codigo || '', 'Producto': h.producto, 'Precio antes': h.masivo ? '' : h.antes, 'Precio nuevo': h.masivo ? '' : h.despues, 'Motivo': h.motivo || '',
@@ -2756,7 +2960,7 @@ function iniciarLogin() {
   });
   $('#btn-salir').addEventListener('click', () => arrancar());
   $('#banner-pin-ir').addEventListener('click', () => {
-    location.hash = '#reportes';
+    location.hash = '#ajustes';
     setTimeout(() => $('#card-usuarios').scrollIntoView({ block: 'start' }), 50);
   });
 }
@@ -2814,7 +3018,7 @@ function iniciarRecuperacion() {
   $('#rec-clave-copiar').addEventListener('click', () => copiarTexto($('#rec-clave').textContent, 'Clave copiada. Anotala también en papel.'));
   $('#dlg-rec').addEventListener('close', () => { $('#rec-clave').textContent = ''; });
   $('#banner-recuperacion-ir').addEventListener('click', () => {
-    location.hash = '#reportes';
+    location.hash = '#ajustes';
     setTimeout(() => $('#card-usuarios').scrollIntoView({ block: 'start' }), 50);
   });
 }
@@ -3077,7 +3281,28 @@ function iniciarAperturaCaja() {
   });
 }
 
+/* Barra lateral plegable (se recuerda en esta PC) */
+function aplicarBarra(plegada) {
+  document.querySelector('.app').classList.toggle('barra-plegada', plegada);
+  const b = $('#btn-barra');
+  const t = plegada ? 'Mostrar la barra' : 'Achicar la barra';
+  b.setAttribute('aria-label', t);
+  b.title = t;
+  b.setAttribute('aria-expanded', String(!plegada));
+}
+function iniciarBarra() {
+  let plegada = false;
+  try { plegada = localStorage.getItem('ferreteria-barra') === 'plegada'; } catch (e) { /* nada */ }
+  aplicarBarra(plegada);
+  $('#btn-barra').addEventListener('click', () => {
+    plegada = !document.querySelector('.app').classList.contains('barra-plegada');
+    aplicarBarra(plegada);
+    try { localStorage.setItem('ferreteria-barra', plegada ? 'plegada' : 'abierta'); } catch (e) { /* nada */ }
+  });
+}
+
 function iniciar() {
+  iniciarBarra();
   document.body.classList.toggle('es-escritorio', escritorio() && !!window.almacen.abrirHerramienta);
   iniciarAperturaCaja();
   $('#banner-stock-ver').addEventListener('click', verParaReponer);
@@ -3103,7 +3328,26 @@ function iniciar() {
   $('#fecha-hoy').textContent = new Date().toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long' });
   $('#rep-desde').value = isoLocal(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   $('#rep-hasta').value = isoLocal();
-  ['#rep-desde', '#rep-hasta'].forEach((s) => $(s).addEventListener('input', renderReportes));
+  ['#rep-desde', '#rep-hasta', '#rep-parada-dias', '#rep-gan-orden'].forEach((s) => $(s).addEventListener('input', renderReportes));
+  $$('.tabs [data-tab]').forEach((b) => b.addEventListener('click', () => {
+    tabReportes = b.dataset.tab;
+    try { localStorage.setItem('ferreteria-tab-reportes', tabReportes); } catch (e) { /* nada */ }
+    renderReportes();
+  }));
+  $$('[data-periodo]').forEach((b) => b.addEventListener('click', () => {
+    const hoy = new Date();
+    const y = hoy.getFullYear(), m = hoy.getMonth();
+    const r = {
+      hoy: [hoy, hoy],
+      7: [new Date(y, m, hoy.getDate() - 6), hoy],
+      mes: [new Date(y, m, 1), hoy],
+      'mes-ant': [new Date(y, m - 1, 1), new Date(y, m, 0)],
+      anio: [new Date(y, 0, 1), hoy],
+    }[b.dataset.periodo];
+    $('#rep-desde').value = isoLocal(r[0]);
+    $('#rep-hasta').value = isoLocal(r[1]);
+    renderReportes();
+  }));
   $$('[data-export]').forEach((b) => b.addEventListener('click', () => exportar(b.dataset.export)));
   $$('[data-cerrar]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
   iniciarCaja();
@@ -3118,7 +3362,7 @@ function iniciar() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, anotarPrecio };
+  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, anotarPrecio };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

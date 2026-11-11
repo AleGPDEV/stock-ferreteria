@@ -5,15 +5,21 @@ Programa para controlar el stock de una ferretería y cobrar en el mostrador. Se
 ## Qué hace
 
 - **Vender**: buscás el producto por nombre o código (sirve un lector de código de barras USB), armás el ticket, elegís cómo paga (efectivo, débito, crédito o transferencia) y calcula el vuelto. Al **cobrar**, el stock se descuenta solo. La lista se puede **filtrar** por categoría, proveedor y stock, y ordenar por nombre, precio o más vendidos. Si el producto no está cargado, se agrega ahí mismo con **nombre y precio** y entra a la venta. Si el programa dice que no hay stock, se puede **vender igual** después de confirmar (el stock queda en negativo hasta que se corrija contando). Si el lector de códigos escribe en otro campo (por ejemplo «¿Con cuánto paga?»), el programa se da cuenta, deja el campo como estaba y agrega el producto. Permite hacer un **descuento** en porcentaje, **imprimir el ticket** y el **cierre de caja**, ver las ventas de cualquier día y **anular** una venta (el stock vuelve).
-- **Apertura y cierre de caja**: al entrar a Vender con la caja cerrada se pide el efectivo inicial. Mientras está abierta se anotan retiros e ingresos de efectivo. Al cerrar se cuenta el efectivo y el programa calcula lo que debería haber (inicial + ventas en efectivo + ingresos − retiros) y la diferencia. Para el empleado el cierre es a ciegas: anota lo que contó y la diferencia la ve solo el administrador, en **Reportes y copias → Cierres de caja**, con impresión y exportación a Excel.
+- **Apertura y cierre de caja**: al entrar a Vender con la caja cerrada se pide el efectivo inicial. Mientras está abierta se anotan retiros e ingresos de efectivo. Al cerrar se cuenta el efectivo y el programa calcula lo que debería haber (inicial + ventas en efectivo + ingresos − retiros) y la diferencia. Para el empleado el cierre es a ciegas: anota lo que contó y la diferencia la ve solo el administrador, en **Reportes → Cierres de caja**, con impresión y exportación a Excel.
 - **Productos**: foto, código, nombre, categoría, unidad (unidad, kg, m, litro, caja…), proveedor, ubicación en el local, costo, precio de venta y stock mínimo. Avisa cuando un producto está bajo el mínimo o sin stock: un aviso arriba de todas las pantallas (rojo si hay productos sin stock), un contador en Productos, el detalle en la ventana de venta cobrada y el filtro **Para reponer**. Lo ven también los empleados.
   - **Importar desde Excel**: carga cientos de productos de una vez desde una planilla `.xlsx` o `.csv` (también el `.csv` de Excel en español, con punto y coma y coma decimal). Trae una planilla modelo. Si el código ya existe, actualiza el producto en lugar de duplicarlo, y se elige qué cambiar: por defecto solo precio y costo; el stock y el nombre solo si se marcan, y antes se muestra la lista de stocks que cambian. Con una planilla de solo **Código y Precio** se actualizan los precios de la lista de un proveedor. La planilla se puede armar con el **Lector de facturas** o el **Cargador de productos** (ver más abajo); si trae la columna **Llegó**, esas cantidades se suman al stock como mercadería que llegó.
   - **Actualizar precios**: sube o baja un porcentaje a todos los productos, a una categoría o a un proveedor, con redondeo. Los precios bajos no se redondean de a $ 5 o $ 10 (un artículo de $ 2 no pasa a $ 10), y la vista previa muestra el cambio real más chico y más grande.
   - **Fotos**: en **Editar** se elige una foto (la que se pasó del teléfono a la computadora, en JPG o PNG) o se arrastra al recuadro. El programa la achica (unos 900 px, 50 a 150 KB) y la guarda en `%APPDATA%\Stock Ferreteria\Fotos`. Se ve en la lista de Vender, en el ticket y en Productos; tocándola se agranda. El filtro **Sin foto** muestra los que faltan. Las fotos HEIC del iPhone no se pueden abrir: en el iPhone, Ajustes → Cámara → Formatos → «Más compatible».
-  - **Historial de precios**: cada cambio de precio queda anotado con fecha y usuario, en **Reportes y copias → Cambios de precio**.
+  - **Historial de precios**: cada cambio de precio queda anotado con fecha y usuario, en **Reportes → Cambios de precio**.
 - **Cargar mercadería**: llegada de mercadería (actualiza el costo), salidas que no son ventas (roturas, uso interno) y corrección después de contar. Todo queda en el historial con el stock antes y después.
 - **Proveedores**: datos de contacto, RUT y cuántos productos de cada uno hay que reponer.
-- **Reportes** (descargables a Excel): ventas del período con total por medio de pago y más vendidos, lista de reposición con cantidad sugerida a pedir, valor del inventario por categoría e inventario completo.
+- **Reportes** (descargables a Excel), en pestañas y para el período que se elija (hoy, 7 días, este mes, mes anterior, este año o fechas a mano):
+  - **Ventas**: total, cantidad, ticket promedio y ganancia comparados con el período anterior; gráfico de ventas por día (o por mes en períodos largos); por medio de pago; por vendedor; los 15 más vendidos.
+  - **Ganancias**: costo de lo vendido, ganancia y margen, por categoría y por producto (los que más dejan o los de menor margen).
+  - **Stock**: mercadería parada (con stock y sin ventas en 30, 60, 90 días, 6 meses o 1 año, con la plata inmovilizada), reposición, valor del inventario por categoría e inventario completo.
+  - **Cierres de caja** y **Cambios de precio**.
+- **Configuración**: usuarios y clave de recuperación, datos del negocio y copias de seguridad.
+- **Barra lateral plegable**: el botón de la flecha la achica a solo íconos y el resto de la pantalla se agranda; se recuerda.
 - **Datos del negocio**: nombre, dirección, teléfono y RUT que salen en el ticket.
 - **Copia de seguridad**: descarga y restauración de todos los datos en un archivo `.json`.
 - **Tamaño de la pantalla**: en el menú **Ver → Agrandar / Achicar** (o Ctrl + y Ctrl −), pensado para que lo usen personas mayores. El programa recuerda el tamaño elegido.
@@ -26,16 +32,16 @@ Al abrir el programa, cada persona toca su nombre y escribe su PIN (de 4 a 6 nú
 
 | Usuario | PIN inicial | Qué puede hacer |
 |---|---|---|
-| Administrador | `1234` | Todo, incluido Resumen del día, Reportes y copias, usuarios, anular ventas y cambiar precios en bloque |
+| Administrador | `1234` | Todo, incluido Resumen del día, Reportes, Configuración (usuarios y copias), anular ventas y cambiar precios en bloque |
 | Empleado | `0000` | Vender, cargar mercadería, productos y proveedores. No ve totales de ventas, costos ni reportes, y no cambia el precio de los productos que ya existen. Puede hacer descuentos hasta un 10 % (se cambia en Datos del negocio); para uno mayor hace falta el PIN de un administrador |
 
-**Lo primero que hay que hacer** es entrar como Administrador e ir a **Reportes y copias → Usuarios** para cambiar los dos PIN. Mientras sigan con el PIN inicial, el programa lo recuerda con un aviso. Ahí mismo se crean más usuarios (uno por cada empleado) y se puede renombrar a "Empleado" con su nombre real.
+**Lo primero que hay que hacer** es entrar como Administrador e ir a **Configuración → Usuarios** para cambiar los dos PIN. Mientras sigan con el PIN inicial, el programa lo recuerda con un aviso. Ahí mismo se crean más usuarios (uno por cada empleado) y se puede renombrar a "Empleado" con su nombre real.
 
 Cada venta y cada movimiento de stock queda registrado con el nombre de quien lo hizo.
 
 Después de 5 PIN equivocados seguidos, ese usuario tiene que esperar 5 minutos para volver a probar.
 
-**Clave de recuperación:** al instalar, el administrador entra a **Reportes y copias → Usuarios → Crear clave de recuperación**. El programa muestra una vez una clave de 12 letras y números (por ejemplo `QZ85-RNVC-RNSN`) que hay que anotar en papel y guardar fuera del mostrador; el programa guarda solo un resumen cifrado. Mientras no se cree, el administrador ve un aviso.
+**Clave de recuperación:** al instalar, el administrador entra a **Configuración → Usuarios → Crear clave de recuperación**. El programa muestra una vez una clave de 12 letras y números (por ejemplo `QZ85-RNVC-RNSN`) que hay que anotar en papel y guardar fuera del mostrador; el programa guarda solo un resumen cifrado. Mientras no se cree, el administrador ve un aviso.
 
 **Si se olvida el PIN del administrador:** en la pantalla de ingreso, tocá **Me olvidé el PIN del administrador**, escribí la clave de recuperación y elegí un PIN nuevo. Si se pierde la clave, se puede crear otra desde la misma pantalla de Usuarios (la anterior deja de servir).
 
@@ -54,7 +60,7 @@ Después de 5 PIN equivocados seguidos, ese usuario tiene que esperar 5 minutos 
 - Se hace un **respaldo comprimido** por día (`respaldo_AAAA-MM-DD.json.gz`) en `Documentos\Stock Ferreteria\Respaldos`, y se guardan los últimos 60 días. Se actualiza al abrir el programa, al cerrar la caja y al cerrar el programa, así tiene las ventas del día. Se abre desde **Archivo → Abrir carpeta de respaldos**.
 - **Si los datos se dañan** (por un corte de luz o un problema del disco), el programa no toca nada: muestra una pantalla para restaurar el último respaldo, o para quitar solo lo dañado (antes guarda una copia de la base como estaba, `datos-danado-….sqlite`). Mientras tanto no guarda ni hace respaldos, para no pisar los buenos.
 - Si en algún momento no se pueden guardar los cambios, aparece un aviso rojo fijo y la caja no deja cobrar hasta que se arregle.
-- **Copia extra:** en **Reportes y copias → Copia de seguridad** se elige una carpeta en un pendrive o en Google Drive u OneDrive, y el respaldo del día se copia ahí también. Si el pendrive no está enchufado, el programa lo avisa y vuelve a intentar más tarde.
+- **Copia extra:** en **Configuración → Copia de seguridad** se elige una carpeta en un pendrive o en Google Drive u OneDrive, y el respaldo del día se copia ahí también. Si el pendrive no está enchufado, el programa lo avisa y vuelve a intentar más tarde.
 - Las **fotos** se copian a `Respaldos\Fotos` y, si hay carpeta extra, a su carpeta `Fotos`.
 - Para pasar los datos a otra PC: **Descargar copia** en la vieja y **Restaurar copia** en la nueva. También se puede restaurar directamente un respaldo diario `.json.gz`. Para las fotos, copiá la carpeta `Fotos` del respaldo (o del pendrive) a `Documentos\Stock Ferreteria\Respaldos\Fotos` en la PC nueva: al abrir, el programa trae las que falten.
 - Al actualizar desde una versión anterior a la 1.6, los datos de `datos.json` se pasan solos a la base nueva, y queda una copia como `datos-antes-de-sqlite.json`.
@@ -86,7 +92,7 @@ Para cargar el local recorriéndolo con el lector de códigos y una notebook, si
 2. Si volvés a escanear un producto que ya cargaste, se le suma 1 a la cantidad. Para lo que no tiene código, **Producto sin código** (el programa le pone uno al importar).
 3. Al terminar, **Descargar Excel** e importalo.
 
-Lo cargado queda guardado en esa computadora aunque se cierre. Para **contar el stock** de lo que ya está cargado: exportá **Inventario completo** desde Reportes y copias, y en el cargador tocá **Cargar los productos del programa**; al escanear aparece el nombre y solo ponés la cantidad. Al importar, marcá **Stock** para que se corrija.
+Lo cargado queda guardado en esa computadora aunque se cierre. Para **contar el stock** de lo que ya está cargado: exportá **Inventario completo** desde Reportes → Stock, y en el cargador tocá **Cargar los productos del programa**; al escanear aparece el nombre y solo ponés la cantidad. Al importar, marcá **Stock** para que se corrija.
 
 ## Lector de código de barras
 

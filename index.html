@@ -19,20 +19,22 @@
         <strong id="marca-nombre">Stock Ferretería</strong>
         <small id="fecha-hoy"></small>
       </div>
+      <button type="button" class="btn-barra" id="btn-barra" aria-label="Achicar la barra" title="Achicar la barra"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
     </div>
     <nav class="nav" aria-label="Secciones">
-      <a href="#caja" ><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20 8H6.2"/><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/></svg><span class="txt">Vender</span></a>
-      <a href="#productos"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg><span class="txt">Productos</span><span id="badge-bajo" class="badge" hidden></span></a>
-      <a href="#movimientos"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h11V6H3zM14 10h4l3 3v4h-7"/><circle cx="7" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg><span class="txt">Cargar mercadería</span></a>
-      <a href="#panel" class="solo-admin"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="txt">Resumen del día</span></a>
-      <a href="#proveedores"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span class="txt">Proveedores</span></a>
-      <a href="#reportes" class="solo-admin"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/></svg><span class="txt">Reportes y copias</span></a>
+      <a href="#caja"  title="Vender"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20 8H6.2"/><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/></svg><span class="txt">Vender</span></a>
+      <a href="#productos" title="Productos"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg><span class="txt">Productos</span><span id="badge-bajo" class="badge" hidden></span></a>
+      <a href="#movimientos" title="Cargar mercadería"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h11V6H3zM14 10h4l3 3v4h-7"/><circle cx="7" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg><span class="txt">Cargar mercadería</span></a>
+      <a href="#panel" class="solo-admin" title="Resumen del día"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="txt">Resumen del día</span></a>
+      <a href="#proveedores" title="Proveedores"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span class="txt">Proveedores</span></a>
+      <a href="#reportes" class="solo-admin" title="Reportes"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/></svg><span class="txt">Reportes</span></a>
+      <a href="#ajustes" class="solo-admin" title="Configuración"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span class="txt">Configuración</span></a>
     </nav>
     <div class="sesion">
       <span class="sesion-lbl">Usuario</span>
       <strong id="sesion-nombre"></strong>
       <span class="sesion-lbl" id="sesion-rol"></span>
-      <button class="btn sm" type="button" id="btn-salir">Cerrar sesión</button>
+      <button class="btn sm" type="button" id="btn-salir" title="Cerrar sesión"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg><span class="txt">Cerrar sesión</span></button>
     </div>
   </aside>
 
@@ -288,44 +290,111 @@
     <!-- REPORTES -->
     <section id="v-reportes" class="vista" hidden>
       <header class="vh">
-        <div><h1>Reportes</h1><p class="sub">Cada reporte se puede descargar como planilla de Excel.</p></div>
+        <div><h1>Reportes</h1><p class="sub">Elegí el período y la pestaña. Cada reporte se puede descargar como planilla de Excel.</p></div>
       </header>
-      <div class="reportes">
+      <div class="rep-periodo card">
+        <div class="rep-fechas">
+          <label class="f-inline" for="rep-desde">Desde <input type="date" id="rep-desde"></label>
+          <label class="f-inline" for="rep-hasta">Hasta <input type="date" id="rep-hasta"></label>
+        </div>
+        <div class="rep-rapidos" role="group" aria-label="Períodos rápidos">
+          <button class="btn sm" type="button" data-periodo="hoy">Hoy</button>
+          <button class="btn sm" type="button" data-periodo="7">Últimos 7 días</button>
+          <button class="btn sm" type="button" data-periodo="mes">Este mes</button>
+          <button class="btn sm" type="button" data-periodo="mes-ant">Mes anterior</button>
+          <button class="btn sm" type="button" data-periodo="anio">Este año</button>
+        </div>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Reportes">
+        <button type="button" role="tab" data-tab="ventas" aria-selected="true">Ventas</button>
+        <button type="button" role="tab" data-tab="ganancias" aria-selected="false">Ganancias</button>
+        <button type="button" role="tab" data-tab="stock" aria-selected="false">Stock</button>
+        <button type="button" role="tab" data-tab="caja" aria-selected="false">Cierres de caja</button>
+        <button type="button" role="tab" data-tab="precios" aria-selected="false">Cambios de precio</button>
+      </div>
+
+      <div class="tab-panel" data-panel="ventas">
+        <div id="rep-kpis" class="kpis"></div>
         <article class="card">
           <header class="card-h">
-            <div><h2>Ventas y movimientos del período</h2></div>
+            <div><h2>Ventas por <span id="rep-escala">día</span></h2><p class="sub" id="rep-dia-sub"></p></div>
             <button class="btn sm" type="button" data-export="ventas">Exportar ventas</button>
           </header>
-          <div class="toolbar compacto">
-            <label class="f-inline" for="rep-desde">Desde <input type="date" id="rep-desde"></label>
-            <label class="f-inline" for="rep-hasta">Hasta <input type="date" id="rep-hasta"></label>
-          </div>
-          <div id="rep-periodo"></div>
+          <div id="rep-grafico" class="grafico"></div>
         </article>
-
+        <div class="reportes">
+          <article class="card">
+            <header class="card-h"><div><h2>Por medio de pago</h2></div></header>
+            <div id="rep-medios"></div>
+          </article>
+          <article class="card">
+            <header class="card-h"><div><h2>Por vendedor</h2><p class="sub">Quién atendió cada venta.</p></div>
+              <button class="btn sm" type="button" data-export="vendedores">Exportar Excel</button></header>
+            <div id="rep-vendedores"></div>
+          </article>
+        </div>
         <article class="card">
+          <header class="card-h"><div><h2>Más vendidos</h2><p class="sub">Los 15 productos que más plata dejaron en el período.</p></div>
+            <button class="btn sm" type="button" data-export="masvendidos">Exportar Excel</button></header>
+          <div id="rep-top"></div>
+        </article>
+      </div>
+
+      <div class="tab-panel" data-panel="ganancias" hidden>
+        <div id="rep-gan-kpis" class="kpis"></div>
+        <div id="rep-gan-nota"></div>
+        <article class="card">
+          <header class="card-h"><div><h2>Ganancia por categoría</h2><p class="sub">Lo vendido menos lo que costó. El margen es la ganancia sobre lo vendido.</p></div>
+            <button class="btn sm" type="button" data-export="ganancias">Exportar Excel</button></header>
+          <div id="rep-gan-cat"></div>
+        </article>
+        <article class="card">
+          <header class="card-h"><div><h2>Ganancia por producto</h2><p class="sub">Ordenados por la ganancia que dejaron.</p></div>
+            <label class="f-inline" for="rep-gan-orden">Ver
+              <select id="rep-gan-orden"><option value="mas">Los que más ganancia dejan</option><option value="menos">Los de menor margen</option></select>
+            </label></header>
+          <div id="rep-gan-prod"></div>
+        </article>
+      </div>
+
+      <div class="tab-panel" data-panel="stock" hidden>
+        <article class="card">
+          <header class="card-h">
+            <div><h2>Mercadería parada</h2><p class="sub">Productos con stock que no se vendieron en los últimos días: plata quieta en el estante. No incluye lo cargado hace menos tiempo.</p></div>
+            <div class="botonera">
+              <label class="f-inline" for="rep-parada-dias">Sin ventas en
+                <select id="rep-parada-dias"><option value="30">30 días</option><option value="60">60 días</option><option value="90" selected>90 días</option><option value="180">6 meses</option><option value="365">1 año</option></select>
+              </label>
+              <button class="btn sm" type="button" data-export="parada">Exportar Excel</button>
+            </div>
+          </header>
+          <div id="rep-parada"></div>
+        </article>
+        <div class="reportes">
+          <article class="card">
           <header class="card-h">
             <div><h2>Reposición</h2><p class="sub">Productos en el mínimo o por debajo. La cantidad sugerida lleva el stock al doble del mínimo.</p></div>
             <button class="btn sm" type="button" data-export="reposicion">Exportar Excel</button>
           </header>
           <div id="rep-reposicion"></div>
         </article>
-
-        <article class="card">
+          <article class="card">
           <header class="card-h">
             <div><h2>Valor del inventario por categoría</h2></div>
             <button class="btn sm" type="button" data-export="valorizacion">Exportar Excel</button>
           </header>
           <div id="rep-valorizacion"></div>
         </article>
-
+        </div>
         <article class="card">
           <header class="card-h">
-            <div><h2>Inventario completo</h2><p class="sub">Todos los productos con stock, costos, precios y ubicación.</p></div>
+            <div><h2>Inventario completo</h2><p class="sub">Todos los productos con stock, costos, precios, ubicación y códigos de barras.</p></div>
             <button class="btn sm" type="button" data-export="inventario">Exportar Excel</button>
           </header>
         </article>
+      </div>
 
+      <div class="tab-panel" data-panel="caja" hidden>
         <article class="card" id="card-cajas">
           <header class="card-h">
             <div><h2>Cierres de caja</h2><p class="sub">Cada apertura y cierre, con lo que debería haber, lo que se contó y la diferencia.</p></div>
@@ -336,15 +405,24 @@
             <tbody id="tabla-cajas"></tbody>
           </table></div>
         </article>
+      </div>
 
+      <div class="tab-panel" data-panel="precios" hidden>
         <article class="card" id="card-precios-hist">
           <header class="card-h">
-            <div><h2>Cambios de precio</h2><p class="sub">Quién cambió cada precio y cuándo, en el período elegido arriba.</p></div>
+            <div><h2>Cambios de precio</h2><p class="sub">Quién cambió cada precio y cuándo, en el período elegido.</p></div>
             <button class="btn sm" type="button" data-export="precios">Exportar Excel</button>
           </header>
           <div id="rep-precios"></div>
         </article>
+      </div>
+    </section>
 
+    <section id="v-ajustes" class="vista" hidden>
+      <header class="vh">
+        <div><h1>Configuración</h1><p class="sub">Usuarios, datos del negocio y copias de seguridad.</p></div>
+      </header>
+      <div class="ajustes">
         <article class="card" id="card-usuarios">
           <header class="card-h">
             <div><h2>Usuarios</h2><p class="sub">Quién puede entrar al programa. El empleado vende, carga mercadería y productos; el administrador además ve el resumen, los reportes y las copias.</p></div>
@@ -375,7 +453,6 @@
             <div class="f-wide"><button class="btn primary" type="submit">Guardar datos</button></div>
           </form>
         </article>
-
         <article class="card">
           <header class="card-h">
             <div><h2>Copia de seguridad</h2><p class="sub" id="respaldo-texto">Los datos se guardan en este navegador. Descargá una copia seguido y guardala en un pendrive o en la nube.</p></div>
