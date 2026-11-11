@@ -501,3 +501,15 @@ textarea { width: 100%; resize: vertical; }
 /* Herramientas aparte */
 .imp-herr { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); font-size: 14.5px; }
 body:not(.es-escritorio) .solo-escritorio { display: none !important; }
+
+/* Código de barras desconocido en la caja: asignarlo a un producto que ya existe */
+.ar-vincular { display: flex; flex-direction: column; gap: 8px; }
+.ar-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+.ar-lista:empty { display: none; }
+.ar-lista button { width: 100%; text-align: left; display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--fg); cursor: pointer; font: inherit; }
+.ar-lista button:hover, .ar-lista button:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.ar-lista .meta { color: var(--muted); font-size: 13px; }
+.ar-lista .ar-txt { flex: 1; min-width: 0; }
+.ar-lista .mini { width: 44px; height: 44px; cursor: inherit; }
+.ar-o { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13.5px; margin: 6px 0 0; }
+.ar-o::before, .ar-o::after { content: ""; flex: 1; border-top: 1px solid var(--line); }

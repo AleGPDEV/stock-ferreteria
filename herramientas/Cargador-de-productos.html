@@ -81,6 +81,11 @@ dialog p { margin: 0 0 18px; font-size: 17px; }
 .toast[hidden] { display: none; }
 .pie { grid-column: 1 / -1; color: var(--muted); font-size: 13.5px; text-align: center; }
 label.btn input { display: none; }
+.vincular { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: var(--r); background: var(--accent-soft); }
+.v-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.v-lista:empty { display: none; }
+.v-lista .btn { width: 100%; display: flex; justify-content: space-between; gap: 10px; text-align: left; font-weight: 400; }
+.v-lista .meta { color: var(--muted); font-size: 13px; }
 </style>
 </head>
 <body>
@@ -100,6 +105,11 @@ label.btn input { display: none; }
 
     <form id="form" hidden novalidate>
       <p class="paso"><span class="paso-n">2</span> <span id="form-titulo">Completá los datos</span></p>
+      <div class="vincular" id="vincular" hidden>
+        <label class="f" for="v-buscar">¿Ya está en el programa con otro código (por ejemplo, cargado de una factura)? Buscalo<input id="v-buscar" type="text" autocomplete="off" placeholder="Ej.: guante cuero, o el código LH-5283"></label>
+        <ul class="v-lista" id="v-lista"></ul>
+        <p class="ayuda">Si no está, completá los datos de abajo.</p>
+      </div>
       <div class="campos">
         <label class="f f-wide" for="c-nombre">Nombre del producto<input id="c-nombre" type="text" autocomplete="off" placeholder="Ej.: Tornillo autoperforante 8 x 1&quot;"></label>
         <label class="f" for="c-precio">Precio de venta ($)<input id="c-precio" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej.: 290"></label>
@@ -208,7 +218,9 @@ function parseNum(v) {
 // ---------- Datos ----------
 let datos = { items: [], recordar: {}, catalogo: [] };
 try { const g = JSON.parse(localStorage.getItem(CLAVE) || 'null'); if (g && Array.isArray(g.items)) datos = Object.assign(datos, g); } catch (e) { /* sin almacenamiento */ }
-let catalogo = new Map((datos.catalogo || []).map((p) => [String(p.codigo).toUpperCase(), p]));
+const mapaCatalogo = (lista) => new Map(lista.flatMap((p) => [p.codigo].concat(p.barras || []).filter(Boolean).map((c) => [String(c).toUpperCase(), p])));
+let catalogo = mapaCatalogo(datos.catalogo || []);
+const productosCatalogo = () => datos.catalogo || [];
 function guardar() {
   try { localStorage.setItem(CLAVE, JSON.stringify(datos)); } catch (e) { toast('No se pudo guardar en esta computadora. Descargá el Excel ahora.'); }
 }
@@ -250,7 +262,7 @@ let ultimoId = null;
 function escaneo(codigoBruto) {
   const codigo = String(codigoBruto || '').trim().toUpperCase();
   if (!codigo) return;
-  const ya = datos.items.find((x) => x.codigo && x.codigo.toUpperCase() === codigo);
+  const ya = datos.items.find((x) => (x.codigo && x.codigo.toUpperCase() === codigo) || (x.barras || []).includes(codigo));
   if (ya) {
     if (!$('#form').hidden && editando === ya.id) { sumarCampoCantidad(); return; }
     ya.cantidad = (Number(ya.cantidad) || 0) + 1;
@@ -264,11 +276,12 @@ function escaneo(codigoBruto) {
   }
   pitido(1040);
   const enPrograma = catalogo.get(codigo);
-  abrirForm({ codigo, nombre: enPrograma ? enPrograma.nombre : '', precio: enPrograma ? enPrograma.precio : '', costo: enPrograma ? enPrograma.costo : '',
+  // Si el código escaneado es un código de barras de un producto del programa, se carga con el código del programa
+  abrirForm({ codigo: enPrograma ? enPrograma.codigo : codigo, barras: enPrograma && enPrograma.codigo !== codigo ? [codigo] : [], escaneado: codigo, nombre: enPrograma ? enPrograma.nombre : '', precio: enPrograma ? enPrograma.precio : '', costo: enPrograma ? enPrograma.costo : '',
     unidad: enPrograma ? enPrograma.unidad : '', categoria: enPrograma ? enPrograma.categoria : '', ubicacion: enPrograma ? enPrograma.ubicacion : '',
     proveedor: enPrograma ? enPrograma.proveedor : '', minimo: enPrograma ? enPrograma.minimo : '', cantidad: '', existente: !!enPrograma });
   if (enPrograma) estado(`Este producto ya está en el programa (hay ${numero.format(enPrograma.stock || 0)} según el programa). Poné cuántos hay ahora.`, 'info');
-  else estado(`Código nuevo: <strong>${esc(codigo)}</strong>. Escribí el nombre y el precio.`, 'info');
+  else estado(`Código nuevo: <strong>${esc(codigo)}</strong>. ${productosCatalogo().length ? 'Si ya está en el programa con otro código, buscalo arriba del nombre; si no,' : ''} escribí el nombre y el precio.`, 'info');
 }
 
 function sumarCampoCantidad() {
@@ -294,8 +307,33 @@ function abrirForm(x, id = null) {
   $('#c-proveedor').value = x.proveedor || (id ? '' : r.proveedor || '');
   $('#form-err').textContent = '';
   $('#form').dataset.existente = x.existente ? '1' : '';
+  formBarras = (x.barras || []).slice();
+  formEscaneado = x.escaneado || '';
+  // Código nuevo con los productos del programa cargados: se puede elegir uno que ya existe
+  $('#vincular').hidden = !!(id || x.existente || !productosCatalogo().length || !x.codigo);
+  $('#v-buscar').value = '';
+  $('#v-lista').innerHTML = '';
   $('#form').hidden = false;
-  ($('#c-nombre').value ? $('#c-cantidad') : $('#c-nombre')).focus();
+  ($('#c-nombre').value ? $('#c-cantidad') : !$('#vincular').hidden ? $('#v-buscar') : $('#c-nombre')).focus();
+}
+let formBarras = [];
+let formEscaneado = '';
+
+function buscarVincular() {
+  const q = normal($('#v-buscar').value.trim());
+  if (q.length < 2) { $('#v-lista').innerHTML = ''; return; }
+  const pal = q.split(/\s+/);
+  const lista = productosCatalogo().filter((p) => { const t = normal(`${p.nombre} ${p.codigo} ${(p.barras || []).join(' ')} ${p.categoria}`); return pal.every((w) => t.includes(w)); }).slice(0, 8);
+  $('#v-lista').innerHTML = lista.length
+    ? lista.map((p) => `<li><button type="button" class="btn" data-vincular="${esc(p.codigo)}"><span>${esc(p.nombre)} <span class="meta mono">${esc(p.codigo)}</span></span><strong>${p.precio != null ? plata.format(p.precio) : ''}</strong></button></li>`).join('')
+    : '<li class="meta">No está en el programa: cargalo como nuevo abajo.</li>';
+}
+function vincular(cod) {
+  const p = productosCatalogo().find((x) => x.codigo === cod);
+  if (!p) return;
+  const escaneado = formEscaneado || $('#c-codigo').value.trim().toUpperCase();
+  abrirForm({ ...p, codigo: p.codigo, barras: escaneado && escaneado !== p.codigo ? [escaneado] : [], escaneado, cantidad: '', existente: true });
+  estado(`El código <strong>${esc(escaneado)}</strong> va a quedar asignado a <strong>${esc(p.nombre)}</strong>. Poné cuántos hay.`, 'ok');
 }
 
 function cerrarForm() {
@@ -315,13 +353,14 @@ function guardarForm() {
   if (!nombre) { err('Escribí el nombre del producto.'); $('#c-nombre').focus(); return; }
   if (cantidad == null || cantidad < 0 || cantidad > 99999) { err('Revisá la cantidad.'); $('#c-cantidad').focus(); return; }
   if (precio != null && precio < 0) { err('El precio no puede ser negativo.'); $('#c-precio').focus(); return; }
-  if (codigo && datos.items.some((x) => x.id !== editando && x.codigo && x.codigo.toUpperCase() === codigo)) { err(`El código ${codigo} ya está en la lista.`); return; }
+  if (codigo && datos.items.some((x) => x.id !== editando && x.codigo && x.codigo.toUpperCase() === codigo)) { err(`Ese producto ya está en la lista: escaneá de nuevo para sumarle 1, o tocá Editar.`); return; }
   const item = {
     codigo, nombre, precio, cantidad,
     costo: parseNum($('#c-costo').value), minimo: parseNum($('#c-minimo').value),
     categoria: $('#c-categoria').value.trim(), ubicacion: $('#c-ubicacion').value.trim(),
     unidad: $('#c-unidad').value, proveedor: $('#c-proveedor').value.trim(),
     existente: $('#form').dataset.existente === '1', cambio: Date.now(),
+    barras: formBarras.filter((b) => b && b !== codigo),
   };
   if (editando) {
     const x = datos.items.find((i) => i.id === editando);
@@ -354,34 +393,34 @@ function pintar() {
   $('#lista').innerHTML = lista.length ? lista.map((x) => `
     <tr class="${x.id === ultimoId ? 'recien' : ''}${x.existente ? ' ya-estaba' : ''}">
       <td><div>${esc(x.nombre)} ${x.existente ? '<span class="chip">ya en el programa</span>' : ''}</div>
-        <div class="meta"><span class="mono">${esc(x.codigo || 'sin código')}</span>${[x.categoria, x.ubicacion].filter(Boolean).map((t) => ' · ' + esc(t)).join('')}</div></td>
+        <div class="meta"><span class="mono">${esc(x.codigo || 'sin código')}${(x.barras || []).length ? ' · ' + (x.barras || []).map(esc).join(' · ') : ''}</span>${[x.categoria, x.ubicacion].filter(Boolean).map((t) => ' · ' + esc(t)).join('')}</div></td>
       <td class="num"><strong>${numero.format(x.cantidad || 0)}</strong></td>
       <td class="num">${x.precio == null ? (x.existente ? '<span class="meta">sin cambio</span>' : '<span class="err">falta</span>') : plata.format(x.precio)}</td>
       <td class="acc"><button class="btn sm ghost" type="button" data-editar="${x.id}">Editar</button><button class="btn sm danger" type="button" data-borrar="${x.id}">Quitar</button></td>
     </tr>`).join('')
     : `<tr><td colspan="4" class="vacio">${items.length ? 'Nada coincide con la búsqueda.' : 'Todavía no cargaste nada. Escaneá el primer producto.'}</td></tr>`;
-  const cats = [...new Set(items.map((x) => x.categoria).concat([...catalogo.values()].map((p) => p.categoria)).filter(Boolean))].sort();
+  const cats = [...new Set(items.map((x) => x.categoria).concat(productosCatalogo().map((p) => p.categoria)).filter(Boolean))].sort();
   $('#lista-cat').innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join('');
-  const provs = [...new Set(items.map((x) => x.proveedor).concat([...catalogo.values()].map((p) => p.proveedor)).filter(Boolean))].sort();
+  const provs = [...new Set(items.map((x) => x.proveedor).concat(productosCatalogo().map((p) => p.proveedor)).filter(Boolean))].sort();
   $('#lista-prov').innerHTML = provs.map((c) => `<option value="${esc(c)}">`).join('');
   pintarCatalogo();
 }
 
 function pintarCatalogo() {
-  if (catalogo.size) $('#catalogo-estado').innerHTML = `Productos del programa cargados: <strong>${numero.format(catalogo.size)}</strong>. Al escanear uno, aparece su nombre y solo ponés la cantidad.`;
+  if (productosCatalogo().length) $('#catalogo-estado').innerHTML = `Productos del programa cargados: <strong>${numero.format(productosCatalogo().length)}</strong>. Al escanear uno, aparece su nombre y solo ponés la cantidad.`;
 }
 
 // ---------- Excel ----------
 function descargarExcel() {
   if (!datos.items.length) return;
   const filas = datos.items.map((x) => ({
-    'Código': x.codigo, 'Producto': x.nombre, 'Categoría': x.categoria, 'Unidad': x.unidad, 'Proveedor': x.proveedor, 'Ubicación': x.ubicacion,
+    'Código': x.codigo, 'Códigos de barras': (x.barras || []).join(' '), 'Producto': x.nombre, 'Categoría': x.categoria, 'Unidad': x.unidad, 'Proveedor': x.proveedor, 'Ubicación': x.ubicacion,
     'Stock': x.cantidad, 'Stock mínimo': x.minimo ?? '', 'Costo': x.costo ?? '', 'Precio': x.precio ?? '',
   }));
-  const hoja = XLSX.utils.json_to_sheet(filas, { header: ['Código', 'Producto', 'Categoría', 'Unidad', 'Proveedor', 'Ubicación', 'Stock', 'Stock mínimo', 'Costo', 'Precio'] });
+  const hoja = XLSX.utils.json_to_sheet(filas, { header: ['Código', 'Códigos de barras', 'Producto', 'Categoría', 'Unidad', 'Proveedor', 'Ubicación', 'Stock', 'Stock mínimo', 'Costo', 'Precio'] });
   // El código como texto, para que Excel no le saque los ceros ni lo pase a notación científica
   filas.forEach((f, i) => { const c = hoja[XLSX.utils.encode_cell({ r: i + 1, c: 0 })]; if (c) { c.t = 's'; c.v = String(f['Código'] || ''); c.z = '@'; } });
-  hoja['!cols'] = [{ wch: 16 }, { wch: 42 }, { wch: 16 }, { wch: 9 }, { wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
+  hoja['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 42 }, { wch: 16 }, { wch: 9 }, { wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
   const libro = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(libro, hoja, 'Productos');
   XLSX.writeFile(libro, `productos_cargados_${hoy()}.xlsx`);
@@ -398,15 +437,16 @@ function cargarCatalogo(file) {
       const col = (f, ...nombres) => { for (const k of Object.keys(f)) if (nombres.includes(normal(k).trim())) return f[k]; return ''; };
       const lista = [];
       for (const f of filas) {
-        const codigo = String(col(f, 'codigo', 'cod', 'codigo de barras')).trim().toUpperCase();
+        const codigo = String(col(f, 'codigo', 'cod')).trim().toUpperCase();
         const nombre = String(col(f, 'producto', 'nombre', 'descripcion')).trim();
         if (!codigo || !nombre) continue;
-        lista.push({ codigo, nombre, categoria: String(col(f, 'categoria')).trim(), unidad: String(col(f, 'unidad')).trim(), proveedor: String(col(f, 'proveedor')).trim(),
+        const barras = String(col(f, 'codigos de barras', 'codigo de barras', 'barras')).toUpperCase().split(/[\s,;]+/).filter(Boolean);
+        lista.push({ codigo, barras, nombre, categoria: String(col(f, 'categoria')).trim(), unidad: String(col(f, 'unidad')).trim(), proveedor: String(col(f, 'proveedor')).trim(),
           ubicacion: String(col(f, 'ubicacion')).trim(), stock: parseNum(col(f, 'stock')), minimo: parseNum(col(f, 'stock minimo', 'minimo')), costo: parseNum(col(f, 'costo')), precio: parseNum(col(f, 'precio', 'precio de venta')) });
       }
       if (!lista.length) { toast('Esa planilla no tiene productos con Código y Producto.'); return; }
       datos.catalogo = lista;
-      catalogo = new Map(lista.map((p) => [p.codigo, p]));
+      catalogo = mapaCatalogo(lista);
       guardar();
       pintar();
       toast(`Se cargaron ${lista.length} productos del programa.`);
@@ -426,6 +466,9 @@ $('#escanear').addEventListener('keydown', (e) => {
   $('#escanear').value = '';
   escaneo(v);
 });
+$('#v-buscar').addEventListener('input', buscarVincular);
+$('#v-buscar').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = document.querySelectorAll('#v-lista [data-vincular]'); if (b.length === 1) b[0].click(); else $('#c-nombre').focus(); } });
+$('#v-lista').addEventListener('click', (e) => { const b = e.target.closest('[data-vincular]'); if (b) vincular(b.dataset.vincular); });
 $('#sin-codigo').addEventListener('click', () => { estado('Producto sin código: el programa le va a poner uno (P-0001…).', 'info'); abrirForm({ codigo: '' }); });
 $('#form').addEventListener('submit', (e) => { e.preventDefault(); guardarForm(); });
 $('#cancelar').addEventListener('click', () => { estado(''); cerrarForm(); });

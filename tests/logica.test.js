@@ -410,3 +410,34 @@ test('QA 15 y 16: compras sin stock inicial; ganancia sin productos sin costo', 
   assert.equal(g.sinCosto, 1);
   assert.equal(g.vendidoSinCosto, 432);
 });
+
+test('códigos de barras: un producto con código del proveedor también se encuentra por el código del paquete', () => {
+  const d = base();
+  const p = d.productos[0];
+  assert.equal(app.buscarPorCodigo(d, '6901234567892'), null);
+  assert.equal(app.asignarBarras(d, p, '6901234567892'), null);
+  assert.equal(app.buscarPorCodigo(d, '6901234567892'), p);
+  assert.equal(app.buscarPorCodigo(d, p.codigo.toLowerCase()), p, 'el código propio sigue sirviendo');
+  assert.equal(app.asignarBarras(d, p, '6901234567892'), null, 'repetirlo en el mismo no es error');
+  assert.equal(p.barras.length, 1);
+  assert.match(app.asignarBarras(d, d.productos[1], '6901234567892'), /ya es de/);
+  assert.equal(app.codigoUsado(d, '6901234567892', p.id), null);
+  assert.equal(app.codigoUsado(d, '6901234567892', 'otro'), p);
+});
+
+test('importar: una fila con el código de barras actualiza el producto que lo tiene, y la columna «Códigos de barras» los agrega', () => {
+  const d = base();
+  const p = d.productos[0];
+  app.asignarBarras(d, p, '7790001000101');
+  let plan = app.planImportacion(d, [{ 'Código': '7790001000101', 'Producto': 'Otro nombre', 'Stock': 3, 'Precio': 700 }]);
+  assert.equal(plan.nuevos.length, 0);
+  assert.equal(plan.actualizados[0].id, p.id);
+  plan = app.planImportacion(d, [{ 'Código': p.codigo, 'Códigos de barras': '7790009999999 7790008888888', 'Producto': p.nombre }]);
+  app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+  assert.deepEqual(p.barras, ['7790001000101', '7790009999999', '7790008888888']);
+  // solo códigos de barras y precio, sin nombre ni código propio
+  plan = app.planImportacion(d, [{ 'Código de barras': '7790009999999', 'Precio': 710 }]);
+  assert.equal(plan.error, undefined);
+  app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+  assert.equal(p.precio, 710);
+});

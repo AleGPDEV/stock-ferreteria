@@ -310,6 +310,32 @@ function avisoGuardado() {
 }
 
 const producto = (id) => db.productos.find((p) => p.id === id);
+
+/* Códigos de un producto: el código propio (por ejemplo el del proveedor, LH-5563) y los códigos de barras
+ * del paquete (p.barras), que es lo que lee el lector. Un producto puede tener varios códigos de barras. */
+const codigosDe = (p) => [p.codigo].concat(Array.isArray(p.barras) ? p.barras : []).filter(Boolean);
+const textoCodigos = (p) => codigosDe(p).join(' ');
+const normCodigo = (c) => String(c || '').trim().toUpperCase();
+function buscarPorCodigo(d, texto) {
+  const c = normCodigo(texto);
+  if (!c) return null;
+  return d.productos.find((p) => codigosDe(p).some((x) => normCodigo(x) === c)) || null;
+}
+/** ¿Algún otro producto ya usa ese código (como código propio o de barras)? Devuelve ese producto o null. */
+function codigoUsado(d, texto, exceptoId) {
+  const c = normCodigo(texto);
+  return d.productos.find((p) => p.id !== exceptoId && codigosDe(p).some((x) => normCodigo(x) === c)) || null;
+}
+/** Le agrega un código de barras a un producto. Devuelve un texto de error o null. */
+function asignarBarras(d, p, texto) {
+  const c = normCodigo(texto);
+  if (!c) return 'El código está vacío.';
+  const otro = codigoUsado(d, c, p.id);
+  if (otro) return `El código ${c} ya es de «${otro.nombre}».`;
+  if (codigosDe(p).some((x) => normCodigo(x) === c)) return null;
+  p.barras = (Array.isArray(p.barras) ? p.barras : []).concat(c);
+  return null;
+}
 const proveedor = (id) => db.proveedores.find((p) => p.id === id);
 const nombreProv = (id) => (proveedor(id) || {}).nombre || '';
 
@@ -593,7 +619,8 @@ function actualizarPrecios(d, filtro, pct, op = {}) {
 /* ---------- Importar productos desde una planilla ---------- */
 
 const COLUMNAS = {
-  codigo: ['codigo', 'cod', 'codigo de barras', 'sku', 'code'],
+  codigo: ['codigo', 'cod', 'sku', 'code', 'codigo del proveedor'],
+  barras: ['codigo de barras', 'codigos de barras', 'ean', 'barras'],
   nombre: ['producto', 'nombre', 'descripcion', 'articulo', 'detalle'],
   categoria: ['categoria', 'rubro', 'familia'],
   unidad: ['unidad', 'um', 'unidad de medida'],
@@ -643,14 +670,14 @@ function planImportacion(d, filas) {
     for (const [campo, alias] of Object.entries(COLUMNAS)) if (!mapa[campo] && alias.includes(nk)) mapa[campo] = k;
   }
   plan.columnas = Object.values(mapa);
-  if (!mapa.nombre && !mapa.codigo) {
+  if (!mapa.nombre && !mapa.codigo && !mapa.barras) {
     plan.error = 'No encontré la columna «Producto» ni la columna «Código». La primera fila de la planilla tiene que tener los títulos de las columnas.';
     return plan;
   }
   plan.soloActualiza = !mapa.nombre;
   plan.conEntrada = !!mapa.entrada;
   plan.deFactura = !!mapa.factura;
-  const porCodigo = new Map(d.productos.map((p) => [String(p.codigo).toUpperCase(), p]));
+  const porCodigo = new Map(d.productos.flatMap((p) => codigosDe(p).map((c) => [normCodigo(c), p])));
   const porNombre = new Map(d.productos.map((p) => [normal(p.nombre), p]));
   const vistos = new Set();
   let sec = 0;
@@ -660,8 +687,10 @@ function planImportacion(d, filas) {
     const num = (c) => (mapa[c] ? parseNum(f[mapa[c]]) : null);
     const nombre = txt('nombre');
     let codigo = txt('codigo').toUpperCase();
-    if (plan.soloActualiza ? !codigo : !nombre) { plan.salteadas++; continue; }
-    const existente = codigo ? porCodigo.get(codigo) : porNombre.get(normal(nombre));
+    const barras = [...new Set(txt('barras').toUpperCase().split(/[\s,;\/|]+/).filter((x) => x.length >= 3))];
+    if (plan.soloActualiza ? !codigo && !barras.length : !nombre) { plan.salteadas++; continue; }
+    const existente = (codigo && porCodigo.get(codigo)) || barras.map((b) => porCodigo.get(b)).find(Boolean)
+      || (!codigo && nombre ? porNombre.get(normal(nombre)) : null) || null;
     if (plan.soloActualiza && !existente) { plan.sinProducto++; continue; }
     const clave = existente ? existente.codigo : (codigo || 'n:' + normal(nombre));
     if (vistos.has(clave)) { plan.salteadas++; continue; }
@@ -669,7 +698,7 @@ function planImportacion(d, filas) {
     const datos = {
       nombre, categoria: txt('categoria'), unidad: txt('unidad') ? normUnidad(txt('unidad')) : '', proveedor: txt('proveedor'),
       ubicacion: txt('ubicacion'), stock: num('stock'), minimo: num('minimo'), costo: num('costo'), precio: num('precio'),
-      entrada: num('entrada'), factura: txt('factura'),
+      entrada: num('entrada'), factura: txt('factura'), barras,
     };
     if (existente) plan.actualizados.push({ id: existente.id, codigo: existente.codigo, nombreActual: existente.nombre, stockActual: existente.stock, precioActual: existente.precio, datos });
     else {
@@ -712,6 +741,7 @@ function aplicarImportacion(d, plan, campos) {
       ubicacion: x.ubicacion, costo: pos(x.costo) || 0, precio: pos(x.precio) || 0, minimo: pos(x.minimo) || 0, stock: 0,
     };
     d.productos.push(p);
+    (x.barras || []).forEach((b) => { if (b !== p.codigo) asignarBarras(d, p, b); });
     if (x.stock > 0) registrar(d, { tipo: 'entrada', productoId: p.id, cantidad: x.stock, costoUnit: p.costo, proveedorId: p.proveedorId, nota: 'Stock inicial (importado)', origen: 'inicial' });
     sumarLlegada(p, x);
   }
@@ -719,6 +749,7 @@ function aplicarImportacion(d, plan, campos) {
     const p = d.productos.find((q) => q.id === act.id);
     if (!p) continue;
     const x = act.datos;
+    (x.barras || []).forEach((b) => asignarBarras(d, p, b)); // los códigos de barras se agregan siempre
     if (c.nombre && x.nombre) p.nombre = x.nombre;
     if (c.otros) {
       if (x.categoria) p.categoria = x.categoria;
@@ -1010,7 +1041,7 @@ function vigilarEscaner(e) {
     rafaga.el = null;
     if (el.id === 'caja-recibido') actualizarVuelto();
     if (el.id === 'caja-desc') renderTicket();
-    const p = db.productos.find((x) => normal(x.codigo) === normal(codigo));
+    const p = buscarPorCodigo(db, codigo);
     if (p) { agregarAlTicket(p.id); toast(`Se escaneó ${p.nombre} con el cursor en otro campo: se agregó al ticket.`); }
     else abrirAltaRapida(codigo);
     $('#caja-buscar').focus();
@@ -1105,7 +1136,7 @@ function renderResultados() {
   let lista = db.productos.filter((p) => (!cajaCat || (p.categoria || SIN_CATEGORIA) === cajaCat)
     && (!prov || p.proveedorId === prov)
     && (!conStock || p.stock > 0)
-    && (!q || normal(`${p.codigo} ${p.nombre} ${p.categoria} ${provs.get(p.proveedorId) || ''} ${p.ubicacion}`).includes(q)));
+    && (!q || normal(`${textoCodigos(p)} ${p.nombre} ${p.categoria} ${provs.get(p.proveedorId) || ''} ${p.ubicacion}`).includes(q)));
 
   const porNombre = (a, b) => a.nombre.localeCompare(b.nombre);
   if (orden === 'vendidos') {
@@ -1256,7 +1287,7 @@ function imprimir(html) {
 
 /* Producto que no está cargado: se agrega con nombre y precio sin salir de la venta */
 function codigoLibre() {
-  const usados = new Set(db.productos.map((p) => p.codigo));
+  const usados = new Set(db.productos.flatMap(codigosDe));
   let i = 0, c;
   do { i++; c = 'P-' + String(i).padStart(4, '0'); } while (usados.has(c));
   return c;
@@ -1270,13 +1301,50 @@ function abrirAltaRapida(texto) {
   $('#ar-stock').value = '';
   $('#ar-err').textContent = '';
   $('#ar-sub').textContent = esCodigo
-    ? `El código ${texto} no está cargado. Poné el nombre y el precio para venderlo ahora.`
+    ? `El código ${texto} no está cargado en ningún producto.`
     : 'Poné el nombre y el precio para venderlo ahora.';
+  // Con un código escaneado se puede asignar a un producto que ya existe (por ejemplo, uno cargado desde una factura)
+  arCodigo = esCodigo ? texto.toUpperCase() : '';
+  $('#ar-vincular').hidden = !esCodigo || !db.productos.length;
+  $('#ar-buscar').value = '';
+  $('#ar-lista').innerHTML = '';
   $('#dlg-rapido').showModal();
-  (esCodigo || !texto ? $('#ar-nombre') : $('#ar-precio')).focus();
+  (esCodigo ? (db.productos.length ? $('#ar-buscar') : $('#ar-nombre')) : texto ? $('#ar-precio') : $('#ar-nombre')).focus();
+}
+
+let arCodigo = '';
+function buscarParaVincular() {
+  const q = normal($('#ar-buscar').value.trim());
+  if (q.length < 2) { $('#ar-lista').innerHTML = ''; return; }
+  const palabras = q.split(/\s+/);
+  const lista = db.productos
+    .filter((p) => { const t = normal(`${p.nombre} ${textoCodigos(p)} ${p.categoria}`); return palabras.every((w) => t.includes(w)); })
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+    .slice(0, 8);
+  $('#ar-lista').innerHTML = lista.length
+    ? lista.map((p) => `<li><button type="button" data-vincular="${p.id}">${fotoUrl(p) ? `<img class="foto mini" src="${esc(fotoUrl(p))}" alt="">` : ''}<span class="ar-txt">${esc(p.nombre)}<br><span class="meta"><span class="mono">${esc(p.codigo)}</span>${p.categoria ? ' · ' + esc(p.categoria) : ''}${p.ubicacion ? ' · ' + esc(p.ubicacion) : ''} · stock ${n(p.stock)}</span></span><strong>${$u(p.precio)}</strong></button></li>`).join('')
+    : '<li class="meta">No encontré ese producto. Cargalo como nuevo abajo.</li>';
 }
 
 function iniciarAltaRapida() {
+  $('#ar-buscar').addEventListener('input', buscarParaVincular);
+  $('#ar-buscar').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); const b = $('#ar-lista [data-vincular]'); if (b && $$('#ar-lista [data-vincular]').length === 1) b.click(); }
+  });
+  $('#ar-lista').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-vincular]');
+    if (!b) return;
+    const p = producto(b.dataset.vincular);
+    const error = asignarBarras(db, p, arCodigo);
+    if (error) { $('#ar-err').textContent = error; return; }
+    guardar();
+    $('#dlg-rapido').close();
+    $('#caja-buscar').value = '';
+    agregarAlTicket(p.id);
+    render();
+    toast(`Listo: el código ${arCodigo} quedó asignado a ${p.nombre}. La próxima vez entra solo.`);
+    $('#caja-buscar').focus();
+  });
   $('#form-rapido').addEventListener('submit', (e) => {
     e.preventDefault();
     const err = (t) => { $('#ar-err').textContent = t; };
@@ -1288,7 +1356,7 @@ function iniciarAltaRapida() {
     if (!nombre) return err('Escribí el nombre del producto.');
     if (!(precio > 0)) return err('Escribí el precio de venta.');
     if (!(stock > 0)) return err('El stock tiene que ser 1 o más para poder venderlo.');
-    if (db.productos.some((p) => p.codigo === codigo)) return err(`El código ${codigo} ya lo usa otro producto.`);
+    if (codigoUsado(db, codigo)) return err(`El código ${codigo} ya lo usa otro producto.`);
     const p = { id: uid(), codigo, nombre, categoria: '', unidad: 'unidad', proveedorId: '', ubicacion: '', costo: 0, precio, minimo: 0, stock: 0 };
     db.productos.push(p);
     registrar(db, { tipo: 'entrada', productoId: p.id, cantidad: stock, costoUnit: 0, nota: 'Agregado desde la venta', origen: 'inicial' });
@@ -1321,8 +1389,8 @@ function iniciarCaja() {
     e.preventDefault();
     const q = buscar.value.trim();
     if (!q) return;
-    const exacto = db.productos.find((p) => normal(p.codigo) === normal(q));
-    const cand = exacto ? [exacto] : db.productos.filter((p) => normal(`${p.codigo} ${p.nombre}`).includes(normal(q)));
+    const exacto = buscarPorCodigo(db, q);
+    const cand = exacto ? [exacto] : db.productos.filter((p) => normal(`${textoCodigos(p)} ${p.nombre}`).includes(normal(q)));
     if (cand.length === 1) {
       agregarAlTicket(cand[0].id);
       buscar.value = '';
@@ -1454,7 +1522,7 @@ function renderProductos() {
   const cat = selCat.value;
   const est = $('#prod-estado').value;
   const lista = db.productos
-    .filter((p) => !q || normal(`${p.codigo} ${p.nombre} ${p.ubicacion} ${nombreProv(p.proveedorId)}`).includes(q))
+    .filter((p) => !q || normal(`${textoCodigos(p)} ${p.nombre} ${p.ubicacion} ${nombreProv(p.proveedorId)}`).includes(q))
     .filter((p) => !cat || p.categoria === cat)
     .filter((p) => !est || (est === 'reponer' ? estado(p) !== 'ok' : est === 'sincosto' ? !(p.costo > 0) : est === 'sinprecio' ? !(p.precio > 0) : est === 'sinfoto' ? !tieneFoto(p) : estado(p) === est))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
@@ -1464,7 +1532,7 @@ function renderProductos() {
   $('#tabla-prod').innerHTML = lista.length
     ? visibles.map((p) => `
       <tr>
-        <td><div class="con-foto">${miniatura(p)}<div><div class="nom">${esc(p.nombre)}</div><div class="meta"><span class="mono">${esc(p.codigo)}</span> · ${[p.categoria || 'Sin categoría', p.ubicacion, nombreProv(p.proveedorId)].filter(Boolean).map(esc).join(' · ')}</div></div></div></td>
+        <td><div class="con-foto">${miniatura(p)}<div><div class="nom">${esc(p.nombre)}</div><div class="meta"><span class="mono">${esc(p.codigo)}${(p.barras || []).length ? ' · ' + (p.barras || []).map(esc).join(' · ') : ''}</span> · ${[p.categoria || 'Sin categoría', p.ubicacion, nombreProv(p.proveedorId)].filter(Boolean).map(esc).join(' · ')}</div></div></div></td>
         <td class="num"><strong>${n(p.stock)}</strong> <span class="u">${esc(p.unidad)}</span></td>
         <td class="num">${n(p.minimo)}</td>
         <td>${chipEstado(p)}</td>
@@ -1595,6 +1663,7 @@ function abrirProducto(id) {
   $('#p-foto-err').textContent = '';
   mostrarFotoForm(fotoUrl(p));
   $('#p-codigo').value = p.codigo;
+  $('#p-barras').value = (p.barras || []).join(' ');
   $('#p-nombre').value = p.nombre;
   $('#p-categoria').value = p.categoria;
   $('#p-unidad').value = p.unidad;
@@ -1664,6 +1733,21 @@ function iniciarProductos() {
   // Si falta el archivo de una foto, no se muestra el ícono de imagen rota
   document.addEventListener('error', (e) => { if (e.target.classList && e.target.classList.contains('foto')) e.target.hidden = true; }, true);
 
+  // Al entrar a «Códigos de barras» con algo escrito, se deja un espacio para que el próximo escaneo vaya aparte
+  $('#p-barras').addEventListener('focus', () => {
+    const el = $('#p-barras');
+    if (el.value.trim() && !/\s$/.test(el.value)) el.value = el.value.trim() + ' ';
+    const fin = el.value.length;
+    setTimeout(() => el.setSelectionRange(fin, fin), 0);
+  });
+  // El lector termina con Enter: en «Códigos de barras» eso agrega un espacio para el siguiente, no guarda
+  $('#p-barras').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const v = $('#p-barras').value.trim();
+    $('#p-barras').value = v ? v + ' ' : '';
+  });
+
   let guardandoProd = false;
   $('#form-prod').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1687,7 +1771,13 @@ function iniciarProductos() {
     if (!actual && !esAdmin()) datos.costo = 0;
     if (!(datos.precio > 0)) return err('Escribí el precio de venta (mayor a 0).');
     if (datos.costo < 0 || datos.minimo < 0) return err('El costo y el stock mínimo no pueden ser negativos.');
-    if (db.productos.some((p) => p.codigo === datos.codigo && p.id !== editandoProd)) return err(`El código ${datos.codigo} ya lo usa otro producto.`);
+    const usado = codigoUsado(db, datos.codigo, editandoProd);
+    if (usado) return err(`El código ${datos.codigo} ya lo usa «${usado.nombre}».`);
+    datos.barras = [...new Set($('#p-barras').value.toUpperCase().split(/[\s,;]+/).filter(Boolean))].filter((b) => b !== datos.codigo);
+    for (const b of datos.barras) {
+      const otro = codigoUsado(db, b, editandoProd);
+      if (otro) return err(`El código de barras ${b} ya es de «${otro.nombre}».`);
+    }
     const nuevoId = actual ? actual.id : uid();
     if (fotoPendiente) {
       const conFoto = { id: nuevoId };
@@ -1866,7 +1956,7 @@ function filtrarCombo() {
   const q = elegido && texto === textoCombo(elegido) ? '' : normal(texto);
   const provs = new Map(db.proveedores.map((v) => [v.id, v.nombre]));
   const todos = db.productos
-    .filter((p) => !q || normal(`${p.codigo} ${p.nombre} ${p.categoria} ${provs.get(p.proveedorId) || ''} ${p.ubicacion}`).includes(q))
+    .filter((p) => !q || normal(`${textoCodigos(p)} ${p.nombre} ${p.categoria} ${provs.get(p.proveedorId) || ''} ${p.ubicacion}`).includes(q))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
   comboOps = todos.slice(0, 60);
   $('#mov-prod-lista').innerHTML = comboOps.length
@@ -1913,7 +2003,7 @@ function iniciarCombo() {
     else if (e.key === 'Enter') {
       e.preventDefault();
       const texto = caja.value.trim();
-      const exacto = db.productos.find((p) => normal(p.codigo) === normal(texto));
+      const exacto = buscarPorCodigo(db, texto);
       if (exacto) elegirCombo(exacto.id);
       else if (comboActivo >= 0 && comboOps[comboActivo]) elegirCombo(comboOps[comboActivo].id);
       else if (comboOps.length === 1) elegirCombo(comboOps[0].id);
@@ -2200,7 +2290,7 @@ function exportar(tipo) {
   const f = (iso) => new Date(iso).toLocaleString('es-UY');
   if (tipo === 'inventario') {
     descargarExcel([...db.productos].sort((a, b) => a.nombre.localeCompare(b.nombre)).map((p) => ({
-      'Código': p.codigo, 'Producto': p.nombre, 'Categoría': p.categoria, 'Unidad': p.unidad, 'Proveedor': nombreProv(p.proveedorId),
+      'Código': p.codigo, 'Códigos de barras': (p.barras || []).join(' '), 'Producto': p.nombre, 'Categoría': p.categoria, 'Unidad': p.unidad, 'Proveedor': nombreProv(p.proveedorId),
       'Ubicación': p.ubicacion, 'Stock': p.stock, 'Stock mínimo': p.minimo, 'Estado': { ok: 'En stock', bajo: 'Bajo mínimo', sin: 'Sin stock' }[estado(p)],
       'Costo': p.costo, 'Precio': p.precio, 'Valor a costo': red(Math.max(p.stock, 0) * p.costo), 'Valor a venta': red(Math.max(p.stock, 0) * p.precio),
     })), 'Inventario', 'inventario');
@@ -3027,7 +3117,7 @@ function iniciar() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, anotarPrecio };
+  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, anotarPrecio };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

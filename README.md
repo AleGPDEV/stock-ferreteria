@@ -93,8 +93,13 @@ Lo cargado queda guardado en esa computadora aunque se cierre. Para **contar el 
 Un lector USB funciona como un teclado: no hay que configurar nada en el programa.
 
 1. Enchufalo y probalo en el Bloc de notas: tiene que escribir los números y saltar de línea. Si no salta de línea, activá el sufijo **Enter (CR)** con el código de configuración del manual del lector.
-2. En **Productos → Editar**, hacé clic en **Código** y escaneá el producto.
-3. En la **Caja**, escaneás y el producto se agrega al ticket.
+2. En la **Caja**, escaneás y el producto se agrega al ticket.
+
+**Código propio y códigos de barras.** Cada producto tiene su **código** (por ejemplo el del modelo del proveedor, `LH-5283`, que usa el Lector de facturas para reconocerlo en la próxima factura) y además puede tener uno o varios **códigos de barras**: los números que trae el paquete y que lee el lector. Se buscan y se venden por cualquiera de los dos.
+
+- **En la caja**, al escanear un código que no tiene ningún producto, la ventana permite **buscar un producto que ya está cargado** (por nombre o por su código, por ejemplo «guante cuero» o «5283») y tocarlo: el código de barras le queda asignado y la próxima vez entra solo. Si no está cargado, se agrega como nuevo con nombre y precio.
+- **En Productos → Editar**, el campo **Códigos de barras**: se hace clic y se escanea el paquete (se pueden poner varios).
+- **En el Cargador de productos**, con los productos del programa cargados, al escanear un código nuevo también se puede elegir el producto que ya existe; al importar, el código de barras se le agrega.
 
 ## Para desarrolladores
 

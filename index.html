@@ -424,6 +424,7 @@
         </div>
       </div>
       <label class="f" for="p-codigo">Código<input id="p-codigo" type="text" required autocomplete="off" placeholder="Ej.: TOR-0810 o código de barras"></label>
+      <label class="f" for="p-barras">Códigos de barras<input id="p-barras" type="text" autocomplete="off" spellcheck="false" placeholder="Hacé clic acá y escaneá el paquete"><small>Si el código de arriba es el del proveedor, acá va el del paquete. Puede haber más de uno, separados por espacio.</small></label>
       <label class="f f-wide" for="p-nombre">Nombre<input id="p-nombre" type="text" required placeholder="Ej.: Tornillo autoperforante 8 x 1&quot;"></label>
       <label class="f" for="p-categoria">Categoría<input id="p-categoria" type="text" list="lista-cat" placeholder="Ej.: Tornillería"></label>
       <label class="f" for="p-unidad">Unidad
@@ -587,6 +588,11 @@
   <form id="form-rapido" novalidate>
     <header class="dlg-h"><h2 id="ar-titulo">Producto nuevo</h2><p class="sub" id="ar-sub"></p></header>
     <div class="dlg-b campos-col">
+      <div class="ar-vincular" id="ar-vincular" hidden>
+        <label class="f" for="ar-buscar">¿Ya está cargado con otro código? Buscalo y tocalo<input id="ar-buscar" type="text" autocomplete="off" placeholder="Ej.: candado tigon 40"></label>
+        <ul class="ar-lista" id="ar-lista"></ul>
+        <p class="ar-o"><span>o cargalo como producto nuevo</span></p>
+      </div>
       <label class="f" for="ar-nombre">Nombre<input id="ar-nombre" type="text" autocomplete="off" required></label>
       <label class="f" for="ar-precio">Precio de venta<input id="ar-precio" type="number" step="any" min="0" inputmode="decimal" required></label>
       <label class="f" for="ar-stock">¿Cuántos hay en stock? (opcional)<input id="ar-stock" type="number" step="any" min="0" inputmode="decimal" placeholder="1"><small>Si lo dejás vacío se anota 1, el que estás vendiendo.</small></label>
