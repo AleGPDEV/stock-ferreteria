@@ -492,3 +492,68 @@ test('reportes: mercadería parada (con stock, sin ventas en N días, sin contar
   assert.equal(p[0].valorCosto, 10 * 390);
   assert.equal(app.mercaderiaParada(d, 180, ahora).length, 0, 'se vendió hace 120 días');
 });
+
+// ---------- Excel con formato ----------
+const XE = require('../vendor/xlsx-estilo.min.js');
+
+test('Excel: con título, los nombres de columna quedan debajo y llevan color', () => {
+  const filas = [
+    { 'Código': '0012', 'Producto': 'Tornillo', 'Fecha': new Date(2026, 10, 11, 15, 30), 'Precio': 12.5, 'Margen %': 35.2 },
+    { 'Código': 'X-2', 'Producto': 'Pinza', 'Fecha': new Date(2026, 10, 10, 9, 0), 'Precio': 1290, 'Margen %': 'sin costo' },
+  ];
+  const ws = app.hojaExcel(XE, filas, { titulo: 'Ferretería Prueba', subtitulo: 'Ventas', info: 'Del 01/11/2026 al 11/11/2026', texto: ['Código'], plata: ['Precio'], pct: ['Margen %'], totales: ['Precio'] });
+  assert.equal(ws.A1.v, 'Ferretería Prueba');
+  assert.equal(ws.A2.v, 'Ventas');
+  assert.equal(ws.A5.v, 'Código', 'los títulos de columna van después del renglón en blanco');
+  assert.equal(ws.A5.s.fill.fgColor.rgb, '1C5A8C');
+  assert.equal(ws.A5.s.font.bold, true);
+  assert.equal(ws.A6.t, 's', 'el código queda como texto');
+  assert.equal(ws.A6.v, '0012', 'sin perder los ceros');
+  assert.equal(ws.D6.z, '"$" #,##0.00;[Red]-"$" #,##0.00');
+  assert.equal(ws.E6.v, 35.2);
+  assert.equal(ws.E7.v, 'sin costo');
+  assert.equal(ws.C6.t, 'n', 'la fecha es una fecha de Excel y se puede ordenar');
+  assert.equal(ws.C6.z, 'dd/mm/yyyy hh:mm');
+  assert.equal(ws.A8.v, 'Total');
+  assert.equal(ws.D8.v, 1302.5);
+  assert.equal(ws.D8.f, 'SUBTOTAL(109,D6:D7)');
+  assert.equal(ws['!autofilter'].ref, 'A5:E7');
+  assert.deepEqual(ws['!merges'][0], { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } });
+  assert.equal(ws['!ref'], 'A1:E8');
+});
+
+test('Excel: la fecha de Excel respeta la hora de la PC', () => {
+  assert.equal(app.fechaExcel(new Date(2026, 0, 1, 0, 0)), 46023);
+  assert.equal(app.fechaExcel(new Date(2026, 0, 1, 12, 0)), 46023.5);
+});
+
+test('Excel: sin título se puede volver a importar (inventario)', () => {
+  const ws = app.hojaExcel(XE, [{ 'Código': 'MAR-16', 'Producto': 'Martillo nuevo', 'Precio': 700 }], { texto: ['Código'], plata: ['Precio'] });
+  assert.equal(ws.A1.v, 'Código');
+  const wb = XE.utils.book_new();
+  XE.utils.book_append_sheet(wb, ws, 'Inventario');
+  const libro = XE.read(XE.write(wb, { type: 'array', bookType: 'xlsx' }), { type: 'array' });
+  const filas = XE.utils.sheet_to_json(libro.Sheets.Inventario, { defval: '' });
+  const d = base();
+  const plan = app.planImportacion(d, filas);
+  assert.equal(plan.error, undefined);
+  assert.equal(plan.actualizados.length, 1);
+  assert.equal(plan.actualizados[0].datos.precio, 700);
+});
+
+test('Excel: el archivo guarda negrita y colores', () => {
+  const ws = app.hojaExcel(XE, [{ 'Producto': 'Pinza', 'Total': 10 }], { titulo: 'X', totales: ['Total'], resaltar: () => 'rojo' });
+  const wb = XE.utils.book_new();
+  XE.utils.book_append_sheet(wb, ws, 'H');
+  const zip = XE.CFB.read(XE.write(wb, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
+  const estilos = new TextDecoder().decode(XE.CFB.find(zip, '/xl/styles.xml').content);
+  assert.match(estilos, /FF1C5A8C|1C5A8C/);
+  assert.match(estilos, /<b\/>/);
+  assert.match(estilos, /B3261E/);
+});
+
+test('Excel: texto del período', () => {
+  assert.equal(app.textoPeriodo('2026-11-01', '2026-11-11'), 'Del 01/11/2026 al 11/11/2026');
+  assert.equal(app.textoPeriodo('2026-11-11', '2026-11-11'), 'Día 11/11/2026');
+  assert.equal(app.textoPeriodo('', ''), '');
+});
