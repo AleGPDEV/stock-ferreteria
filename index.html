@@ -531,7 +531,7 @@
           <p class="err" id="p-foto-err" role="alert"></p>
         </div>
       </div>
-      <label class="f" for="p-codigo">Código<input id="p-codigo" type="text" required autocomplete="off" placeholder="Ej.: TOR-0810 o código de barras"></label>
+      <label class="f" for="p-codigo">Código<input id="p-codigo" type="text" required autocomplete="off" placeholder="Ej.: TOR-0810 o código de barras"><small id="p-codprov" hidden></small></label>
       <label class="f" for="p-barras">Códigos de barras<input id="p-barras" type="text" autocomplete="off" spellcheck="false" placeholder="Hacé clic acá y escaneá el paquete"><small>Si el código de arriba es el del proveedor, acá va el del paquete. Puede haber más de uno, separados por espacio.</small></label>
       <label class="f f-wide" for="p-nombre">Nombre<input id="p-nombre" type="text" required placeholder="Ej.: Tornillo autoperforante 8 x 1&quot;"></label>
       <label class="f" for="p-categoria">Categoría<input id="p-categoria" type="text" list="lista-cat" placeholder="Ej.: Tornillería"></label>
@@ -867,6 +867,9 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+<!-- SheetJS 0.20.3 lee las planillas que se importan; xlsx-js-style (aparte) escribe los Excel de los reportes con formato -->
+<script src="vendor/xlsx.full.min.js"></script>
+<script>window.XLSX_LEER = window.XLSX;</script>
 <script src="vendor/xlsx-estilo.min.js"></script>
 <script src="js/app.js"></script>
 </body>

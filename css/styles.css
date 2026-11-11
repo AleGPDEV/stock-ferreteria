@@ -472,6 +472,9 @@ textarea { width: 100%; resize: vertical; }
 /* Aviso de que no se está guardando */
 .banner-error { background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 .banner-error strong { color: var(--danger); }
+.banner-aviso { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.banner-aviso strong { color: var(--warn); }
+.imp-otro-prov ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; }
 
 /* Celular y tablet */
 @media (max-width: 960px) {

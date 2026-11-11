@@ -328,7 +328,15 @@ const producto = (id) => db.productos.find((p) => p.id === id);
 /* Códigos de un producto: el código propio (por ejemplo el del proveedor, LH-5563) y los códigos de barras
  * del paquete (p.barras), que es lo que lee el lector. Un producto puede tener varios códigos de barras. */
 const codigosDe = (p) => [p.codigo].concat(Array.isArray(p.barras) ? p.barras : []).filter(Boolean);
-const textoCodigos = (p) => codigosDe(p).join(' ');
+/** Códigos que usan los proveedores para el producto: [{ proveedorId, codigo }]. Son aparte del código propio. */
+const codigosProvDe = (p) => (Array.isArray(p.codigosProv) ? p.codigosProv : []);
+const textoCodigos = (p) => codigosDe(p).concat(codigosProvDe(p).map((x) => x.codigo)).join(' ');
+function anotarCodigoProv(p, proveedorId, codigo) {
+  const c = normCodigo(codigo);
+  if (!proveedorId || !c) return;
+  p.codigosProv = codigosProvDe(p).filter((x) => x.proveedorId !== proveedorId); // un código por proveedor: el último manda
+  p.codigosProv.push({ proveedorId, codigo: c });
+}
 const normCodigo = (c) => String(c || '').trim().toUpperCase();
 function buscarPorCodigo(d, texto) {
   const c = normCodigo(texto);
@@ -667,7 +675,9 @@ function actualizarPrecios(d, filtro, pct, op = {}) {
 /* ---------- Importar productos desde una planilla ---------- */
 
 const COLUMNAS = {
-  codigo: ['codigo', 'cod', 'sku', 'code', 'codigo del proveedor'],
+  codigo: ['codigo', 'cod', 'sku', 'code'],
+  // El código que usa el proveedor para ese producto: se guarda aparte, junto con el proveedor
+  codprov: ['codigo del proveedor', 'codigo proveedor', 'cod proveedor', 'cod prov', 'codigo prov', 'ref proveedor', 'referencia del proveedor'],
   barras: ['codigo de barras', 'codigos de barras', 'ean', 'barras'],
   nombre: ['producto', 'nombre', 'descripcion', 'articulo', 'detalle'],
   categoria: ['categoria', 'rubro', 'familia'],
@@ -726,7 +736,7 @@ function facturasCargadas(d) {
 /** Lee las filas de la planilla y arma qué se agregaría y qué se actualizaría, sin tocar los datos.
  *  Si la planilla no tiene columna «Producto» pero sí «Código», solo actualiza productos que ya existen. */
 function planImportacion(d, filas) {
-  const plan = { nuevos: [], actualizados: [], salteadas: 0, sinProducto: 0, columnas: [], soloActualiza: false, facturasRepetidas: [], deConteo: false };
+  const plan = { nuevos: [], actualizados: [], salteadas: 0, sinProducto: 0, columnas: [], soloActualiza: false, facturasRepetidas: [], deConteo: false, otroProveedor: [] };
   let cargadas = null;
   const mapa = {};
   const claves = new Set();
@@ -736,7 +746,7 @@ function planImportacion(d, filas) {
     for (const [campo, alias] of Object.entries(COLUMNAS)) if (!mapa[campo] && alias.includes(nk)) mapa[campo] = k;
   }
   plan.columnas = Object.values(mapa);
-  if (!mapa.nombre && !mapa.codigo && !mapa.barras) {
+  if (!mapa.nombre && !mapa.codigo && !mapa.barras && !mapa.codprov) {
     plan.error = 'No encontré la columna «Producto» ni la columna «Código». La primera fila de la planilla tiene que tener los títulos de las columnas.';
     return plan;
   }
@@ -745,26 +755,46 @@ function planImportacion(d, filas) {
   plan.deFactura = !!mapa.factura;
   const porCodigo = new Map(d.productos.flatMap((p) => codigosDe(p).map((c) => [normCodigo(c), p])));
   const porNombre = new Map(d.productos.map((p) => [normal(p.nombre), p]));
+  // Código de cada proveedor → producto (clave «idProveedor|CÓDIGO»)
+  const porCodigoProv = new Map(d.productos.flatMap((p) => codigosProvDe(p).map((x) => [`${x.proveedorId}|${normCodigo(x.codigo)}`, p])));
+  const provPorNombre = new Map(d.proveedores.map((v) => [normal(v.nombre), v]));
   const vistos = new Set();
+  const codigosNuevos = new Set();
   let sec = 0;
-  const codigoNuevo = () => { let c; do { sec++; c = 'P-' + String(sec).padStart(4, '0'); } while (porCodigo.has(c) || vistos.has(c)); return c; };
+  const codigoNuevo = () => { let c; do { sec++; c = 'P-' + String(sec).padStart(4, '0'); } while (porCodigo.has(c) || vistos.has(c) || codigosNuevos.has(c)); return c; };
   for (const f of filas) {
     const txt = (c) => (mapa[c] ? String(f[mapa[c]] ?? '').trim() : '');
     const num = (c) => (mapa[c] ? parseNum(f[mapa[c]]) : null);
     const nombre = txt('nombre');
-    let codigo = txt('codigo').toUpperCase();
+    const codprov = normCodigo(txt('codprov'));
+    let codigo = txt('codigo').toUpperCase() || (mapa.codigo ? '' : codprov);
     const barras = [...new Set(txt('barras').toUpperCase().split(/[\s,;\/|]+/).filter((x) => x.length >= 3))];
-    if (plan.soloActualiza ? !codigo && !barras.length : !nombre) { plan.salteadas++; continue; }
-    const existente = (codigo && porCodigo.get(codigo)) || barras.map((b) => porCodigo.get(b)).find(Boolean)
-      || (!codigo && nombre ? porNombre.get(normal(nombre)) : null) || null;
+    if (plan.soloActualiza ? !codigo && !codprov && !barras.length : !nombre) { plan.salteadas++; continue; }
+    const provFila = txt('proveedor');
+    const prov = provFila ? provPorNombre.get(normal(provFila)) : null;
+    // ¿Es de otro proveedor? Un código propio igual no alcanza para decir que es el mismo producto
+    // si la fila dice un proveedor y el producto encontrado es de otro.
+    const deOtro = (p) => !!(p && provFila && p.proveedorId && (!prov || p.proveedorId !== prov.id));
+    // Sin columna «Código del proveedor», el código de la fila puede ser el del proveedor (planillas viejas del Lector)
+    const refProv = codprov || codigo;
+    let existente = (prov && refProv && porCodigoProv.get(`${prov.id}|${refProv}`)) || barras.map((b) => porCodigo.get(b)).find(Boolean) || null;
+    let choca = false;
+    if (!existente && codigo) {
+      const p = porCodigo.get(codigo);
+      if (p && deOtro(p)) {
+        choca = true;
+        plan.otroProveedor.push({ codigo, nombre: nombre || codprov, proveedor: provFila, otro: p.nombre, otroProveedor: nombreProveedorDe(d, p.proveedorId), nuevo: !plan.soloActualiza });
+      } else existente = p || null;
+    }
+    if (!existente && !codigo && !codprov && nombre) existente = porNombre.get(normal(nombre)) || null;
     if (plan.soloActualiza && !existente) { plan.sinProducto++; continue; }
-    const clave = existente ? existente.codigo : (codigo || 'n:' + normal(nombre));
+    const clave = existente ? existente.codigo : provFila && codprov ? `p:${normal(provFila)}|${codprov}` : (codigo || 'n:' + normal(nombre));
     if (vistos.has(clave)) { plan.salteadas++; continue; }
     vistos.add(clave);
     const datos = {
-      nombre, categoria: txt('categoria'), unidad: txt('unidad') ? normUnidad(txt('unidad')) : '', proveedor: txt('proveedor'),
+      nombre, categoria: txt('categoria'), unidad: txt('unidad') ? normUnidad(txt('unidad')) : '', proveedor: provFila,
       ubicacion: txt('ubicacion'), stock: num('stock'), minimo: num('minimo'), costo: num('costo'), precio: num('precio'),
-      entrada: num('entrada'), factura: txt('factura'), barras,
+      entrada: num('entrada'), factura: txt('factura'), barras, codprov: codprov || (choca ? codigo : ''),
     };
     if (mapa.conteo && /^(si|sí|s|x|1|true)$/i.test(txt('conteo'))) { datos.contado = true; plan.deConteo = true; }
     // ¿La mercadería de esta factura ya se sumó antes? (mismo número y, si se sabe, mismo proveedor)
@@ -781,12 +811,15 @@ function planImportacion(d, filas) {
     }
     if (existente) plan.actualizados.push({ id: existente.id, codigo: existente.codigo, nombreActual: existente.nombre, stockActual: existente.stock, precioActual: existente.precio, datos });
     else {
-      if (!codigo) { codigo = codigoNuevo(); vistos.add(codigo); }
+      // El código propio no puede repetirse: si ya lo usa otro producto (de otro proveedor), lleva uno nuevo
+      if (!codigo || porCodigo.has(codigo) || codigosNuevos.has(codigo)) codigo = codigoNuevo();
+      codigosNuevos.add(codigo);
       plan.nuevos.push({ codigo, datos });
     }
   }
   return plan;
 }
+const nombreProveedorDe = (d, id) => ((d.proveedores.find((v) => v.id === id) || {}).nombre || '');
 
 /** Cambios de stock que haría la importación en productos que ya existen (para mostrarlos antes de confirmar). */
 function cambiosStockImportacion(plan) {
@@ -804,7 +837,8 @@ function aplicarImportacion(d, plan, campos) {
   const sumarLlegada = (p, x) => {
     if (!(c.entrada && x.entrada > 0)) return;
     if (x.repetida && !c.repetidas) return; // factura ya cargada: solo se vuelve a sumar si se marcó a propósito
-    const err = registrar(d, { tipo: 'entrada', productoId: p.id, cantidad: x.entrada, costoUnit: c.costo && x.costo > 0 ? x.costo : '', proveedorId: p.proveedorId, nota: x.factura ? `Factura ${x.factura}` : 'Llegó (importado)' });
+    // La entrada va a nombre del proveedor de la factura (puede no ser el habitual del producto)
+    const err = registrar(d, { tipo: 'entrada', productoId: p.id, cantidad: x.entrada, costoUnit: c.costo && x.costo > 0 ? x.costo : '', proveedorId: x.proveedor ? provId(x.proveedor) : p.proveedorId, nota: x.factura ? `Factura ${x.factura}` : 'Llegó (importado)' });
     if (!err) llegadas++;
   };
   const provId = (nombre) => {
@@ -821,6 +855,7 @@ function aplicarImportacion(d, plan, campos) {
       ubicacion: x.ubicacion, costo: pos(x.costo) || 0, precio: pos(x.precio) || 0, minimo: pos(x.minimo) || 0, stock: 0,
     };
     d.productos.push(p);
+    if (x.codprov && p.proveedorId) anotarCodigoProv(p, p.proveedorId, x.codprov);
     (x.barras || []).forEach((b) => { if (b !== p.codigo) asignarBarras(d, p, b); });
     if (x.stock > 0) registrar(d, { tipo: 'entrada', productoId: p.id, cantidad: x.stock, costoUnit: p.costo, proveedorId: p.proveedorId, nota: 'Stock inicial (importado)', origen: 'inicial' });
     sumarLlegada(p, x);
@@ -830,6 +865,7 @@ function aplicarImportacion(d, plan, campos) {
     if (!p) continue;
     const x = act.datos;
     (x.barras || []).forEach((b) => asignarBarras(d, p, b)); // los códigos de barras se agregan siempre
+    if (x.codprov && x.proveedor) anotarCodigoProv(p, provId(x.proveedor), x.codprov); // y el código del proveedor
     if (c.nombre && x.nombre) p.nombre = x.nombre;
     if (c.otros) {
       if (x.categoria) p.categoria = x.categoria;
@@ -1769,6 +1805,9 @@ function abrirProducto(id) {
   mostrarFotoForm(fotoUrl(p));
   $('#p-codigo').value = p.codigo;
   $('#p-barras').value = (p.barras || []).join(' ');
+  const cp = codigosProvDe(p);
+  $('#p-codprov').hidden = !cp.length;
+  $('#p-codprov').textContent = cp.length ? `Código${cp.length === 1 ? '' : 's'} de proveedor: ${cp.map((x) => `${x.codigo} (${nombreProveedorDe(db, x.proveedorId) || 'proveedor borrado'})`).join(', ')}` : '';
   $('#p-nombre').value = p.nombre;
   $('#p-categoria').value = p.categoria;
   $('#p-unidad').value = p.unidad;
@@ -3359,6 +3398,9 @@ function mostrarPlan(nombreArchivo) {
       ${total > muestra.length ? `<tr><td colspan="4" class="muted">… y ${total - muestra.length} más</td></tr>` : ''}</tbody></table></div>
     ${planImp.facturasRepetidas.length ? `<div class="banner banner-error imp-repetida" role="alert"><div>${planImp.facturasRepetidas.map((f) => `<p><strong>Esta factura ya se cargó el ${new Date(f.fecha).toLocaleDateString('es-UY')}</strong> (Factura ${esc(f.factura)}).</p>`).join('')}
       <p>Su mercadería ya se sumó al stock, así que no se vuelve a sumar. Si de verdad llegó otra vez, marcá la casilla de abajo.</p></div></div>` : ''}
+    ${planImp.otroProveedor.length ? `<div class="banner banner-aviso imp-otro-prov" role="alert"><div>
+      <p><strong>${planImp.otroProveedor.length === 1 ? 'Un código ya lo usa' : `${planImp.otroProveedor.length} códigos ya los usan`} un producto de otro proveedor.</strong> ${planImp.otroProveedor.some((x) => x.nuevo) ? 'No se mezclan: se cargan como productos nuevos, con otro código propio.' : 'No se tocan: esos productos son de otro proveedor.'}</p>
+      <ul>${planImp.otroProveedor.slice(0, 5).map((x) => `<li><span class="mono">${esc(x.codigo)}</span> ${esc(x.nombre)} (${esc(x.proveedor)}) ≠ ${esc(x.otro)}${x.otroProveedor ? ` (${esc(x.otroProveedor)})` : ''}</li>`).join('')}${planImp.otroProveedor.length > 5 ? `<li>… y ${planImp.otroProveedor.length - 5} más</li>` : ''}</ul></div></div>` : ''}
     ${planImp.deConteo ? '<p class="nota-edit">Planilla del <strong>Cargador de productos</strong>: el stock de los productos que ya existen se cambia por lo que se contó. Revisalo abajo.</p>' : ''}
     ${db.ejemplo ? '<p class="nota-edit">Estás con los datos de ejemplo: lo importado se va a mezclar con ellos. Si no querés eso, cancelá y tocá primero «Empezar de cero».</p>' : ''}`;
   $$('#imp-campos [data-campo]').forEach((x) => { x.checked = !!CAMPOS_IMPORTAR[x.dataset.campo]; });
@@ -3403,8 +3445,10 @@ function iniciarImportacion() {
       try {
         // raw: los números de un .csv llegan como texto y los lee parseNum, que entiende "1.290,50" (formato uruguayo)
         // y conserva los ceros de los códigos ("0012345"). En un .xlsx no cambia nada.
-        const libro = XLSX.read(new Uint8Array(lector.result), { type: 'array', codepage: 65001, raw: true });
-        const filas = XLSX.utils.sheet_to_json(libro.Sheets[libro.SheetNames[0]], { defval: '' });
+        // Para leer, la versión al día de SheetJS (la de los reportes con formato es más vieja)
+        const LEER = window.XLSX_LEER || XLSX;
+        const libro = LEER.read(new Uint8Array(lector.result), { type: 'array', codepage: 65001, raw: true });
+        const filas = LEER.utils.sheet_to_json(libro.Sheets[libro.SheetNames[0]], { defval: '' });
         planImp = planImportacion(db, filas);
       } catch (err) {
         planImp = { error: 'No pude leer el archivo. Tiene que ser una planilla de Excel (.xlsx) o un archivo .csv.' };
@@ -4047,7 +4091,7 @@ function iniciar() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias };
+  module.exports = { anotarCodigoProv, codigosProvDe, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

@@ -771,3 +771,68 @@ test('QA2 B3: el conteo del Cargador se aplica al importar sin tocar nada; un Ex
   app.aplicarImportacion(d, comun, { ...app.CAMPOS_IMPORTAR, stock: comun.deConteo });
   assert.equal(d.productos[0].stock, 7);
 });
+
+// ---------- Revisión QA #3: códigos de cada proveedor ----------
+
+function dosProveedores() {
+  const d = app.baseVacia();
+  d.proveedores.push({ id: 'norte', nombre: 'Distribuidora Norte' }, { id: 'uru', nombre: 'Uruimporta' });
+  d.productos.push(
+    { id: 't', codigo: '1234', nombre: 'Tornillo autoperforante', categoria: '', unidad: 'unidad', proveedorId: 'norte', ubicacion: '', costo: 180, precio: 300, minimo: 0, stock: 15 },
+    { id: 'lh', codigo: 'LH-1234', nombre: 'Guante de nitrilo', categoria: '', unidad: 'par', proveedorId: 'uru', ubicacion: '', costo: 90, precio: 150, minimo: 0, stock: 4 },
+  );
+  return d;
+}
+const facturaSur = (codprov = true) => [{ 'Código': '1234', ...(codprov ? { 'Código del proveedor': '1234' } : {}), Producto: 'Esmalte sintético blanco 4L', Proveedor: 'Pinturería Sur', Costo: 1450, 'Llegó': 6, Factura: 'B 88' }];
+
+test('QA3 A1: el código de un proveedor no pisa el producto de otro proveedor', () => {
+  for (const conColumna of [true, false]) {
+    const d = dosProveedores();
+    const plan = app.planImportacion(d, facturaSur(conColumna));
+    assert.equal(plan.actualizados.length, 0, 'el tornillo no se toca');
+    assert.equal(plan.nuevos.length, 1);
+    assert.notEqual(plan.nuevos[0].codigo, '1234', 'lleva otro código propio');
+    assert.equal(plan.otroProveedor.length, 1);
+    app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+    const t = d.productos.find((p) => p.id === 't');
+    assert.deepEqual([t.stock, t.costo], [15, 180]);
+    const pintura = d.productos.find((p) => p.nombre.startsWith('Esmalte'));
+    assert.equal(pintura.stock, 6);
+    assert.equal(pintura.costo, 1450);
+    const sur = d.proveedores.find((v) => v.nombre === 'Pinturería Sur');
+    assert.deepEqual(pintura.codigosProv, [{ proveedorId: sur.id, codigo: '1234' }]);
+    const entrada = d.movimientos.find((m) => m.productoId === pintura.id && m.nota === 'Factura B 88');
+    assert.equal(entrada.proveedorId, sur.id);
+    // La factura siguiente del mismo proveedor va a la misma pintura, no crea otra
+    const f2 = facturaSur(conColumna); f2[0]['Llegó'] = 4; f2[0].Factura = 'B 95';
+    const plan2 = app.planImportacion(d, f2);
+    assert.deepEqual([plan2.nuevos.length, plan2.actualizados.length, plan2.otroProveedor.length], [0, 1, 0], conColumna ? 'con columna' : 'sin columna');
+    assert.equal(plan2.actualizados[0].id, pintura.id);
+    app.aplicarImportacion(d, plan2, app.CAMPOS_IMPORTAR);
+    assert.equal(pintura.stock, 10);
+    assert.equal(t.stock, 15);
+  }
+});
+
+test('QA3 A1: con el mismo proveedor (o sin proveedor) el código sigue encontrando el producto', () => {
+  const d = dosProveedores();
+  const plan = app.planImportacion(d, [{ 'Código': 'LH-1234', 'Código del proveedor': 'LH-1234', Producto: 'Guante nitrilo', Proveedor: 'Uruimporta', Costo: 95, 'Llegó': 10, Factura: 'A 7' }]);
+  assert.deepEqual([plan.nuevos.length, plan.actualizados.length], [0, 1]);
+  app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+  const g = d.productos.find((p) => p.id === 'lh');
+  assert.equal(g.stock, 14);
+  assert.deepEqual(g.codigosProv, [{ proveedorId: 'uru', codigo: 'LH-1234' }]);
+  // Una lista de precios sin proveedor (Código + Precio) sigue funcionando
+  const plan2 = app.planImportacion(d, [{ 'Código': '1234', Precio: 320 }]);
+  assert.equal(plan2.actualizados[0].id, 't');
+  // Solo actualizar con un proveedor distinto: se saltea y avisa
+  const plan3 = app.planImportacion(d, [{ 'Código': '1234', Proveedor: 'Pinturería Sur', Precio: 2000 }]);
+  assert.deepEqual([plan3.actualizados.length, plan3.sinProducto, plan3.otroProveedor.length], [0, 1, 1]);
+  // Dos proveedores nuevos con el mismo código en la misma planilla: dos productos distintos
+  const plan4 = app.planImportacion(d, [
+    { 'Código del proveedor': '77', Producto: 'Pincel 2"', Proveedor: 'A' },
+    { 'Código del proveedor': '77', Producto: 'Rodillo 23 cm', Proveedor: 'B' },
+  ]);
+  assert.equal(plan4.nuevos.length, 2);
+  assert.notEqual(plan4.nuevos[0].codigo, plan4.nuevos[1].codigo);
+});
