@@ -256,6 +256,7 @@ input:focus, select:focus { border-color: var(--accent); outline: none; box-shad
 .prod-btn:hover { border-color: var(--accent); background: var(--box-hover); }
 .prod-btn:disabled { opacity: .55; cursor: not-allowed; }
 .prod-btn.sin-stock { opacity: .7; border-style: dashed; }
+.prod-btn .pb-foto { width: 100%; height: 120px; object-fit: contain; background: var(--surface); border-radius: 8px; margin-bottom: 4px; }
 .prod-btn .nom { font-weight: 500; overflow-wrap: anywhere; line-height: 1.35; }
 .prod-btn .fila { display: flex; justify-content: space-between; width: 100%; gap: 8px; font-size: 13.5px; color: var(--muted); }
 .prod-btn .precio { font-family: var(--f-mono); font-weight: 600; color: var(--fg); font-size: 17px; }
@@ -379,38 +380,18 @@ dialog::backdrop { background: var(--backdrop); }
 .combo-op[aria-selected="true"] { background: var(--accent-soft); }
 .combo-vacio { padding: 11px 12px; color: var(--muted); font-size: 15px; }
 
-/* Módulos no incluidos en la licencia */
-.sin-caja .mod-caja, .sin-usuarios .mod-usuarios, .sin-reportes .mod-reportes,
-.sin-masiva .mod-masiva, .sin-impresion .mod-impresion { display: none !important; }
-
-/* Licencia */
+/* Pantallas sobre el programa (datos dañados) */
 .bloqueo { z-index: 45; }
 .bloq-texto { font-size: 16px; text-align: center; }
-.bloq-contacto {
-  display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center;
-  background: var(--box); border: 1px solid var(--line); border-radius: 10px; padding: 14px;
-}
-.bloq-contacto:empty { display: none; }
-.ct-nombre { font-size: 17px; }
-.ct-tel { font-family: var(--f-mono); font-size: 24px; font-weight: 600; user-select: all; }
-.ct-msg { color: var(--muted); font-size: 14.5px; margin-top: 4px; }
-.id-box {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 12px;
-  border: 1px dashed var(--line); border-radius: 8px; font-size: 14px; color: var(--muted);
-}
-.id-box strong { font-size: 20px; color: var(--fg); letter-spacing: .06em; user-select: all; margin-right: auto; }
 textarea { width: 100%; resize: vertical; }
-#bloq-codigo, #dev-codigo, #dev-olvide-codigo { font-family: var(--f-mono); font-size: 13.5px; word-break: break-all; }
-.nav-dev { margin-top: 8px; }
-.dev-cerrado { display: flex; flex-direction: column; gap: 16px; max-width: 520px; }
-.dev-cerrado .card { gap: 12px; }
-.dev-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 16px; align-items: start; }
-.modulos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.modulos li { display: flex; align-items: center; gap: 8px; }
-.modulos li::before { content: ""; width: 18px; height: 18px; border-radius: 50%; flex: none; }
-.modulos .mod-si::before { background: var(--verde); box-shadow: inset 0 0 0 5px var(--ok-bg); }
-.modulos .mod-no { color: var(--muted); text-decoration: line-through; }
-.modulos .mod-no::before { border: 2px solid var(--line); }
+
+/* Clave de recuperación */
+.rec-bloque { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
+.rec-bloque > div { flex: 1 1 280px; min-width: 0; }
+.rec-bloque .sub { max-width: none; margin-top: 4px; }
+.rec-clave { font-size: 28px; font-weight: 600; letter-spacing: .12em; text-align: center; padding: 16px; border: 2px dashed var(--accent); border-radius: 10px; user-select: all; margin: 0; }
+#rec-codigo { font-family: var(--f-mono); font-size: 20px; letter-spacing: .08em; text-transform: uppercase; }
+#rec-campos[hidden] { display: none; }
 
 .respaldo-extra { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
 .respaldo-extra .sub { max-width: none; overflow-wrap: anywhere; }
@@ -505,3 +486,20 @@ textarea { width: 100%; resize: vertical; }
   .main { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 48px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Fotos de los productos */
+.foto { display: block; }
+.foto[hidden] { display: none; }
+.con-foto { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.con-foto > div { min-width: 0; }
+.mini { width: 48px; height: 48px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); flex: none; cursor: zoom-in; }
+.tl-foto { width: 34px; height: 34px; display: inline-block; vertical-align: middle; margin-right: 8px; }
+.p-foto { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; border: 1px dashed var(--line); border-radius: 10px; padding: 12px; }
+.p-foto.arrastrando { border-color: var(--accent); background: var(--accent-soft); }
+.p-foto-prev { width: 130px; height: 130px; border-radius: 10px; background: var(--surface-2); display: grid; place-items: center; overflow: hidden; flex: none; color: var(--muted); font-size: 13px; }
+.p-foto-prev img { width: 100%; height: 100%; object-fit: contain; background: var(--surface); }
+.p-foto-acc { display: flex; flex-direction: column; gap: 8px; flex: 1 1 220px; min-width: 0; }
+.p-foto-tit { font-weight: 600; }
+.p-foto-acc .err:empty { display: none; }
+.dlg-foto { width: min(720px, calc(100vw - 32px)); }
+.dlg-foto img { display: block; max-width: 100%; max-height: 65vh; margin: 0 auto; border-radius: 10px; object-fit: contain; }

@@ -106,7 +106,7 @@ test('migración desde datos.json', () => {
   const al = nueva();
   const d = app.semilla();
   app.asegurarUsuarios(d);
-  d.licencia = { codigo: 'SF1.x.y' };
+  d.negocio = { nombre: 'Ferretería de prueba' };
   al.importarJson(JSON.stringify(d));
   igual(al, d);
   al.cerrar();

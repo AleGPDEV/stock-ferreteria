@@ -4,11 +4,9 @@
 const { app, BrowserWindow, ipcMain, shell, Menu, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const zlib = require('zlib');
-const crypto = require('crypto');
 const { promisify } = require('util');
-const { execSync } = require('child_process');
+const { pathToFileURL } = require('url');
 const { Almacen } = require('./datos');
 
 const RESPALDOS_A_CONSERVAR = 60;
@@ -35,6 +33,7 @@ function rutas() {
     // Donde pudo quedar el datos.json de versiones anteriores
     jsonViejos: [path.join(base, 'datos.json'), path.join(APPDATA, 'datos.json'), path.join(APPDATA, 'Stock Ferretería', 'datos.json')],
     respaldos: path.join(app.getPath('documents'), 'Stock Ferreteria', 'Respaldos'),
+    fotos: path.join(base, 'Fotos'),
   };
 }
 
@@ -90,6 +89,7 @@ function copiarAExtra(archivo) {
     fs.mkdirSync(destino, { recursive: true });
     fs.copyFileSync(archivo, path.join(destino, path.basename(archivo)));
     podar(destino);
+    respaldarFotos(destino);
     estado.ok = true;
   } catch (e) {
     estado.ok = false;
@@ -99,6 +99,34 @@ function copiarAExtra(archivo) {
   }
   almacen.ponerAjuste('estadoExtra', estado);
   return estado;
+}
+
+/* ---------- Fotos de los productos ----------
+ * Cada foto es un .jpg achicado en la carpeta Fotos de los datos. No van en la base (la harían pesada);
+ * se copian a Respaldos\Fotos y a la carpeta extra. Si en esta PC falta una foto que está en
+ * Respaldos\Fotos (por ejemplo, al pasar a una PC nueva), se trae de ahí. */
+const NOMBRE_FOTO = /^[\w-]{1,80}\.jpg$/;
+
+/** Copia a destino las fotos que no tiene. Devuelve cuántas copió. */
+function sincronizarFotos(origen, destino) {
+  if (!fs.existsSync(origen)) return 0;
+  fs.mkdirSync(destino, { recursive: true });
+  const hay = new Set(fs.readdirSync(destino));
+  let n = 0;
+  for (const f of fs.readdirSync(origen)) {
+    if (!NOMBRE_FOTO.test(f) || hay.has(f)) continue;
+    try { fs.copyFileSync(path.join(origen, f), path.join(destino, f)); n++; } catch (e) { /* se reintenta en el próximo respaldo */ }
+  }
+  return n;
+}
+
+function respaldarFotos(carpetaExtraDestino) {
+  const r = rutas();
+  try {
+    sincronizarFotos(path.join(r.respaldos, 'Fotos'), r.fotos); // trae las que falten
+    sincronizarFotos(r.fotos, path.join(r.respaldos, 'Fotos'));
+    if (carpetaExtraDestino) sincronizarFotos(r.fotos, path.join(carpetaExtraDestino, 'Fotos'));
+  } catch (e) { console.error('No se pudieron copiar las fotos:', e); }
 }
 
 /** Hace el respaldo del día si todavía no existe (o siempre, si forzar) y lo copia a la carpeta extra. */
@@ -120,6 +148,7 @@ async function hacerRespaldo(forzar = false) {
       almacen.ponerAjuste('ultimoRespaldo', { fecha: new Date().toISOString(), archivo });
       nuevo = true;
     }
+    respaldarFotos();
     const extra = almacen.ajuste('estadoExtra');
     const pendiente = !extra || !extra.ok || extra.dia !== hoy();
     if (nuevo || (pendiente && Date.now() - ultimoIntentoExtra > 10 * 60 * 1000)) copiarAExtra(archivo);
@@ -165,28 +194,8 @@ function programarRespaldo() {
   respaldoProgramado = setTimeout(() => { respaldoProgramado = null; hacerRespaldo(); }, 3000);
 }
 
-/* ---------- Identificador de la computadora ---------- */
-
-// El MachineGuid de Windows (cambia solo si se reinstala Windows)
-let idEquipo = '';
-function calcularIdEquipo() {
-  if (idEquipo) return idEquipo;
-  let base = '';
-  if (process.platform === 'win32') {
-    try {
-      const salida = execSync('reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid', { encoding: 'utf8', windowsHide: true, timeout: 5000 });
-      const m = salida.match(/MachineGuid\s+REG_SZ\s+([\w-]+)/i);
-      if (m) base = m[1];
-    } catch (e) { /* se usa el respaldo de abajo */ }
-  }
-  if (!base) base = [os.hostname(), os.platform(), (os.cpus()[0] || {}).model || ''].join('|');
-  idEquipo = crypto.createHash('sha256').update('stock-ferreteria|' + base.toLowerCase()).digest('hex');
-  return idEquipo;
-}
-
 /* ---------- Comunicación con la pantalla ---------- */
 
-ipcMain.on('almacen:idEquipo', (e) => { e.returnValue = calcularIdEquipo(); });
 /** Copia la base dañada con otro nombre antes de tocarla. Devuelve la ruta de la copia. */
 function apartarDanada() {
   const r = rutas();
@@ -261,7 +270,22 @@ ipcMain.on('almacen:cambios', (e, cambios) => {
 });
 ipcMain.on('almacen:info', (e) => {
   const r = rutas();
-  e.returnValue = { datos: r.datos, respaldos: r.respaldos, version: app.getVersion(), ...infoRespaldos() };
+  e.returnValue = { datos: r.datos, respaldos: r.respaldos, fotos: r.fotos, fotosUrl: pathToFileURL(r.fotos).href + '/', version: app.getVersion(), ...infoRespaldos() };
+});
+// Guarda una foto ya achicada por la pantalla (JPEG). Devuelve el nombre del archivo o { error }.
+ipcMain.handle('fotos:guardar', async (e, nombre, bytes) => {
+  try {
+    if (!NOMBRE_FOTO.test(String(nombre))) return { error: 'Nombre de foto no válido.' };
+    const datos = Buffer.from(bytes);
+    if (datos.length > 5 * 1024 * 1024 || datos[0] !== 0xff || datos[1] !== 0xd8) return { error: 'La foto no es válida.' };
+    const { fotos } = rutas();
+    fs.mkdirSync(fotos, { recursive: true });
+    fs.writeFileSync(path.join(fotos, nombre + '.tmp'), datos);
+    fs.renameSync(path.join(fotos, nombre + '.tmp'), path.join(fotos, nombre));
+    return { nombre };
+  } catch (err) {
+    return { error: String(err.message || err) };
+  }
 });
 ipcMain.handle('almacen:abrirRespaldos', async () => {
   const { respaldos } = rutas();
@@ -349,6 +373,7 @@ if (!app.requestSingleInstanceLock()) {
         label: 'Archivo',
         submenu: [
           { label: 'Abrir carpeta de respaldos', click: () => shell.openPath((fs.mkdirSync(rutas().respaldos, { recursive: true }), rutas().respaldos)) },
+          { label: 'Abrir carpeta de fotos', click: () => shell.openPath((fs.mkdirSync(rutas().fotos, { recursive: true }), rutas().fotos)) },
           { type: 'separator' },
           { role: 'quit', label: 'Salir' },
         ],
@@ -364,6 +389,8 @@ if (!app.requestSingleInstanceLock()) {
         ],
       },
     ]));
+    // Fotos que falten en esta PC y estén en Respaldos\Fotos (PC nueva)
+    try { sincronizarFotos(path.join(rutas().respaldos, 'Fotos'), rutas().fotos); } catch (e) { /* nada */ }
     crearVentana();
     // Respaldo del día unos segundos después de abrir, sin demorar el arranque
     setTimeout(() => hacerRespaldo(), 8000);

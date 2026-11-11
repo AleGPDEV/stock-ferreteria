@@ -18,7 +18,7 @@ class Almacen {
     }
     this.db.exec('CREATE INDEX IF NOT EXISTS ventas_fecha ON ventas (fecha)');
     this.db.exec('CREATE INDEX IF NOT EXISTS movimientos_fecha ON movimientos (fecha)');
-    // config = datos del programa (negocio, licencia…); ajustes = solo de esta computadora (carpeta extra…)
+    // config = datos del programa (negocio, cajas…); ajustes = solo de esta computadora (carpeta extra…)
     this.db.exec('CREATE TABLE IF NOT EXISTS config (clave TEXT PRIMARY KEY, valor TEXT NOT NULL)');
     this.db.exec('CREATE TABLE IF NOT EXISTS ajustes (clave TEXT PRIMARY KEY, valor TEXT NOT NULL)');
 

@@ -1,10 +1,11 @@
 /* Stock Ferretería — control de stock y caja.
- * Todo funciona en el navegador; los datos se guardan en localStorage.
+ * En la versión de escritorio los datos van a una base SQLite (electron/datos.js);
+ * abierto en un navegador, a localStorage (solo para probar).
  */
 'use strict';
 
 const CLAVE = 'ferreteria-stock-v1';
-const VISTAS = ['panel', 'caja', 'productos', 'movimientos', 'proveedores', 'reportes', 'desarrollador'];
+const VISTAS = ['panel', 'caja', 'productos', 'movimientos', 'proveedores', 'reportes'];
 const DIA = 864e5;
 
 const $ = (s) => document.querySelector(s);
@@ -27,172 +28,7 @@ const normal = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[�
 let db;
 let sesion = null; // usuario que ingresó
 
-/* ---------- Licencia: código de activación ---------- */
-// Los códigos los firma el desarrollador con su clave privada (generador de licencias).
-// El programa solo tiene la clave pública: puede comprobar un código, pero no fabricarlo.
-// Interruptor de la licencia. En false, el programa funciona sin código de activación y con todos
-// los módulos (versión para pruebas). Para volver a pedir código, poner true y publicar una versión nueva.
-// Las licencias ya cargadas quedan guardadas y vuelven a valer al reactivarla.
-const LICENCIA_ACTIVADA = false;
-const CLAVE_PUBLICA = {"kty": "EC", "crv": "P-256", "x": "7cCSPwXrL4DSrLqcs0waLuRLAKV04mmpys210lZlxC0", "y": "VgKNwTqhPGtuyuHnRDt_LA9EdzSjvHTxqKTMpc9wfq0"};
-const PREFIJO_CODIGO = 'SF1';
-const PERMANENTE = '9999-12-31';
-const MODULOS = [
-  { bit: 1, clave: 'caja', nombre: 'Caja y ventas' },
-  { bit: 2, clave: 'usuarios', nombre: 'Usuarios y permisos' },
-  { bit: 4, clave: 'reportes', nombre: 'Resumen y reportes' },
-  { bit: 8, clave: 'masiva', nombre: 'Importar y actualizar precios' },
-  { bit: 16, clave: 'impresion', nombre: 'Ticket y cierre impresos' },
-];
-const BASE32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-
-function aB64url(bytes) {
-  let t = '';
-  bytes.forEach((x) => { t += String.fromCharCode(x); });
-  return btoa(t).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-function deB64url(t) {
-  const s = t.replace(/-/g, '+').replace(/_/g, '/');
-  return Uint8Array.from(atob(s + '='.repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
-}
-
-/** Código corto de la computadora (8 letras y números) a partir de un hash. */
-function idDesdeHex(hex) {
-  let bits = BigInt('0x' + hex.slice(0, 10));
-  let t = '';
-  for (let i = 0; i < 8; i++) { t = BASE32[Number(bits & 31n)] + t; bits >>= 5n; }
-  return t.slice(0, 4) + '-' + t.slice(4);
-}
-const normalizarId = (t) => String(t || '').toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1').replace(/[^0-9A-Z]/g, '');
-
-function sumarMeses(fecha, meses) {
-  const [y, m, d] = fecha.split('-').map(Number);
-  const t = new Date(Date.UTC(y, m - 1 + Number(meses), 1));
-  const ultimo = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
-  t.setUTCDate(Math.min(d, ultimo));
-  return t.toISOString().slice(0, 10);
-}
-const diasEntre = (a, b) => Math.round((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / DIA);
-const fechaLarga = (iso) => (iso === PERMANENTE ? 'sin vencimiento'
-  : new Date(iso + 'T12:00:00').toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric' }));
-
-function estadoLicencia(lic, hoy, aviso = 7) {
-  if (!lic) return { estado: 'sin' };
-  if (lic.h === PERMANENTE) return { estado: 'permanente' };
-  const dias = diasEntre(hoy, lic.h);
-  if (dias < 0) return { estado: 'vencida', dias };
-  return { estado: dias < aviso ? 'por-vencer' : 'activa', dias };
-}
-
-/**
- * Comprueba la firma, la computadora y la fecha de un código. No guarda nada.
- * tipo '' = código de activación; tipo 'rec' = código de recuperación (sirve para restablecer el PIN
- * del administrador o la clave de desarrollador; dura pocos días y se usa una sola vez).
- */
-async function verificarCodigo(codigo, id, hoy, clave = CLAVE_PUBLICA, tipo = '') {
-  const limpio = String(codigo || '').replace(/\s+/g, '');
-  const partes = limpio.split('.');
-  if (partes.length !== 3 || partes[0] !== PREFIJO_CODIGO) return { ok: false, motivo: 'formato' };
-  let cuerpo, firma, datos;
-  try {
-    cuerpo = deB64url(partes[1]);
-    firma = deB64url(partes[2]);
-    datos = JSON.parse(new TextDecoder().decode(cuerpo));
-  } catch (e) { return { ok: false, motivo: 'formato' }; }
-  if (!datos || datos.v !== 1 || typeof datos.i !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(String(datos.h))) return { ok: false, motivo: 'formato' };
-  const sutil = globalThis.crypto && globalThis.crypto.subtle;
-  if (!sutil) return { ok: false, motivo: 'sin-cripto' };
-  let valida = false;
-  try {
-    const k = await sutil.importKey('jwk', clave, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
-    valida = await sutil.verify({ name: 'ECDSA', hash: 'SHA-256' }, k, firma, cuerpo);
-  } catch (e) { valida = false; }
-  if (!valida) return { ok: false, motivo: 'firma' };
-  if ((datos.t || '') !== tipo) return { ok: false, motivo: tipo === 'rec' ? 'no-rec' : 'es-rec' };
-  const lic = { i: datos.i, h: datos.h, m: Number(datos.m) || 0, f: datos.f || '', c: datos.c || '', t: datos.t || '', codigo: limpio };
-  if (normalizarId(lic.i) !== normalizarId(id)) return { ok: false, motivo: 'equipo', lic };
-  if (estadoLicencia(lic, hoy).estado === 'vencida') return { ok: false, motivo: 'vencido', lic };
-  return { ok: true, lic };
-}
-
-function mensajeMotivo(r) {
-  return ({
-    formato: 'El código está incompleto o tiene un error. Copialo de nuevo, entero.',
-    firma: 'Ese código no es válido.',
-    equipo: `Ese código es para otra computadora (${r.lic ? r.lic.i : ''}). Esta computadora es ${idEquipo()}.`,
-    vencido: r.lic && r.lic.t === 'rec' ? 'Ese código de recuperación ya venció. Pedile uno nuevo a tu proveedor.' : `Ese código ya venció el ${r.lic ? fechaLarga(r.lic.h) : ''}.`,
-    'no-rec': 'Ese es un código de activación. Acá hace falta un código de recuperación: pedíselo a tu proveedor.',
-    'es-rec': 'Ese es un código de recuperación, no de activación.',
-    usado: 'Ese código de recuperación ya se usó. Pedile uno nuevo a tu proveedor.',
-    'sin-cripto': 'Esta computadora no puede comprobar el código. Probá con la versión instalada del programa.',
-  })[r.motivo] || 'No se pudo activar.';
-}
-
-let licenciaActual = null;
-const modoDemo = () => !LICENCIA_ACTIVADA || (typeof window !== 'undefined' && !!window.MODO_DEMO);
-function tieneModulo(clave) {
-  if (modoDemo()) return true;
-  const m = MODULOS.find((x) => x.clave === clave);
-  return !!licenciaActual && !!m && (licenciaActual.m & m.bit) !== 0;
-}
-
-let idEquipoCache = '';
-function idEquipo() {
-  if (idEquipoCache) return idEquipoCache;
-  let hex = '';
-  if (escritorio() && window.almacen.idEquipo) { try { hex = window.almacen.idEquipo() || ''; } catch (e) { hex = ''; } }
-  if (!hex) {
-    try { hex = localStorage.getItem('ferreteria-equipo') || ''; } catch (e) { hex = ''; }
-    if (!hex) hex = db.equipoNavegador || '';
-    if (!hex) {
-      hex = sha256(uid() + Date.now());
-      try { localStorage.setItem('ferreteria-equipo', hex); } catch (e) { /* sin almacenamiento */ }
-      db.equipoNavegador = hex;
-      guardar();
-    }
-  }
-  idEquipoCache = idDesdeHex(hex);
-  return idEquipoCache;
-}
-
-const diasAviso = () => Number((db.desarrollador || {}).diasAviso) || 7;
-
-/** Revisa la licencia guardada y que la fecha de la computadora no se haya atrasado. */
-async function comprobarLicencia() {
-  if (modoDemo()) { licenciaActual = { m: 31, h: PERMANENTE }; return { ok: true }; }
-  const hoy = isoLocal();
-  if (db.licUltimaFecha && diasEntre(hoy, db.licUltimaFecha) > 1) return { ok: false, motivo: 'reloj', ultima: db.licUltimaFecha };
-  if (!db.licUltimaFecha || hoy > db.licUltimaFecha) { db.licUltimaFecha = hoy; guardar(); }
-  if (!db.licencia || !db.licencia.codigo) { licenciaActual = null; return { ok: false, motivo: 'sin' }; }
-  const r = await verificarCodigo(db.licencia.codigo, idEquipo(), hoy);
-  licenciaActual = r.ok ? r.lic : null;
-  return r;
-}
-
-async function activarCodigo(codigo) {
-  const r = await verificarCodigo(codigo, idEquipo(), isoLocal());
-  if (!r.ok) return { error: mensajeMotivo(r) };
-  db.licencia = { codigo: r.lic.codigo, activada: new Date().toISOString() };
-  licenciaActual = r.lic;
-  guardar();
-  return { lic: r.lic };
-}
-
-/** Comprueba un código de recuperación y lo marca como usado. Devuelve { error } o { ok: true }. */
-async function usarCodigoRecuperacion(codigo) {
-  const r = await verificarCodigo(codigo, idEquipo(), isoLocal(), CLAVE_PUBLICA, 'rec');
-  if (!r.ok) return { error: mensajeMotivo(r) };
-  const huella = sha256(r.lic.codigo);
-  db.codigosUsados = Array.isArray(db.codigosUsados) ? db.codigosUsados : [];
-  if (db.codigosUsados.includes(huella)) return { error: mensajeMotivo({ motivo: 'usado' }) };
-  db.codigosUsados = db.codigosUsados.concat(huella).slice(-50);
-  return { ok: true };
-}
-
-function aplicarModulos() {
-  MODULOS.forEach((m) => document.body.classList.toggle('sin-' + m.clave, !tieneModulo(m.clave)));
-}
-const vistaInicio = () => (tieneModulo('caja') ? 'caja' : 'productos');
+const vistaInicio = () => 'caja';
 
 /* ---------- Usuarios y PIN ---------- */
 
@@ -239,6 +75,21 @@ function sha256(texto) {
 const ROLES = { admin: 'Administrador', empleado: 'Empleado' };
 const pinValido = (p) => /^\d{4,6}$/.test(String(p));
 const hashPin = (pin, sal) => sha256(`${sal}:${pin}`);
+
+/* Clave de recuperación: la crea el administrador una vez (12 letras y números) y se anota en papel.
+ * Sirve para poner un PIN nuevo si se olvida el del administrador. Se guarda solo su hash. */
+const LETRAS_CLAVE = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sin 0/O ni 1/I/L, que se confunden
+const normalizarClave = (t) => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+function nuevaClaveRecuperacion(d) {
+  const r = new Uint8Array(12);
+  globalThis.crypto.getRandomValues(r);
+  const t = Array.from(r, (x) => LETRAS_CLAVE[x % LETRAS_CLAVE.length]).join('');
+  const sal = uid();
+  d.recuperacion = { sal, hash: hashPin(t, sal), creada: new Date().toISOString() };
+  return `${t.slice(0, 4)}-${t.slice(4, 8)}-${t.slice(8)}`;
+}
+const verificarRecuperacion = (d, texto) => !!(d.recuperacion && d.recuperacion.hash)
+  && hashPin(normalizarClave(texto), d.recuperacion.sal) === d.recuperacion.hash;
 const verificarPin = (u, pin) => !!u && hashPin(String(pin), u.sal) === u.pin;
 
 /* Límite de intentos de PIN: después de 5 errores seguidos, hay que esperar 5 minutos (y otra vez con cada error más). */
@@ -952,7 +803,7 @@ function confirmar(texto, okTexto = 'Confirmar', peligro = false) {
   });
 }
 
-const VISTAS_ADMIN = ['panel', 'reportes', 'desarrollador'];
+const VISTAS_ADMIN = ['panel', 'reportes'];
 const esAdmin = () => !!sesion && sesion.rol === 'admin';
 
 function vistaActual() {
@@ -960,7 +811,6 @@ function vistaActual() {
   const inicio = vistaInicio();
   if (!VISTAS.includes(h)) return inicio;
   if (VISTAS_ADMIN.includes(h) && !esAdmin()) return inicio;
-  if ((h === 'caja' && !tieneModulo('caja')) || (h === 'panel' && !tieneModulo('reportes'))) return inicio;
   return h;
 }
 
@@ -1027,16 +877,11 @@ function render() {
   if (!sesion) return;
   $('#banner-ejemplo').hidden = !db.ejemplo;
   $('#banner-pin').hidden = !(esAdmin() && db.usuarios.some((u) => u.pinPorDefecto));
-  const est = licenciaActual && !modoDemo() ? estadoLicencia(licenciaActual, isoLocal(), diasAviso()) : null;
-  $('#banner-licencia').hidden = !(esAdmin() && est && est.estado === 'por-vencer');
-  if (!$('#banner-licencia').hidden) {
-    const cuando = est.dias === 0 ? '<strong>hoy</strong>' : est.dias === 1 ? '<strong>mañana</strong>' : `en <strong>${est.dias} días</strong>`;
-    $('#banner-licencia-texto').innerHTML = `La licencia del programa vence ${cuando} (${fechaLarga(licenciaActual.h)}). Para renovarla, comunicate con ${contactoCorto()}.`;
-  }
+  $('#banner-recuperacion').hidden = !(esAdmin() && !(db.recuperacion && db.recuperacion.hash) && !db.ejemplo);
   $('#marca-nombre').textContent = (db.negocio && db.negocio.nombre) || 'Stock Ferretería';
   renderAlertaStock();
   // Solo se dibuja la pantalla que se está viendo
-  ({ panel: renderPanel, caja: renderCaja, productos: renderProductos, movimientos: renderMovimientos, proveedores: renderProveedores, reportes: renderReportes, desarrollador: renderDesarrollador })[vistaActual()]();
+  ({ panel: renderPanel, caja: renderCaja, productos: renderProductos, movimientos: renderMovimientos, proveedores: renderProveedores, reportes: renderReportes })[vistaActual()]();
 }
 
 function opcionesProv(sel, vacio = 'Sin proveedor') {
@@ -1264,7 +1109,8 @@ function renderResultados() {
   lista = lista.slice(0, cajaLimite);
   $('#caja-resultados').innerHTML = lista.length
     ? lista.map((p) => `
-      <button class="prod-btn${p.stock <= 0 ? ' sin-stock' : ''}" type="button" data-agregar="${p.id}">
+      <button class="prod-btn${p.stock <= 0 ? ' sin-stock' : ''}${tieneFoto(p) ? ' tiene-foto' : ''}" type="button" data-agregar="${p.id}">
+        ${tieneFoto(p) ? `<img class="foto pb-foto" src="${esc(fotoUrl(p))}" alt="" loading="lazy">` : ''}
         <span class="nom">${esc(p.nombre)}</span>
         <span class="fila"><span class="mono">${esc(p.codigo)}</span><span class="${estado(p) === 'bajo' ? 'stock-bajo' : ''}">${p.stock <= 0 ? 'Sin stock' : estado(p) === 'bajo' ? `Quedan ${n(p.stock)} ${esc(p.unidad)}` : `Stock ${n(p.stock)} ${esc(p.unidad)}`}</span></span>
         <span class="precio">${$u(p.precio)}</span>
@@ -1282,7 +1128,7 @@ function renderTicket() {
     ? ticket.map((it, i) => {
       const p = producto(it.productoId);
       return `<div class="ticket-linea">
-        <span class="nom">${esc(p.nombre)}</span>
+        <span class="nom">${miniatura(p, 'mini tl-foto')}${esc(p.nombre)}</span>
         <span class="sub-t">${$u(it.cantidad * it.precio)}</span>
         <div class="ctrl">
           <span class="qty">
@@ -1349,7 +1195,7 @@ function renderVentasHoy() {
 
 /* ---------- Impresión de ticket y cierre ---------- */
 
-const puedeImprimir = () => typeof window !== 'undefined' && typeof window.print === 'function' && !window.SIN_IMPRESION && tieneModulo('impresion');
+const puedeImprimir = () => typeof window !== 'undefined' && typeof window.print === 'function' && !window.SIN_IMPRESION;
 
 function encabezadoNegocio() {
   const g = db.negocio || {};
@@ -1596,7 +1442,7 @@ function renderProductos() {
   const lista = db.productos
     .filter((p) => !q || normal(`${p.codigo} ${p.nombre} ${p.ubicacion} ${nombreProv(p.proveedorId)}`).includes(q))
     .filter((p) => !cat || p.categoria === cat)
-    .filter((p) => !est || (est === 'reponer' ? estado(p) !== 'ok' : est === 'sincosto' ? !(p.costo > 0) : est === 'sinprecio' ? !(p.precio > 0) : estado(p) === est))
+    .filter((p) => !est || (est === 'reponer' ? estado(p) !== 'ok' : est === 'sincosto' ? !(p.costo > 0) : est === 'sinprecio' ? !(p.precio > 0) : est === 'sinfoto' ? !tieneFoto(p) : estado(p) === est))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   $('#prod-sub').textContent = `${db.productos.length} productos cargados${lista.length !== db.productos.length ? ` · mostrando ${lista.length}` : ''}.`;
@@ -1604,7 +1450,7 @@ function renderProductos() {
   $('#tabla-prod').innerHTML = lista.length
     ? visibles.map((p) => `
       <tr>
-        <td><div class="nom">${esc(p.nombre)}</div><div class="meta"><span class="mono">${esc(p.codigo)}</span> · ${[p.categoria || 'Sin categoría', p.ubicacion, nombreProv(p.proveedorId)].filter(Boolean).map(esc).join(' · ')}</div></td>
+        <td><div class="con-foto">${miniatura(p)}<div><div class="nom">${esc(p.nombre)}</div><div class="meta"><span class="mono">${esc(p.codigo)}</span> · ${[p.categoria || 'Sin categoría', p.ubicacion, nombreProv(p.proveedorId)].filter(Boolean).map(esc).join(' · ')}</div></div></div></td>
         <td class="num"><strong>${n(p.stock)}</strong> <span class="u">${esc(p.unidad)}</span></td>
         <td class="num">${n(p.minimo)}</td>
         <td>${chipEstado(p)}</td>
@@ -1621,10 +1467,119 @@ function renderProductos() {
 
 let editandoProd = null;
 
+/* ---------- Fotos de los productos ----------
+ * En la versión de escritorio cada foto es un archivo .jpg (unos 900 px) en la carpeta Fotos y el producto
+ * guarda solo el nombre (p.foto). En el navegador, que es para probar, se guarda una foto chica dentro de los
+ * datos (p.fotoData). */
+let fotosUrlBase = null;
+function fotoUrl(p) {
+  if (!p) return '';
+  if (p.foto && escritorio()) {
+    if (fotosUrlBase == null) { try { fotosUrlBase = window.almacen.info().fotosUrl || ''; } catch (e) { fotosUrlBase = ''; } }
+    return fotosUrlBase ? fotosUrlBase + encodeURIComponent(p.foto) : '';
+  }
+  return p.fotoData || '';
+}
+const tieneFoto = (p) => !!(p.foto || p.fotoData);
+function miniatura(p, cls = 'mini') {
+  const u = fotoUrl(p);
+  return u ? `<img class="foto ${cls}" src="${esc(u)}" alt="" loading="lazy" data-ver-foto="${p.id}">` : '';
+}
+
+function verFoto(id) {
+  const p = producto(id);
+  const u = fotoUrl(p);
+  if (!u) return;
+  $('#foto-titulo').textContent = p.nombre;
+  $('#foto-sub').textContent = `${p.codigo} · ${$u(p.precio)}${p.ubicacion ? ' · ' + p.ubicacion : ''}`;
+  $('#foto-grande').src = u;
+  $('#dlg-foto').showModal();
+}
+
+/** Achica una imagen a JPEG. Devuelve un Blob, o tira un Error con un texto para la persona. */
+async function achicarFoto(file, max = 900, calidad = 0.82) {
+  if (/\.hei[cf]$/i.test(file.name) || /heic|heif/i.test(file.type)) {
+    throw new Error('Esa foto está en formato HEIC (iPhone) y no se puede abrir. En el iPhone: Ajustes → Cámara → Formatos → «Más compatible», o pasala a la PC como JPG.');
+  }
+  if (file.size > 40 * 1048576) throw new Error('La foto es demasiado grande (más de 40 MB).');
+  let img;
+  try {
+    img = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch (e) {
+    throw new Error('No pude abrir esa imagen. Tiene que ser una foto JPG o PNG.');
+  }
+  const f = Math.min(1, max / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * f)), h = Math.max(1, Math.round(img.height * f));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, w, h);
+  g.drawImage(img, 0, 0, w, h);
+  if (img.close) img.close();
+  const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', calidad));
+  if (!blob) throw new Error('No se pudo achicar la foto.');
+  return blob;
+}
+
+const leerComoDataUrl = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+
+// Foto elegida en el formulario y todavía no guardada: { blob, url } o 'quitar'
+let fotoPendiente = null;
+function mostrarFotoForm(url) {
+  $('#p-foto-prev').innerHTML = url ? `<img src="${esc(url)}" alt="Foto del producto">` : '<span>Sin foto</span>';
+  $('#p-foto-quitar').hidden = !url;
+  $('#p-foto-elegir').textContent = url ? 'Cambiar foto' : 'Elegir foto';
+}
+async function elegirFotoForm(file) {
+  $('#p-foto-err').textContent = '';
+  if (!file) return;
+  $('#p-foto-prev').innerHTML = '<span>Preparando…</span>';
+  try {
+    const blob = await achicarFoto(file);
+    if (fotoPendiente && fotoPendiente.url) URL.revokeObjectURL(fotoPendiente.url);
+    fotoPendiente = { blob, url: URL.createObjectURL(blob) };
+    mostrarFotoForm(fotoPendiente.url);
+  } catch (e) {
+    $('#p-foto-err').textContent = e.message;
+    mostrarFotoForm(fotoPendiente && fotoPendiente.url ? fotoPendiente.url : (fotoPendiente === 'quitar' ? '' : fotoUrl(producto(editandoProd))));
+  }
+}
+
+/** Guarda la foto pendiente en el producto. Devuelve un texto de error o null. */
+async function aplicarFotoPendiente(p) {
+  if (!fotoPendiente) return null;
+  if (fotoPendiente === 'quitar') { delete p.foto; delete p.fotoData; fotoPendiente = null; return null; }
+  if (escritorio() && window.almacen.guardarFoto) {
+    const nombre = `${String(p.id).replace(/[^\w-]/g, '').slice(0, 40)}-${Date.now()}.jpg`;
+    const bytes = new Uint8Array(await fotoPendiente.blob.arrayBuffer());
+    const r = await window.almacen.guardarFoto(nombre, bytes);
+    if (!r || r.error) return 'No se pudo guardar la foto' + (r && r.error ? `: ${r.error}` : '.');
+    p.foto = r.nombre;
+    delete p.fotoData;
+  } else {
+    // Navegador: una foto chica dentro de los datos
+    const bmp = await createImageBitmap(fotoPendiente.blob);
+    const f = Math.min(1, 320 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * f); c.height = Math.round(bmp.height * f);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    p.fotoData = c.toDataURL('image/jpeg', 0.7);
+    delete p.foto;
+  }
+  URL.revokeObjectURL(fotoPendiente.url);
+  fotoPendiente = null;
+  return null;
+}
+
 function abrirProducto(id) {
   editandoProd = id || null;
   const p = id ? producto(id) : { codigo: '', nombre: '', categoria: '', unidad: 'unidad', proveedorId: '', ubicacion: '', costo: '', precio: '', minimo: '' };
   $('#prod-titulo').textContent = id ? 'Editar producto' : 'Nuevo producto';
+  if (fotoPendiente && fotoPendiente.url) URL.revokeObjectURL(fotoPendiente.url);
+  fotoPendiente = null;
+  $('#p-foto-err').textContent = '';
+  mostrarFotoForm(fotoUrl(p));
   $('#p-codigo').value = p.codigo;
   $('#p-nombre').value = p.nombre;
   $('#p-categoria').value = p.categoria;
@@ -1666,8 +1621,39 @@ function iniciarProductos() {
     else abrirMovRapido(accion, id);
   });
 
-  $('#form-prod').addEventListener('submit', (e) => {
+  $('#p-foto-archivo').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; elegirFotoForm(f); });
+  $('#p-foto-quitar').addEventListener('click', () => {
+    if (fotoPendiente && fotoPendiente.url) URL.revokeObjectURL(fotoPendiente.url);
+    fotoPendiente = 'quitar';
+    $('#p-foto-err').textContent = '';
+    mostrarFotoForm('');
+  });
+  const zona = $('#p-foto-zona');
+  zona.addEventListener('dragover', (e) => { e.preventDefault(); zona.classList.add('arrastrando'); });
+  zona.addEventListener('dragleave', () => zona.classList.remove('arrastrando'));
+  zona.addEventListener('drop', (e) => {
     e.preventDefault();
+    zona.classList.remove('arrastrando');
+    const f = [...(e.dataTransfer.files || [])].find((x) => /^image\//.test(x.type) || /\.(jpe?g|png|webp|hei[cf])$/i.test(x.name));
+    if (f) elegirFotoForm(f); else $('#p-foto-err').textContent = 'Arrastrá un archivo de foto (JPG o PNG).';
+  });
+  // Tocar una foto la muestra grande
+  document.addEventListener('click', (e) => {
+    const f = e.target.closest('[data-ver-foto]');
+    if (!f) return;
+    e.preventDefault();
+    e.stopPropagation();
+    verFoto(f.dataset.verFoto);
+  }, true);
+  // Soltar un archivo fuera del recuadro de la foto no tiene que abrirlo en la ventana del programa
+  ['dragover', 'drop'].forEach((t) => window.addEventListener(t, (e) => { if (!e.target.closest || !e.target.closest('#p-foto-zona')) e.preventDefault(); }));
+  // Si falta el archivo de una foto, no se muestra el ícono de imagen rota
+  document.addEventListener('error', (e) => { if (e.target.classList && e.target.classList.contains('foto')) e.target.hidden = true; }, true);
+
+  let guardandoProd = false;
+  $('#form-prod').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (guardandoProd) return;
     const err = (t) => { $('#prod-err').textContent = t; };
     const datos = {
       codigo: $('#p-codigo').value.trim().toUpperCase(),
@@ -1688,12 +1674,23 @@ function iniciarProductos() {
     if (!(datos.precio > 0)) return err('Escribí el precio de venta (mayor a 0).');
     if (datos.costo < 0 || datos.minimo < 0) return err('El costo y el stock mínimo no pueden ser negativos.');
     if (db.productos.some((p) => p.codigo === datos.codigo && p.id !== editandoProd)) return err(`El código ${datos.codigo} ya lo usa otro producto.`);
+    const nuevoId = actual ? actual.id : uid();
+    if (fotoPendiente) {
+      const conFoto = { id: nuevoId };
+      guardandoProd = true;
+      let ef;
+      try { ef = await aplicarFotoPendiente(conFoto); } finally { guardandoProd = false; }
+      if (ef) return err(ef);
+      if (actual) { delete actual.foto; delete actual.fotoData; }
+      if (conFoto.foto) datos.foto = conFoto.foto;
+      if (conFoto.fotoData) datos.fotoData = conFoto.fotoData;
+    }
     if (actual) {
       anotarPrecio(db, actual, datos.precio, 'Editar producto');
       Object.assign(actual, datos);
       toast('Producto guardado.');
     } else {
-      const p = { id: uid(), ...datos, stock: 0 };
+      const p = { id: nuevoId, ...datos, stock: 0 };
       db.productos.push(p);
       const ini = Number($('#p-stock').value);
       if (ini > 0) registrar(db, { tipo: 'entrada', productoId: p.id, cantidad: ini, costoUnit: datos.costo, proveedorId: datos.proveedorId, nota: 'Stock inicial', origen: 'inicial' });
@@ -2232,9 +2229,9 @@ function exportar(tipo) {
 /** Cambia todos los datos. Los usuarios y los datos del negocio se mantienen salvo que el archivo nuevo traiga los suyos. */
 function reemplazarDatos(nuevo, conservarUsuarios = true) {
   const usuarios = db.usuarios, negocio = db.negocio;
-  const propio = { licencia: db.licencia, licUltimaFecha: db.licUltimaFecha, desarrollador: db.desarrollador, equipoNavegador: db.equipoNavegador };
+  const recuperacion = db.recuperacion;
   db = nuevo;
-  Object.assign(db, propio);
+  if (!db.recuperacion) db.recuperacion = recuperacion;
   if (conservarUsuarios) db.usuarios = usuarios;
   if (!db.negocio || !db.negocio.nombre) db.negocio = negocio;
   asegurarUsuarios(db);
@@ -2276,7 +2273,7 @@ function renderRespaldoExtra(info) {
 function iniciarRespaldo() {
   if (escritorio()) {
     const info = window.almacen.info();
-    $('#respaldo-texto').textContent = `Los cambios se guardan solos en esta PC. Una vez por día se hace un respaldo comprimido en ${info.respaldos} y se guardan los últimos 60 días.`;
+    $('#respaldo-texto').textContent = `Los cambios se guardan solos en esta PC. Cada día se hace un respaldo comprimido en ${info.respaldos} (al abrir, al cerrar la caja y al cerrar el programa) y se guardan los últimos 60 días. Las fotos de los productos se copian a la carpeta Fotos que está ahí mismo.`;
     $('#btn-abrir-respaldos').hidden = false;
     $('#btn-abrir-respaldos').addEventListener('click', () => window.almacen.abrirRespaldos());
     if (window.almacen.elegirCarpetaExtra) {
@@ -2587,7 +2584,6 @@ function entrar(u) {
   $('#login').hidden = true;
   aplicarPermisos();
   if (!esAdmin()) $('#ventas-fecha').value = isoLocal();
-  devAbierto = false;
   if (location.hash !== '#' + vistaInicio()) location.hash = '#' + vistaInicio();
   mostrarVista();
 }
@@ -2623,8 +2619,10 @@ function iniciarLogin() {
   $('#login-olvide').addEventListener('click', () => {
     const admins = db.usuarios.filter((u) => u.rol === 'admin');
     $('#rec-usuario').innerHTML = admins.map((u) => `<option value="${u.id}">${esc(u.nombre)}</option>`).join('');
-    $('#rec-contacto').innerHTML = contactoCorto();
-    $('#rec-id').textContent = idEquipo();
+    const hay = !!(db.recuperacion && db.recuperacion.hash);
+    $('#rec-campos').hidden = !hay;
+    $('#rec-sin').hidden = hay;
+    $('#login-rec [type=submit]').hidden = !hay;
     ['#rec-codigo', '#rec-pin', '#rec-pin2'].forEach((x) => { $(x).value = ''; });
     $('#rec-err').textContent = '';
     $('#login-paso1').hidden = true;
@@ -2632,9 +2630,8 @@ function iniciarLogin() {
     $('#rec-codigo').focus();
   });
   $('#rec-volver').addEventListener('click', mostrarLogin);
-  $('#rec-copiar').addEventListener('click', () => copiarTexto(idEquipo(), 'Código de la computadora copiado.'));
   ['#rec-pin', '#rec-pin2'].forEach((sel) => $(sel).addEventListener('input', () => { $(sel).value = $(sel).value.replace(/\D/g, '').slice(0, 6); }));
-  $('#login-rec').addEventListener('submit', async (e) => {
+  $('#login-rec').addEventListener('submit', (e) => {
     e.preventDefault();
     const err = (t) => { $('#rec-err').textContent = t; };
     const u = db.usuarios.find((x) => x.id === $('#rec-usuario').value && x.rol === 'admin');
@@ -2642,8 +2639,14 @@ function iniciarLogin() {
     const pin = $('#rec-pin').value;
     if (!/^\d{4,6}$/.test(pin)) return err('El PIN tiene que tener de 4 a 6 números.');
     if (pin !== $('#rec-pin2').value) return err('Los dos PIN no coinciden.');
-    const r = await usarCodigoRecuperacion($('#rec-codigo').value);
-    if (r.error) return err(r.error);
+    const espera = esperaPin(db, 'recuperacion');
+    if (espera) return err(`Demasiados intentos. Esperá ${textoEspera(espera)} y probá de nuevo.`);
+    if (!verificarRecuperacion(db, $('#rec-codigo').value)) {
+      const b = fallarPin(db, 'recuperacion');
+      guardar();
+      return err(b ? `La clave no es correcta. Esperá ${textoEspera(b)} antes de volver a probar.` : 'La clave de recuperación no es correcta. Revisá que esté completa.');
+    }
+    acertarPin(db, 'recuperacion');
     const g = guardarUsuario(db, { nombre: u.nombre, rol: 'admin', pin }, u.id);
     if (g.error) return err(g.error);
     acertarPin(db, u.id);
@@ -2651,7 +2654,7 @@ function iniciarLogin() {
     toast(`PIN de ${u.nombre} restablecido.`);
     entrar(g.usuario);
   });
-  $('#btn-salir').addEventListener('click', () => { devAbierto = false; arrancar(); });
+  $('#btn-salir').addEventListener('click', () => arrancar());
   $('#banner-pin-ir').addEventListener('click', () => {
     location.hash = '#reportes';
     setTimeout(() => $('#card-usuarios').scrollIntoView({ block: 'start' }), 50);
@@ -2663,6 +2666,7 @@ function iniciarLogin() {
 let editandoUsuario = null;
 
 function renderUsuarios() {
+  renderRecuperacion();
   const lista = [...db.usuarios].sort((a, b) => (b.rol === 'admin') - (a.rol === 'admin') || a.nombre.localeCompare(b.nombre));
   $('#tabla-usuarios').innerHTML = lista.map((u) => `
     <tr>
@@ -2686,6 +2690,33 @@ function abrirUsuario(id) {
   $('#usr-eliminar').hidden = !id || id === sesion.id;
   $('#dlg-usuario').showModal();
   $(id ? '#u-pin' : '#u-nombre').focus();
+}
+
+function renderRecuperacion() {
+  const r = db.recuperacion;
+  $('#rec-estado').innerHTML = r && r.hash
+    ? `<span class="chip ok">Creada el ${fechaHora(r.creada)}</span>`
+    : '<span class="chip warn">Todavía no se creó</span>';
+  $('#btn-rec-crear').textContent = r && r.hash ? 'Crear una nueva' : 'Crear clave de recuperación';
+}
+
+function iniciarRecuperacion() {
+  $('#btn-rec-crear').addEventListener('click', async () => {
+    if (!esAdmin()) return;
+    if (db.recuperacion && db.recuperacion.hash
+      && !(await confirmar('¿Crear una clave de recuperación nueva? La anterior deja de servir.', 'Crear una nueva'))) return;
+    const clave = nuevaClaveRecuperacion(db);
+    if (!guardar()) { toast('No se pudo guardar la clave.'); return; }
+    $('#rec-clave').textContent = clave;
+    $('#dlg-rec').showModal();
+    render();
+  });
+  $('#rec-clave-copiar').addEventListener('click', () => copiarTexto($('#rec-clave').textContent, 'Clave copiada. Anotala también en papel.'));
+  $('#dlg-rec').addEventListener('close', () => { $('#rec-clave').textContent = ''; });
+  $('#banner-recuperacion-ir').addEventListener('click', () => {
+    location.hash = '#reportes';
+    setTimeout(() => $('#card-usuarios').scrollIntoView({ block: 'start' }), 50);
+  });
 }
 
 function iniciarUsuarios() {
@@ -2720,47 +2751,6 @@ function iniciarUsuarios() {
   });
 }
 
-/* ---------- Bloqueo por licencia ---------- */
-
-function contactoCorto() {
-  const d = db.desarrollador || {};
-  if (d.nombre && d.telefono) return `${esc(d.nombre)} al ${esc(d.telefono)}`;
-  if (d.telefono) return `tu proveedor al ${esc(d.telefono)}`;
-  return d.nombre ? esc(d.nombre) : 'tu proveedor';
-}
-
-function contactoHtml() {
-  const d = db.desarrollador || {};
-  if (!d.nombre && !d.telefono && !d.email) return '<p>Comunicate con la persona que te instaló el programa.</p>';
-  return `${d.nombre ? `<strong class="ct-nombre">${esc(d.nombre)}</strong>` : ''}
-    ${d.telefono ? `<span class="ct-tel">${esc(d.telefono)}</span>` : ''}
-    ${d.email ? `<span>${esc(d.email)}</span>` : ''}
-    ${d.mensaje ? `<p class="ct-msg">${esc(d.mensaje)}</p>` : ''}`;
-}
-
-function mostrarBloqueo(r) {
-  sesion = null;
-  devAbierto = false;
-  $$('dialog[open]').forEach((d) => d.close());
-  $('#login').hidden = true;
-  const textos = {
-    sin: ['Activá el programa', 'Para empezar a usarlo hace falta un código de activación. Pedíselo a tu proveedor y pasale el código de esta computadora.'],
-    vencido: ['La licencia venció', `La licencia venció el ${r.lic ? fechaLarga(r.lic.h) : ''}. Para seguir usando el programa, comunicate con tu proveedor.`],
-    equipo: ['Licencia de otra computadora', 'El código guardado es de otra computadora. Pedile a tu proveedor un código nuevo con el código de esta computadora.'],
-    reloj: ['La fecha de la computadora está mal', `La computadora dice que hoy es ${fechaLarga(isoLocal())}, pero el programa ya se usó el ${fechaLarga(r.ultima || isoLocal())}. Corregí la fecha y la hora de Windows y volvé a abrir el programa.`],
-  };
-  const [titulo, texto] = textos[r.motivo] || ['Licencia no válida', 'El código guardado no es válido. Comunicate con tu proveedor.'];
-  $('#bloq-titulo').textContent = titulo;
-  $('#bloq-texto').textContent = texto;
-  $('#bloq-contacto').innerHTML = contactoHtml();
-  $('#bloq-id').textContent = idEquipo();
-  $('#bloq-form').hidden = r.motivo === 'reloj';
-  $('#bloq-codigo').value = '';
-  $('#bloq-err').textContent = '';
-  $('#bloq-respaldo').hidden = !db.productos.length && !db.ventas.length;
-  $('#bloqueo').hidden = false;
-}
-
 /* ---------- Datos dañados ---------- */
 
 function mostrarDanado() {
@@ -2768,7 +2758,6 @@ function mostrarDanado() {
   sesion = null;
   $$('dialog[open]').forEach((d) => d.close());
   $('#login').hidden = true;
-  $('#bloqueo').hidden = true;
   const textos = {
     filas: `Hay ${i.cantidad === 1 ? 'un dato' : `${i.cantidad || 'algunos'} datos`} guardado${i.cantidad === 1 ? '' : 's'} que no se ${i.cantidad === 1 ? 'puede' : 'pueden'} leer. Puede pasar por un corte de luz o un problema del disco.`,
     base: 'El archivo de la base de datos no se puede abrir. Puede pasar por un corte de luz o un problema del disco.',
@@ -2838,158 +2827,14 @@ function iniciarDanado() {
   });
 }
 
-async function arrancar() {
+function arrancar() {
   if (datosDanados) { mostrarDanado(); return; }
-  const r = await comprobarLicencia();
-  if (!r.ok) { mostrarBloqueo(r); return; }
-  $('#bloqueo').hidden = true;
-  aplicarModulos();
-  if (!tieneModulo('usuarios')) entrar(db.usuarios.find((u) => u.rol === 'admin'));
-  else mostrarLogin();
+  mostrarLogin();
 }
 
 function copiarTexto(texto, aviso) {
   const ok = () => toast(aviso || 'Copiado.');
   try { navigator.clipboard.writeText(texto).then(ok, () => toast(`No se pudo copiar. Anotalo: ${texto}`)); } catch (e) { toast(`Anotalo: ${texto}`); }
-}
-
-function iniciarBloqueo() {
-  $('#bloq-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const r = await activarCodigo($('#bloq-codigo').value);
-    if (r.error) { $('#bloq-err').textContent = r.error; return; }
-    toast(r.lic.h === PERMANENTE ? 'Programa activado sin vencimiento.' : `Programa activado hasta el ${fechaLarga(r.lic.h)}.`);
-    arrancar();
-  });
-  $('#bloq-copiar').addEventListener('click', () => copiarTexto(idEquipo(), 'Código de la computadora copiado.'));
-  $('#bloq-respaldo').addEventListener('click', () => descargarBlob(JSON.stringify(db), 'application/json', `respaldo_stock_${isoLocal()}.json`));
-  // Se vuelve a revisar cada media hora, por si el programa queda abierto varios días
-  setInterval(async () => {
-    if (!$('#bloqueo').hidden) return;
-    const r = await comprobarLicencia();
-    if (!r.ok) mostrarBloqueo(r);
-    else if (sesion) { aplicarModulos(); render(); }
-  }, 30 * 60 * 1000);
-}
-
-/* ---------- Pestaña Desarrollador ---------- */
-
-let devAbierto = false;
-
-function renderDesarrollador() {
-  const d = db.desarrollador || {};
-  const tieneClave = !!d.claveHash;
-  $('#dev-cerrado').hidden = devAbierto;
-  $('#dev-abierto').hidden = !devAbierto;
-  if (!devAbierto) {
-    $('#dev-clave-titulo').textContent = tieneClave ? 'Escribí tu clave de desarrollador' : 'Creá tu clave de desarrollador';
-    $('#dev-clave-sub').textContent = tieneClave
-      ? 'Esta parte es solo para quien instaló el programa.'
-      : 'Es la primera vez que entrás. Pegá un código de recuperación para esta computadora y elegí una clave de al menos 6 letras o números; el cliente no tiene que saberla.';
-    $('#dev-clave2-wrap').hidden = tieneClave;
-    $('#dev-rec-wrap').hidden = tieneClave;
-    $('#dev-olvide').hidden = !tieneClave;
-    return;
-  }
-  const lic = licenciaActual;
-  const est = estadoLicencia(lic, isoLocal(), diasAviso());
-  const chip = {
-    sin: '<span class="chip danger">Sin activar</span>',
-    activa: `<span class="chip ok">Activa, faltan ${est.dias} días</span>`,
-    'por-vencer': `<span class="chip warn">Vence en ${est.dias} días</span>`,
-    vencida: '<span class="chip danger">Vencida</span>',
-    permanente: '<span class="chip ok">Sin vencimiento</span>',
-  }[est.estado];
-  $('#dev-id').textContent = idEquipo();
-  $('#dev-lic').innerHTML = (LICENCIA_ACTIVADA ? '' : '<li><span>Licencia</span><span class="chip warn">Desactivada en esta versión: funciona sin código</span></li>') + `
-    <li><span>Estado</span>${chip}</li>
-    <li><span>Válida hasta</span><strong>${lic ? fechaLarga(lic.h) : '—'}</strong></li>
-    ${lic && lic.c ? `<li><span>Cliente</span><strong>${esc(lic.c)}</strong></li>` : ''}
-    ${lic && lic.f ? `<li><span>Código generado el</span><span>${fechaLarga(lic.f)}</span></li>` : ''}
-    ${db.licencia && db.licencia.activada ? `<li><span>Activado en esta computadora</span><span>${fechaHora(db.licencia.activada)}</span></li>` : ''}`;
-  $('#dev-modulos').innerHTML = `<li class="mod-si">Stock, productos y proveedores (siempre)</li>`
-    + MODULOS.map((m) => `<li class="${tieneModulo(m.clave) ? 'mod-si' : 'mod-no'}">${esc(m.nombre)}</li>`).join('');
-  if (!$('#form-dev-contacto').contains(document.activeElement)) {
-    ['nombre', 'telefono', 'email', 'mensaje'].forEach((k) => { $('#dc-' + k).value = d[k] || ''; });
-    $('#dc-aviso').value = diasAviso();
-  }
-}
-
-function iniciarDesarrollador() {
-  $('#form-dev-clave').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const d = db.desarrollador || (db.desarrollador = {});
-    const clave = $('#dev-clave').value;
-    const err = (t) => { $('#dev-clave-err').textContent = t; };
-    if (!d.claveHash) {
-      if (clave.length < 6) return err('La clave tiene que tener al menos 6 letras o números.');
-      if (clave !== $('#dev-clave2').value) return err('Las dos claves no coinciden.');
-      const r = await usarCodigoRecuperacion($('#dev-rec').value);
-      if (r.error) return err(r.error);
-      $('#dev-rec').value = '';
-      d.claveSal = uid();
-      d.claveHash = hashPin(clave, d.claveSal);
-      guardar();
-      toast('Clave de desarrollador creada.');
-    } else if (hashPin(clave, d.claveSal) !== d.claveHash) {
-      $('#dev-clave').value = '';
-      return err('La clave no es correcta.');
-    }
-    err('');
-    $('#dev-clave').value = '';
-    $('#dev-clave2').value = '';
-    devAbierto = true;
-    render();
-  });
-  $('#dev-olvide').addEventListener('click', () => { $('#form-dev-olvide').hidden = false; $('#dev-olvide-codigo').focus(); });
-  $('#form-dev-olvide').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const r = await usarCodigoRecuperacion($('#dev-olvide-codigo').value);
-    if (r.error) { $('#dev-olvide-err').textContent = r.error; return; }
-    db.desarrollador.claveHash = '';
-    db.desarrollador.claveSal = '';
-    guardar();
-    $('#form-dev-olvide').hidden = true;
-    $('#dev-olvide-codigo').value = '';
-    $('#dev-olvide-err').textContent = '';
-    toast('Se borró la clave. Creá una nueva.');
-    render();
-  });
-  $('#form-dev-codigo').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const r = await activarCodigo($('#dev-codigo').value);
-    if (r.error) { $('#dev-codigo-err').textContent = r.error; return; }
-    $('#dev-codigo').value = '';
-    $('#dev-codigo-err').textContent = '';
-    aplicarModulos();
-    render();
-    toast(r.lic.h === PERMANENTE ? 'Licencia activada sin vencimiento.' : `Licencia activada hasta el ${fechaLarga(r.lic.h)}.`);
-  });
-  $('#dev-copiar').addEventListener('click', () => copiarTexto(idEquipo(), 'Código de la computadora copiado.'));
-  $('#form-dev-contacto').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const d = db.desarrollador || (db.desarrollador = {});
-    ['nombre', 'telefono', 'email', 'mensaje'].forEach((k) => { d[k] = $('#dc-' + k).value.trim(); });
-    d.diasAviso = Math.min(60, Math.max(1, Number($('#dc-aviso').value) || 7));
-    guardar();
-    render();
-    toast('Datos de contacto guardados.');
-  });
-  $('#form-dev-nueva').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const c1 = $('#dn-clave').value, c2 = $('#dn-clave2').value;
-    if (c1.length < 6) { $('#dn-err').textContent = 'La clave tiene que tener al menos 6 letras o números.'; return; }
-    if (c1 !== c2) { $('#dn-err').textContent = 'Las dos claves no coinciden.'; return; }
-    db.desarrollador.claveSal = uid();
-    db.desarrollador.claveHash = hashPin(c1, db.desarrollador.claveSal);
-    guardar();
-    $('#dn-clave').value = '';
-    $('#dn-clave2').value = '';
-    $('#dn-err').textContent = '';
-    toast('Clave de desarrollador cambiada.');
-  });
-  $('#dev-salir').addEventListener('click', () => { devAbierto = false; render(); });
-  $('#banner-licencia-ir').addEventListener('click', () => { location.hash = '#desarrollador'; });
 }
 
 /* ---------- Pantallas de apertura, movimientos y cierre de caja ---------- */
@@ -3140,13 +2985,12 @@ function iniciar() {
     alertaOcultaFirma = sin.map((p) => p.id).join(',') + '|' + bajo.map((p) => p.id).join(',');
     $('#banner-stock').hidden = true;
   });
-  iniciarBloqueo();
   iniciarDanado();
   $('#banner-guardado-reintentar').addEventListener('click', () => { if (guardar({ completo: true })) toast('Listo, se guardó.'); else toast('Sigue sin poder guardar.'); });
   $('#banner-guardado-copia').addEventListener('click', () => descargarBlob(JSON.stringify(db), 'application/json', `respaldo_stock_${isoLocal()}.json`));
-  iniciarDesarrollador();
   iniciarLogin();
   iniciarUsuarios();
+  iniciarRecuperacion();
   iniciarLetra();
   iniciarImportacion();
   iniciarPrecios();
@@ -3174,7 +3018,7 @@ function iniciar() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, verificarCodigo, idDesdeHex, fotoDe, calcularCambios, normalizarId, sumarMeses, estadoLicencia, aB64url, deB64url, MODULOS, PERMANENTE, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, anotarPrecio };
+  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, anotarPrecio };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

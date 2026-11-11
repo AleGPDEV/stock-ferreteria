@@ -6,9 +6,10 @@ Programa para controlar el stock de una ferretería y cobrar en el mostrador. Se
 
 - **Vender**: buscás el producto por nombre o código (sirve un lector de código de barras USB), armás el ticket, elegís cómo paga (efectivo, débito, crédito o transferencia) y calcula el vuelto. Al **cobrar**, el stock se descuenta solo. La lista se puede **filtrar** por categoría, proveedor y stock, y ordenar por nombre, precio o más vendidos. Si el producto no está cargado, se agrega ahí mismo con **nombre y precio** y entra a la venta. Si el programa dice que no hay stock, se puede **vender igual** después de confirmar (el stock queda en negativo hasta que se corrija contando). Si el lector de códigos escribe en otro campo (por ejemplo «¿Con cuánto paga?»), el programa se da cuenta, deja el campo como estaba y agrega el producto. Permite hacer un **descuento** en porcentaje, **imprimir el ticket** y el **cierre de caja**, ver las ventas de cualquier día y **anular** una venta (el stock vuelve).
 - **Apertura y cierre de caja**: al entrar a Vender con la caja cerrada se pide el efectivo inicial. Mientras está abierta se anotan retiros e ingresos de efectivo. Al cerrar se cuenta el efectivo y el programa calcula lo que debería haber (inicial + ventas en efectivo + ingresos − retiros) y la diferencia. Para el empleado el cierre es a ciegas: anota lo que contó y la diferencia la ve solo el administrador, en **Reportes y copias → Cierres de caja**, con impresión y exportación a Excel.
-- **Productos**: código, nombre, categoría, unidad (unidad, kg, m, litro, caja…), proveedor, ubicación en el local, costo, precio de venta y stock mínimo. Avisa cuando un producto está bajo el mínimo o sin stock: un aviso arriba de todas las pantallas (rojo si hay productos sin stock), un contador en Productos, el detalle en la ventana de venta cobrada y el filtro **Para reponer**. Lo ven también los empleados.
+- **Productos**: foto, código, nombre, categoría, unidad (unidad, kg, m, litro, caja…), proveedor, ubicación en el local, costo, precio de venta y stock mínimo. Avisa cuando un producto está bajo el mínimo o sin stock: un aviso arriba de todas las pantallas (rojo si hay productos sin stock), un contador en Productos, el detalle en la ventana de venta cobrada y el filtro **Para reponer**. Lo ven también los empleados.
   - **Importar desde Excel**: carga cientos de productos de una vez desde una planilla `.xlsx` o `.csv` (también el `.csv` de Excel en español, con punto y coma y coma decimal). Trae una planilla modelo. Si el código ya existe, actualiza el producto en lugar de duplicarlo, y se elige qué cambiar: por defecto solo precio y costo; el stock y el nombre solo si se marcan, y antes se muestra la lista de stocks que cambian. Con una planilla de solo **Código y Precio** se actualizan los precios de la lista de un proveedor.
   - **Actualizar precios**: sube o baja un porcentaje a todos los productos, a una categoría o a un proveedor, con redondeo. Los precios bajos no se redondean de a $ 5 o $ 10 (un artículo de $ 2 no pasa a $ 10), y la vista previa muestra el cambio real más chico y más grande.
+  - **Fotos**: en **Editar** se elige una foto (la que se pasó del teléfono a la computadora, en JPG o PNG) o se arrastra al recuadro. El programa la achica (unos 900 px, 50 a 150 KB) y la guarda en `%APPDATA%\Stock Ferreteria\Fotos`. Se ve en la lista de Vender, en el ticket y en Productos; tocándola se agranda. El filtro **Sin foto** muestra los que faltan. Las fotos HEIC del iPhone no se pueden abrir: en el iPhone, Ajustes → Cámara → Formatos → «Más compatible».
   - **Historial de precios**: cada cambio de precio queda anotado con fecha y usuario, en **Reportes y copias → Cambios de precio**.
 - **Cargar mercadería**: llegada de mercadería (actualiza el costo), salidas que no son ventas (roturas, uso interno) y corrección después de contar. Todo queda en el historial con el stock antes y después.
 - **Proveedores**: datos de contacto, RUT y cuántos productos de cada uno hay que reponer.
@@ -34,25 +35,9 @@ Cada venta y cada movimiento de stock queda registrado con el nombre de quien lo
 
 Después de 5 PIN equivocados seguidos, ese usuario tiene que esperar 5 minutos para volver a probar.
 
-**Si se olvida el PIN del administrador:** en la pantalla de ingreso, tocá **Me olvidé el PIN del administrador**. El programa muestra el código de la computadora; quien instaló el programa genera con eso un **código de recuperación** (vale 7 días y se usa una sola vez), y con ese código se pone un PIN nuevo.
+**Clave de recuperación:** al instalar, el administrador entra a **Reportes y copias → Usuarios → Crear clave de recuperación**. El programa muestra una vez una clave de 12 letras y números (por ejemplo `QZ85-RNVC-RNSN`) que hay que anotar en papel y guardar fuera del mostrador; el programa guarda solo un resumen cifrado. Mientras no se cree, el administrador ve un aviso.
 
-## Licencia y activación
-
-> **Desde la versión 1.6.1 la licencia está desactivada** para pruebas. El programa funciona sin código de activación y con todos los módulos. Se vuelve a activar cambiando `LICENCIA_ACTIVADA` a `true` en `js/app.js` y publicando una versión nueva.
-
-El programa necesita un **código de activación** para funcionar. Cada código:
-
-- vale para **una sola computadora** (la identifica el "código de esta computadora", por ejemplo `455J-G1Z5`);
-- tiene una **fecha de vencimiento** (o ninguna, si es una venta definitiva);
-- dice qué **módulos** están habilitados: Caja y ventas, Usuarios y permisos, Resumen y reportes, Importar y actualizar precios, Ticket y cierre impresos. Stock, productos y proveedores vienen siempre.
-
-Cuando falta poco para el vencimiento, el administrador ve un aviso. Al vencer, el programa se bloquea y muestra los datos de contacto del proveedor, el código de la computadora y un campo para pegar el código nuevo. Los datos no se borran, y desde esa pantalla se puede descargar una copia. Si la fecha de Windows vuelve atrás más de un día respecto de la última vez que se usó, el programa pide corregirla. Como funciona sin internet, no puede detectar una computadora que se deja con la fecha fija en un día anterior al vencimiento.
-
-Los códigos están firmados con una clave privada que tiene solo el desarrollador, en un generador aparte que **no está en este repositorio**. El programa trae únicamente la clave pública, con la que puede comprobar un código pero no fabricarlo.
-
-### Pestaña Desarrollador
-
-Aparece para el administrador y se abre con una clave propia del desarrollador. Para crearla la primera vez, y para borrarla si se olvida, hace falta un **código de recuperación** de esa computadora (del generador de licencias); los códigos de activación no sirven para esto. Ahí se ve el estado de la licencia y los módulos, se carga un código nuevo y se configuran los datos de contacto que ve el cliente al vencer, y cuántos días antes avisar.
+**Si se olvida el PIN del administrador:** en la pantalla de ingreso, tocá **Me olvidé el PIN del administrador**, escribí la clave de recuperación y elegí un PIN nuevo. Si se pierde la clave, se puede crear otra desde la misma pantalla de Usuarios (la anterior deja de servir).
 
 ## Instalar en Windows
 
@@ -70,7 +55,8 @@ Aparece para el administrador y se abre con una clave propia del desarrollador. 
 - **Si los datos se dañan** (por un corte de luz o un problema del disco), el programa no toca nada: muestra una pantalla para restaurar el último respaldo, o para quitar solo lo dañado (antes guarda una copia de la base como estaba, `datos-danado-….sqlite`). Mientras tanto no guarda ni hace respaldos, para no pisar los buenos.
 - Si en algún momento no se pueden guardar los cambios, aparece un aviso rojo fijo y la caja no deja cobrar hasta que se arregle.
 - **Copia extra:** en **Reportes y copias → Copia de seguridad** se elige una carpeta en un pendrive o en Google Drive u OneDrive, y el respaldo del día se copia ahí también. Si el pendrive no está enchufado, el programa lo avisa y vuelve a intentar más tarde.
-- Para pasar los datos a otra PC: **Descargar copia** en la vieja y **Restaurar copia** en la nueva. También se puede restaurar directamente un respaldo diario `.json.gz`.
+- Las **fotos** se copian a `Respaldos\Fotos` y, si hay carpeta extra, a su carpeta `Fotos`.
+- Para pasar los datos a otra PC: **Descargar copia** en la vieja y **Restaurar copia** en la nueva. También se puede restaurar directamente un respaldo diario `.json.gz`. Para las fotos, copiá la carpeta `Fotos` del respaldo (o del pendrive) a `Documentos\Stock Ferreteria\Respaldos\Fotos` en la PC nueva: al abrir, el programa trae las que falten.
 - Al actualizar desde una versión anterior a la 1.6, los datos de `datos.json` se pasan solos a la base nueva, y queda una copia como `datos-antes-de-sqlite.json`.
 
 ## Usarlo desde el navegador
@@ -109,7 +95,7 @@ Para sacar una versión nueva, subí ese número (por ejemplo de `1.1.0` a `1.2.
 npm test
 ```
 
-Prueban la lógica de stock, cobro, descuentos, anulación, actualización de precios, importación, licencias, usuarios y caja (`tests/logica.test.js`), y la base SQLite, incluida la detección y reparación de datos dañados (`tests/almacen.test.js`).
+Prueban la lógica de stock, cobro, descuentos, anulación, actualización de precios, importación, usuarios, clave de recuperación y caja (`tests/logica.test.js`), y la base SQLite, incluida la detección y reparación de datos dañados (`tests/almacen.test.js`).
 
 ### Estructura
 
@@ -131,5 +117,4 @@ tests/almacen.test.js     Pruebas de la base SQLite
 - Varias cajas o PCs compartiendo los mismos datos (requiere una base de datos en un servidor).
 - Etiquetas con código de barras para los estantes.
 - Ventas a crédito (fiado) con cuenta corriente por cliente.
-- Fotos de los productos.
 - Facturación electrónica (CFE de DGI) a través de un proveedor habilitado.
