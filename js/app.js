@@ -1305,6 +1305,7 @@ function abrirAltaRapida(texto) {
     : 'Poné el nombre y el precio para venderlo ahora.';
   // Con un código escaneado se puede asignar a un producto que ya existe (por ejemplo, uno cargado desde una factura)
   arCodigo = esCodigo ? texto.toUpperCase() : '';
+  $('#ar-titulo').textContent = esCodigo && db.productos.length ? 'Código que no conozco' : 'Producto nuevo';
   $('#ar-vincular').hidden = !esCodigo || !db.productos.length;
   $('#ar-buscar').value = '';
   $('#ar-lista').innerHTML = '';
