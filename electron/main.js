@@ -340,6 +340,16 @@ function abrirHerramienta(nombre) {
 }
 ipcMain.on('herramienta:abrir', (e, nombre) => abrirHerramienta(String(nombre)));
 
+/* Tamaño de la pantalla (Ver → Agrandar / Achicar), recordado en esta PC */
+function cambiarZoom(paso) {
+  const w = BrowserWindow.getFocusedWindow() || ventana;
+  if (!w) return;
+  const actual = w.webContents.getZoomFactor();
+  const f = paso === 0 ? 1 : Math.min(2, Math.max(0.7, Math.round((actual + paso) * 10) / 10));
+  w.webContents.setZoomFactor(f);
+  if (w === ventana && almacen) { try { almacen.ponerAjuste('zoom', f); } catch (e) { /* nada */ } }
+}
+
 function crearVentana() {
   ventana = new BrowserWindow({
     width: 1360,
@@ -362,6 +372,11 @@ function crearVentana() {
   });
   ventana.once('ready-to-show', () => { ventana.maximize(); ventana.show(); });
   ventana.loadFile(path.join(__dirname, '..', 'index.html'));
+  ventana.webContents.on('did-finish-load', () => {
+    let f = 1;
+    try { f = Number(almacen && almacen.ajuste('zoom')) || 1; } catch (e) { /* nada */ }
+    ventana.webContents.setZoomFactor(f);
+  });
   // Al cerrar el programa se cierran también las herramientas
   ventana.on('closed', () => app.quit());
 
@@ -418,9 +433,10 @@ if (!app.requestSingleInstanceLock()) {
       {
         label: 'Ver',
         submenu: [
-          { role: 'zoomIn', label: 'Agrandar' },
-          { role: 'zoomOut', label: 'Achicar' },
-          { role: 'resetZoom', label: 'Tamaño normal' },
+          { label: 'Agrandar', accelerator: 'CmdOrCtrl+Plus', click: () => cambiarZoom(0.1) },
+          { label: 'Agrandar', accelerator: 'CmdOrCtrl+=', visible: false, acceleratorWorksWhenHidden: true, click: () => cambiarZoom(0.1) },
+          { label: 'Achicar', accelerator: 'CmdOrCtrl+-', click: () => cambiarZoom(-0.1) },
+          { label: 'Tamaño normal', accelerator: 'CmdOrCtrl+0', click: () => cambiarZoom(0) },
           { type: 'separator' },
           { role: 'togglefullscreen', label: 'Pantalla completa' },
         ],

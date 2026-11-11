@@ -95,13 +95,6 @@ a { color: var(--accent); }
 .nav a .txt { flex: 1; }
 .ico { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
 .nav a[aria-current="page"] .ico { color: var(--accent); }
-.letra { margin-top: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); padding-inline: 4px; }
-.letra-btns { display: flex; gap: 6px; }
-.letra-btns button {
-  flex: 1; height: 40px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
-  color: var(--fg); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;
-}
-.letra-btns button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .nav a:hover { background: var(--surface-2); color: var(--fg); }
 .nav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
 .badge { background: var(--warn); color: var(--surface); font-size: 12px; font-weight: 600; border-radius: 999px; padding: 0 7px; line-height: 18px; }
@@ -481,8 +474,6 @@ textarea { width: 100%; resize: vertical; }
     padding-block: 14px 10px; padding-right: max(16px, env(safe-area-inset-right, 0px));
   }
   .nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
-  .letra { flex-direction: row; align-items: center; justify-content: space-between; }
-  .letra-btns { width: 150px; }
   .nav a { flex: none; }
   .main { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 48px; }
 }

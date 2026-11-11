@@ -2361,26 +2361,6 @@ function mostrarVentaCobrada(v) {
   $('#venta-nueva').focus();
 }
 
-/* Tamaño de letra, recordado en esta PC */
-const CLAVE_LETRA = 'ferreteria-letra';
-function aplicarLetra(f) {
-  if (escritorio() && window.almacen.zoom) window.almacen.zoom(Number(f));
-  else {
-    document.body.style.zoom = f;
-    document.documentElement.style.setProperty('--zoom', f);
-  }
-  $$('[data-letra]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.letra === String(f))));
-}
-function iniciarLetra() {
-  let f = '1';
-  try { f = localStorage.getItem(CLAVE_LETRA) || '1'; } catch (e) { /* sin almacenamiento */ }
-  aplicarLetra(f);
-  $$('[data-letra]').forEach((b) => b.addEventListener('click', () => {
-    aplicarLetra(b.dataset.letra);
-    try { localStorage.setItem(CLAVE_LETRA, b.dataset.letra); } catch (e) { /* sin almacenamiento */ }
-  }));
-}
-
 /* ---------- Importar desde Excel ---------- */
 
 let planImp = null;
@@ -3021,7 +3001,6 @@ function iniciar() {
   iniciarLogin();
   iniciarUsuarios();
   iniciarRecuperacion();
-  iniciarLetra();
   iniciarImportacion();
   iniciarPrecios();
   iniciarNegocio();

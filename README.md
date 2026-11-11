@@ -16,7 +16,7 @@ Programa para controlar el stock de una ferretería y cobrar en el mostrador. Se
 - **Reportes** (descargables a Excel): ventas del período con total por medio de pago y más vendidos, lista de reposición con cantidad sugerida a pedir, valor del inventario por categoría e inventario completo.
 - **Datos del negocio**: nombre, dirección, teléfono y RUT que salen en el ticket.
 - **Copia de seguridad**: descarga y restauración de todos los datos en un archivo `.json`.
-- **Tamaño de letra** ajustable, pensado para que lo usen personas mayores.
+- **Tamaño de la pantalla**: en el menú **Ver → Agrandar / Achicar** (o Ctrl + y Ctrl −), pensado para que lo usen personas mayores. El programa recuerda el tamaño elegido.
 
 El ticket impreso es un comprobante interno: no reemplaza a la factura ni al e-ticket de DGI.
 
