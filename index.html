@@ -28,7 +28,7 @@
       <a href="#panel" class="solo-admin" title="Resumen del día"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="txt">Resumen del día</span></a>
       <a href="#proveedores" title="Proveedores"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span class="txt">Proveedores</span></a>
       <a href="#reportes" class="solo-admin" title="Reportes"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/></svg><span class="txt">Reportes</span></a>
-      <a href="#ajustes" class="solo-admin" title="Configuración"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span class="txt">Configuración</span></a>
+      <a href="#ajustes" class="solo-admin" title="Configuración"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span class="txt">Configuración</span><span id="badge-ajustes" class="badge" hidden></span></a>
     </nav>
     <div class="sesion">
       <span class="sesion-lbl">Usuario</span>
@@ -52,14 +52,6 @@
         <button class="btn sm" id="banner-stock-ver" type="button">Ver cuáles</button>
         <button class="btn sm ghost" id="banner-stock-ocultar" type="button">Ocultar</button>
       </div>
-    </div>
-    <div id="banner-recuperacion" class="banner" hidden>
-      <p>Falta crear la <strong>clave de recuperación</strong>. Sirve para entrar si alguien se olvida el PIN del administrador.</p>
-      <div class="banner-acc"><button class="btn sm primary" id="banner-recuperacion-ir" type="button">Crearla</button></div>
-    </div>
-    <div id="banner-pin" class="banner" hidden>
-      <p>Hay usuarios con el <strong>PIN inicial</strong>. Cambialos para que nadie pueda entrar como administrador.</p>
-      <div class="banner-acc"><button class="btn sm primary" id="banner-pin-ir" type="button">Cambiar los PIN</button></div>
     </div>
     <div id="banner-ejemplo" class="banner solo-admin" hidden>
       <p>Estás viendo <strong>datos de ejemplo</strong> para probar el programa. Cuando quieras cargar tu ferretería, empezá de cero.</p>
@@ -422,6 +414,14 @@
       <header class="vh">
         <div><h1>Configuración</h1><p class="sub">Usuarios, datos del negocio y copias de seguridad.</p></div>
       </header>
+      <div id="banner-recuperacion" class="banner" hidden>
+        <p>Falta crear la <strong>clave de recuperación</strong>. Sirve para entrar si alguien se olvida el PIN del administrador.</p>
+        <div class="banner-acc"><button class="btn sm primary" id="banner-recuperacion-ir" type="button">Crearla</button></div>
+      </div>
+      <div id="banner-pin" class="banner" hidden>
+        <p>Hay usuarios con el <strong>PIN inicial</strong>. Cambialos para que nadie pueda entrar como administrador.</p>
+        <div class="banner-acc"><button class="btn sm primary" id="banner-pin-ir" type="button">Cambiar los PIN</button></div>
+      </div>
       <div class="ajustes">
         <article class="card" id="card-usuarios">
           <header class="card-h">
