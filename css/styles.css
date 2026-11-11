@@ -86,7 +86,7 @@ a { color: var(--accent); }
 .brand { display: flex; align-items: center; gap: 10px; padding-inline: 4px; }
 .brand strong { display: block; font-size: 15px; }
 .brand small { color: var(--muted); font-size: 12px; }
-.logo { width: 30px; height: 30px; flex: none; }
+.logo { width: 44px; height: 44px; flex: none; border-radius: 50%; }
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav a {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -444,6 +444,7 @@ textarea { width: 100%; resize: vertical; }
   padding: 28px; display: flex; flex-direction: column; gap: 20px;
 }
 .login-logo { width: 52px; height: 52px; align-self: center; }
+.login-logo-img { width: 96px; height: 96px; border-radius: 50%; }
 .login h1 { text-align: center; margin-top: -8px; }
 .login-paso { display: flex; flex-direction: column; gap: 14px; }
 .login-usuarios { display: flex; flex-direction: column; gap: 10px; }

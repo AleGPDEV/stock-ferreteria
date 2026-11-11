@@ -107,7 +107,8 @@ vendor/xlsx.full.min.js   SheetJS para exportar a Excel sin conexión
 electron/main.js          Ventana de escritorio, respaldos diarios y carpeta extra
 electron/datos.js         Base SQLite: guarda solo lo que cambió
 electron/preload.js       Puente entre la página y el disco
-build/icon.*              Ícono del programa
+build/icon.*              Ícono del programa (logo de Grupo Muros Prontos)
+img/logo.png              Logo que se ve en la barra y en el ingreso
 tests/logica.test.js      Pruebas automáticas de la lógica
 tests/almacen.test.js     Pruebas de la base SQLite
 ```
