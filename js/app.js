@@ -1539,11 +1539,11 @@ function renderProductos() {
         <td>${chipEstado(p)}</td>
         <td class="num solo-admin">${$u(p.costo)}</td>
         <td class="num">${$u(p.precio)}</td>
-        <td class="acc">
+        <td class="acc"><div class="acc-botones">
           <button class="btn sm verde-suave" type="button" data-accion="entrada" data-id="${p.id}">+ Sumar stock</button>
           <button class="btn sm danger" type="button" data-accion="salida" data-id="${p.id}">− Restar</button>
           <button class="btn sm ghost" type="button" data-accion="editar" data-id="${p.id}">Editar</button>
-        </td>
+        </div></td>
       </tr>`).join('') + (lista.length > visibles.length ? `<tr><td colspan="7" class="vacio">Se muestran ${visibles.length} de ${lista.length} productos. Usá el buscador para encontrar el resto.</td></tr>` : '')
     : `<tr><td colspan="7" class="vacio">${db.productos.length ? 'Ningún producto coincide con los filtros.' : 'Todavía no cargaste productos. Usá «Nuevo producto» para agregar el primero.'}</td></tr>`;
 }
