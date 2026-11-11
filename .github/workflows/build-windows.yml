@@ -37,6 +37,9 @@ jobs:
         shell: bash
         run: echo "v=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
+      - name: Armar el Cargador de productos
+        run: npm run cargador
+
       - name: Generar instalador
         run: npx electron-builder --win nsis portable --x64 --publish never
 
@@ -58,10 +61,12 @@ jobs:
           files: |
             dist/Stock-Ferreteria-Instalador-*.exe
             dist/Stock-Ferreteria-Portable-*.exe
+            cargador/Cargador-de-productos.html
           body: |
             **Cómo instalar**
             - `Stock-Ferreteria-Instalador-…exe`: instala el programa y crea un acceso directo en el escritorio.
             - `Stock-Ferreteria-Portable-…exe`: se ejecuta sin instalar (sirve para llevar en un pendrive).
+            - `Cargador-de-productos.html`: programa aparte para cargar productos con el lector de códigos recorriendo el local. Se abre con doble clic (Chrome o Edge), no necesita internet y arma el Excel para importar en Productos → Importar desde Excel.
 
             Windows puede mostrar "Windows protegió su PC" porque el programa no está firmado: tocá **Más información → Ejecutar de todas formas**.
 

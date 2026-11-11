@@ -988,7 +988,7 @@ function vigilarEscaner(e) {
     rafaga.ult = ahora;
     return;
   }
-  if (e.key === 'Enter' && rafaga.el === el && rafaga.texto.length >= 6 && ahora - rafaga.ult < 100) {
+  if (e.key === 'Enter' && rafaga.el === el && /^[0-9A-Za-z.\-]{6,}$/.test(rafaga.texto) && /\d/.test(rafaga.texto) && ahora - rafaga.ult < 100) {
     e.preventDefault();
     e.stopPropagation();
     const codigo = rafaga.texto.trim();

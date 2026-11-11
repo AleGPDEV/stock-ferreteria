@@ -63,6 +63,17 @@ Después de 5 PIN equivocados seguidos, ese usuario tiene que esperar 5 minutos 
 
 Abrí `index.html` con doble clic. **Sirve solo para probar el programa**: los datos quedan en el navegador de esa PC, que guarda unos 5 MB (más o menos un mes de ventas de un comercio). Para usarlo en el negocio, instalá la versión de Windows.
 
+## Cargador de productos (programa aparte)
+
+Para cargar el local recorriéndolo con el lector de códigos y una notebook, sin tocar la PC del mostrador.
+
+1. Descargá `Cargador-de-productos.html` de **Releases** (o de la carpeta `cargador/` de este repositorio) y abrilo con doble clic en Chrome o Edge. No necesita internet ni instalación.
+2. Escaneá un producto: aparece el formulario con el código puesto. Escribí el nombre, Enter, el precio, Enter. La categoría y la ubicación quedan puestas para el siguiente, así se carga estante por estante.
+3. Si volvés a escanear un producto que ya cargaste, se le suma 1 a la cantidad. Para lo que no tiene código, **Producto sin código** (el programa le pone uno al importar).
+4. Al terminar, **Descargar Excel** y en Stock Ferretería: **Productos → Importar desde Excel**.
+
+Lo cargado queda guardado en esa computadora aunque se cierre. Para **contar el stock** de lo que ya está cargado: exportá **Inventario completo** desde Reportes y copias, y en el cargador tocá **Cargar los productos del programa**; al escanear aparece el nombre y solo ponés la cantidad. Al importar, marcá **Stock** para que se corrija.
+
 ## Lector de código de barras
 
 Un lector USB funciona como un teclado: no hay que configurar nada en el programa.
@@ -109,6 +120,7 @@ electron/datos.js         Base SQLite: guarda solo lo que cambió
 electron/preload.js       Puente entre la página y el disco
 build/icon.*              Ícono del programa (logo de Grupo Muros Prontos)
 img/logo.png              Logo que se ve en la barra y en el ingreso
+cargador/cargador.html    Cargador de productos (fuente); npm run cargador arma el archivo único
 tests/logica.test.js      Pruebas automáticas de la lógica
 tests/almacen.test.js     Pruebas de la base SQLite
 ```

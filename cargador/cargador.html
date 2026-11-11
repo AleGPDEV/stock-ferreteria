@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cargador de productos</title>
+<style>
+:root {
+  --bg: #e2e7ed; --surface: #fff; --surface-2: #eef1f5; --fg: #17202b; --muted: #4a5768; --line: #cbd3dd;
+  --accent: #1c5a8c; --accent-soft: #dde9f4; --verde: #2a7a4b; --verde-soft: #e1f2e7; --rojo: #b3261e; --rojo-soft: #fbe9e7;
+  --warn: #8a5a00; --warn-soft: #fbf0d9; --side: #1f3a56; --r: 10px;
+  --f: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; --mono: Consolas, "Cascadia Mono", ui-monospace, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.45 var(--f); }
+button, input, select { font: inherit; }
+.top { background: var(--side); color: #fff; display: flex; align-items: center; gap: 14px; padding: 12px 20px; }
+.top img { width: 48px; height: 48px; border-radius: 50%; }
+.top h1 { margin: 0; font-size: 22px; }
+.top p { margin: 0; color: #c6d3e0; font-size: 14px; }
+.top .sp { flex: 1; }
+main { max-width: 1280px; margin: 0 auto; padding: 18px 20px 40px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 18px; align-items: start; }
+@media (max-width: 980px) { main { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.card h2 { margin: 0; font-size: 19px; }
+.paso { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 18px; margin: 0; }
+.paso-n { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 15px; flex: none; }
+#escanear { width: 100%; font-size: 26px; font-family: var(--mono); padding: 16px; border: 3px solid var(--accent); border-radius: var(--r); background: var(--surface); }
+#escanear:focus { outline: 4px solid var(--accent-soft); }
+.ayuda { color: var(--muted); font-size: 14.5px; margin: 0; }
+.campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.f { display: flex; flex-direction: column; gap: 5px; font-weight: 600; font-size: 14.5px; min-width: 0; }
+.f-wide { grid-column: 1 / -1; }
+.f input, .f select { font-weight: 400; font-size: 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--fg); width: 100%; min-width: 0; }
+.f input:focus, .f select:focus { outline: 3px solid var(--accent-soft); border-color: var(--accent); }
+#c-codigo { font-family: var(--mono); }
+.f small { font-weight: 400; color: var(--muted); }
+.mas { border-top: 1px dashed var(--line); padding-top: 12px; }
+.mas summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+.mas[open] summary { margin-bottom: 12px; }
+.botonera { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.btn { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; padding: 11px 18px; cursor: pointer; font-weight: 600; }
+.btn:hover { border-color: var(--accent); }
+.btn.grande { font-size: 18px; padding: 13px 22px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.verde { background: var(--verde); border-color: var(--verde); color: #fff; }
+.btn.rojo { background: var(--rojo); border-color: var(--rojo); color: #fff; }
+.btn.danger { color: var(--rojo); background: var(--rojo-soft); border-color: #f0c7c2; }
+.btn.sm { padding: 6px 12px; font-size: 14px; }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.aviso { border-radius: var(--r); padding: 10px 14px; font-size: 15px; margin: 0; }
+.aviso.ok { background: var(--verde-soft); color: #174a2c; }
+.aviso.info { background: var(--accent-soft); color: #12385a; }
+.aviso.warn { background: var(--warn-soft); color: var(--warn); }
+.aviso:empty { display: none; }
+.err { color: var(--rojo); font-weight: 600; margin: 0; }
+.err:empty { display: none; }
+.resumen { display: flex; gap: 10px; flex-wrap: wrap; }
+.resumen div { background: var(--surface-2); border-radius: var(--r); padding: 10px 14px; flex: 1 1 120px; }
+.resumen .lbl { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.resumen .val { font-size: 26px; font-weight: 700; }
+.tabla-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); max-height: 60vh; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+th { position: sticky; top: 0; background: var(--surface-2); text-align: left; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 9px 10px; }
+td { padding: 9px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+td .mono { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+td .meta { font-size: 13px; color: var(--muted); }
+tr.recien { background: var(--verde-soft); }
+tr.ya-estaba td:first-child { box-shadow: inset 4px 0 var(--accent); }
+.acc { white-space: nowrap; text-align: right; }
+.vacio { text-align: center; color: var(--muted); padding: 26px 10px; }
+.chip { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+#buscar { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 16px; }
+dialog { border: 0; border-radius: 14px; padding: 22px; max-width: min(460px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+dialog::backdrop { background: rgba(15, 25, 40, .55); }
+dialog p { margin: 0 0 18px; font-size: 17px; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #17202b; color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.3); max-width: calc(100vw - 32px); }
+.toast[hidden] { display: none; }
+.pie { grid-column: 1 / -1; color: var(--muted); font-size: 13.5px; text-align: center; }
+label.btn input { display: none; }
+</style>
+</head>
+<body>
+<header class="top">
+  <img src="__LOGO__" alt="">
+  <div><h1>Cargador de productos</h1><p>Escaneá, poné el nombre y el precio, y al final descargá el Excel para importarlo en Stock Ferretería.</p></div>
+  <span class="sp"></span>
+</header>
+
+<main>
+  <section class="card">
+    <p class="paso"><span class="paso-n">1</span> Escaneá el código del producto</p>
+    <input id="escanear" type="text" autocomplete="off" spellcheck="false" placeholder="Pasá el lector acá" aria-label="Código de barras">
+    <p class="ayuda">Si volvés a escanear un producto que ya cargaste, se le suma 1 a la cantidad. Para algo sin código de barras, tocá «Producto sin código».</p>
+    <div class="botonera"><button class="btn" type="button" id="sin-codigo">Producto sin código</button></div>
+    <p class="aviso" id="estado" role="status"></p>
+
+    <form id="form" hidden novalidate>
+      <p class="paso"><span class="paso-n">2</span> <span id="form-titulo">Completá los datos</span></p>
+      <div class="campos">
+        <label class="f f-wide" for="c-nombre">Nombre del producto<input id="c-nombre" type="text" autocomplete="off" placeholder="Ej.: Tornillo autoperforante 8 x 1&quot;"></label>
+        <label class="f" for="c-precio">Precio de venta ($)<input id="c-precio" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej.: 290"></label>
+        <label class="f" for="c-cantidad">Cantidad que hay<input id="c-cantidad" type="text" inputmode="decimal" autocomplete="off" placeholder="1"></label>
+        <label class="f" for="c-categoria">Categoría<input id="c-categoria" type="text" list="lista-cat" autocomplete="off" placeholder="Ej.: Tornillería"><small>Queda puesta para el siguiente.</small></label>
+        <label class="f" for="c-ubicacion">Ubicación<input id="c-ubicacion" type="text" autocomplete="off" placeholder="Ej.: Estante A-01"><small>Queda puesta para el siguiente.</small></label>
+      </div>
+      <details class="mas" id="mas">
+        <summary>Más datos (opcional): código, costo, unidad, proveedor, mínimo</summary>
+        <div class="campos">
+          <label class="f" for="c-codigo">Código<input id="c-codigo" type="text" autocomplete="off" spellcheck="false"><small>Vacío: el programa le pone uno.</small></label>
+          <label class="f" for="c-costo">Costo ($)<input id="c-costo" type="text" inputmode="decimal" autocomplete="off"></label>
+          <label class="f" for="c-unidad">Unidad
+            <select id="c-unidad"><option>unidad</option><option>kg</option><option>m</option><option>litro</option><option>caja</option><option>paquete</option><option>rollo</option><option>par</option></select>
+          </label>
+          <label class="f" for="c-minimo">Stock mínimo<input id="c-minimo" type="text" inputmode="decimal" autocomplete="off"></label>
+          <label class="f f-wide" for="c-proveedor">Proveedor<input id="c-proveedor" type="text" list="lista-prov" autocomplete="off"></label>
+        </div>
+      </details>
+      <p class="err" id="form-err" role="alert"></p>
+      <div class="botonera">
+        <button class="btn verde grande" type="submit">Guardar (Enter)</button>
+        <button class="btn" type="button" id="cancelar">Cancelar (Esc)</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="botonera" style="justify-content:space-between">
+      <h2>Lo que ya cargaste</h2>
+      <button class="btn verde" type="button" id="descargar">Descargar Excel</button>
+    </div>
+    <div class="resumen">
+      <div><div class="lbl">Productos</div><div class="val" id="r-prod">0</div></div>
+      <div><div class="lbl">Unidades</div><div class="val" id="r-unid">0</div></div>
+      <div><div class="lbl">Sin precio</div><div class="val" id="r-sinprecio">0</div></div>
+    </div>
+    <input id="buscar" type="search" placeholder="Buscar en la lista" aria-label="Buscar en la lista">
+    <div class="tabla-wrap"><table>
+      <thead><tr><th>Producto</th><th class="num">Cant.</th><th class="num">Precio</th><th class="acc"></th></tr></thead>
+      <tbody id="lista"></tbody>
+    </table></div>
+    <div class="botonera">
+      <label class="btn" for="catalogo">Cargar los productos del programa (opcional)<input type="file" id="catalogo" accept=".xlsx,.xls,.csv"></label>
+      <button class="btn danger" type="button" id="nueva">Empezar una lista nueva</button>
+    </div>
+    <p class="ayuda" id="catalogo-estado">Si cargás el Excel de <strong>Inventario completo</strong> del programa (Reportes y copias → Exportar Excel), al escanear algo que ya existe aparece su nombre y solo tenés que poner la cantidad. Sirve para contar el stock.</p>
+  </section>
+
+  <p class="pie">Lo cargado se guarda solo en esta computadora mientras no toques «Empezar una lista nueva». En Stock Ferretería: Productos → Importar desde Excel. Para que tome las cantidades de productos que ya existen, marcá «Stock» al importar.</p>
+</main>
+
+<datalist id="lista-cat"></datalist>
+<datalist id="lista-prov"></datalist>
+
+<dialog id="dlg"><p id="dlg-texto"></p><div class="botonera" style="justify-content:flex-end"><button class="btn" type="button" id="dlg-no">Cancelar</button><button class="btn primary" type="button" id="dlg-si">Aceptar</button></div></dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>__XLSX__</script>
+<script>
+'use strict';
+const CLAVE = 'cargador-productos-v1';
+const $ = (s) => document.querySelector(s);
+const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const plata = new Intl.NumberFormat('es-UY', { style: 'currency', currency: 'UYU', maximumFractionDigits: 2 });
+const numero = new Intl.NumberFormat('es-UY', { maximumFractionDigits: 3 });
+const normal = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const hoy = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+/** "1.234,50", "$ 290" o "12,5" → número; vacío → null. */
+function parseNum(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  let t = String(v ?? '').replace(/[^\d.,-]/g, '');
+  if (!/\d/.test(t)) return null;
+  if (t.includes(',') && t.includes('.')) t = t.lastIndexOf(',') > t.lastIndexOf('.') ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+  else if (t.includes(',')) t = t.replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+  const x = Number(t);
+  return Number.isFinite(x) ? x : null;
+}
+
+// ---------- Datos ----------
+let datos = { items: [], recordar: {}, catalogo: [] };
+try { const g = JSON.parse(localStorage.getItem(CLAVE) || 'null'); if (g && Array.isArray(g.items)) datos = Object.assign(datos, g); } catch (e) { /* sin almacenamiento */ }
+let catalogo = new Map((datos.catalogo || []).map((p) => [String(p.codigo).toUpperCase(), p]));
+function guardar() {
+  try { localStorage.setItem(CLAVE, JSON.stringify(datos)); } catch (e) { toast('No se pudo guardar en esta computadora. Descargá el Excel ahora.'); }
+}
+
+// ---------- Avisos ----------
+let tToast = 0;
+function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(tToast); tToast = setTimeout(() => { el.hidden = true; }, 3500); }
+function estado(t, tipo = 'info') { const el = $('#estado'); el.className = 'aviso ' + tipo; el.innerHTML = t; }
+function confirmar(texto, si = 'Aceptar', peligro = false) {
+  return new Promise((res) => {
+    const d = $('#dlg');
+    $('#dlg-texto').textContent = texto;
+    $('#dlg-si').textContent = si;
+    $('#dlg-si').className = 'btn ' + (peligro ? 'rojo' : 'primary');
+    let listo = false;
+    const fin = (v) => { if (listo) return; listo = true; d.close(); res(v); };
+    $('#dlg-si').onclick = () => fin(true);
+    $('#dlg-no').onclick = () => fin(false);
+    d.oncancel = () => fin(false);
+    d.showModal();
+  });
+}
+// Pitido corto al escanear (más agudo si es nuevo)
+let audio = null;
+function pitido(f = 880) {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = f; g.gain.value = 0.08;
+    o.connect(g); g.connect(audio.destination);
+    o.start(); o.stop(audio.currentTime + 0.09);
+  } catch (e) { /* sin sonido */ }
+}
+
+// ---------- Escanear ----------
+let editando = null; // id del ítem que se está editando, o null para uno nuevo
+let ultimoId = null;
+
+function escaneo(codigoBruto) {
+  const codigo = String(codigoBruto || '').trim().toUpperCase();
+  if (!codigo) return;
+  const ya = datos.items.find((x) => x.codigo && x.codigo.toUpperCase() === codigo);
+  if (ya) {
+    if (!$('#form').hidden && editando === ya.id) { sumarCampoCantidad(); return; }
+    ya.cantidad = (Number(ya.cantidad) || 0) + 1;
+    ya.cambio = Date.now();
+    ultimoId = ya.id;
+    guardar();
+    pintar();
+    pitido(660);
+    estado(`<strong>${esc(ya.nombre)}</strong> ya estaba en la lista: ahora hay <strong>${numero.format(ya.cantidad)}</strong>. <button class="btn sm" type="button" data-editar="${ya.id}">Corregir</button>`, 'ok');
+    return;
+  }
+  pitido(1040);
+  const enPrograma = catalogo.get(codigo);
+  abrirForm({ codigo, nombre: enPrograma ? enPrograma.nombre : '', precio: enPrograma ? enPrograma.precio : '', costo: enPrograma ? enPrograma.costo : '',
+    unidad: enPrograma ? enPrograma.unidad : '', categoria: enPrograma ? enPrograma.categoria : '', ubicacion: enPrograma ? enPrograma.ubicacion : '',
+    proveedor: enPrograma ? enPrograma.proveedor : '', minimo: enPrograma ? enPrograma.minimo : '', cantidad: '', existente: !!enPrograma });
+  if (enPrograma) estado(`Este producto ya está en el programa (hay ${numero.format(enPrograma.stock || 0)} según el programa). Poné cuántos hay ahora.`, 'info');
+  else estado(`Código nuevo: <strong>${esc(codigo)}</strong>. Escribí el nombre y el precio.`, 'info');
+}
+
+function sumarCampoCantidad() {
+  const c = $('#c-cantidad');
+  c.value = numero.format((parseNum(c.value) || 1) + 1).replace(/\./g, '');
+  pitido(660);
+}
+
+function abrirForm(x, id = null) {
+  editando = id;
+  const r = datos.recordar || {};
+  $('#form-titulo').textContent = id ? 'Corregir el producto' : (x.existente ? 'Producto que ya está en el programa' : 'Completá los datos');
+  $('#c-codigo').value = x.codigo || '';
+  $('#c-nombre').value = x.nombre || '';
+  $('#c-precio').value = x.precio === '' || x.precio == null ? '' : String(x.precio).replace('.', ',');
+  $('#c-costo').value = x.costo === '' || x.costo == null || x.costo === 0 ? '' : String(x.costo).replace('.', ',');
+  $('#c-cantidad').value = x.cantidad === '' || x.cantidad == null ? '' : String(x.cantidad).replace('.', ',');
+  $('#c-minimo').value = x.minimo === '' || x.minimo == null || x.minimo === 0 ? '' : String(x.minimo).replace('.', ',');
+  // Categoría, ubicación, unidad y proveedor: los del producto o los últimos usados
+  $('#c-categoria').value = x.categoria || (id ? '' : r.categoria || '');
+  $('#c-ubicacion').value = x.ubicacion || (id ? '' : r.ubicacion || '');
+  $('#c-unidad').value = x.unidad || (id ? 'unidad' : r.unidad || 'unidad');
+  $('#c-proveedor').value = x.proveedor || (id ? '' : r.proveedor || '');
+  $('#form-err').textContent = '';
+  $('#form').dataset.existente = x.existente ? '1' : '';
+  $('#form').hidden = false;
+  ($('#c-nombre').value ? $('#c-cantidad') : $('#c-nombre')).focus();
+}
+
+function cerrarForm() {
+  $('#form').hidden = true;
+  editando = null;
+  $('#escanear').value = '';
+  $('#escanear').focus();
+}
+
+function guardarForm() {
+  const err = (t) => { $('#form-err').textContent = t; };
+  const codigo = $('#c-codigo').value.trim().toUpperCase();
+  const nombre = $('#c-nombre').value.trim();
+  const precio = parseNum($('#c-precio').value);
+  const cantidadTxt = $('#c-cantidad').value.trim();
+  const cantidad = cantidadTxt === '' ? 1 : parseNum(cantidadTxt);
+  if (!nombre) { err('Escribí el nombre del producto.'); $('#c-nombre').focus(); return; }
+  if (cantidad == null || cantidad < 0 || cantidad > 99999) { err('Revisá la cantidad.'); $('#c-cantidad').focus(); return; }
+  if (precio != null && precio < 0) { err('El precio no puede ser negativo.'); $('#c-precio').focus(); return; }
+  if (codigo && datos.items.some((x) => x.id !== editando && x.codigo && x.codigo.toUpperCase() === codigo)) { err(`El código ${codigo} ya está en la lista.`); return; }
+  const item = {
+    codigo, nombre, precio, cantidad,
+    costo: parseNum($('#c-costo').value), minimo: parseNum($('#c-minimo').value),
+    categoria: $('#c-categoria').value.trim(), ubicacion: $('#c-ubicacion').value.trim(),
+    unidad: $('#c-unidad').value, proveedor: $('#c-proveedor').value.trim(),
+    existente: $('#form').dataset.existente === '1', cambio: Date.now(),
+  };
+  if (editando) {
+    const x = datos.items.find((i) => i.id === editando);
+    Object.assign(x, item);
+    ultimoId = x.id;
+    toast('Producto corregido.');
+  } else {
+    item.id = uid();
+    datos.items.push(item);
+    ultimoId = item.id;
+    toast(`Guardado: ${nombre}${precio == null ? ' (sin precio)' : ''}.`);
+  }
+  datos.recordar = { categoria: item.categoria, ubicacion: item.ubicacion, unidad: item.unidad, proveedor: item.proveedor };
+  guardar();
+  estado('');
+  pintar();
+  cerrarForm();
+}
+
+// ---------- Lista ----------
+function pintar() {
+  const items = datos.items;
+  $('#r-prod').textContent = numero.format(items.length);
+  $('#r-unid').textContent = numero.format(items.reduce((s, x) => s + (Number(x.cantidad) || 0), 0));
+  $('#r-sinprecio').textContent = numero.format(items.filter((x) => x.precio == null && !x.existente).length);
+  $('#descargar').disabled = !items.length;
+  const q = normal($('#buscar').value.trim());
+  const lista = items.filter((x) => !q || normal(`${x.codigo} ${x.nombre} ${x.categoria} ${x.ubicacion}`).includes(q))
+    .sort((a, b) => (b.cambio || 0) - (a.cambio || 0));
+  $('#lista').innerHTML = lista.length ? lista.map((x) => `
+    <tr class="${x.id === ultimoId ? 'recien' : ''}${x.existente ? ' ya-estaba' : ''}">
+      <td><div>${esc(x.nombre)} ${x.existente ? '<span class="chip">ya en el programa</span>' : ''}</div>
+        <div class="meta"><span class="mono">${esc(x.codigo || 'sin código')}</span>${[x.categoria, x.ubicacion].filter(Boolean).map((t) => ' · ' + esc(t)).join('')}</div></td>
+      <td class="num"><strong>${numero.format(x.cantidad || 0)}</strong></td>
+      <td class="num">${x.precio == null ? (x.existente ? '<span class="meta">sin cambio</span>' : '<span class="err">falta</span>') : plata.format(x.precio)}</td>
+      <td class="acc"><button class="btn sm ghost" type="button" data-editar="${x.id}">Editar</button><button class="btn sm danger" type="button" data-borrar="${x.id}">Quitar</button></td>
+    </tr>`).join('')
+    : `<tr><td colspan="4" class="vacio">${items.length ? 'Nada coincide con la búsqueda.' : 'Todavía no cargaste nada. Escaneá el primer producto.'}</td></tr>`;
+  const cats = [...new Set(items.map((x) => x.categoria).concat([...catalogo.values()].map((p) => p.categoria)).filter(Boolean))].sort();
+  $('#lista-cat').innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join('');
+  const provs = [...new Set(items.map((x) => x.proveedor).concat([...catalogo.values()].map((p) => p.proveedor)).filter(Boolean))].sort();
+  $('#lista-prov').innerHTML = provs.map((c) => `<option value="${esc(c)}">`).join('');
+  pintarCatalogo();
+}
+
+function pintarCatalogo() {
+  if (catalogo.size) $('#catalogo-estado').innerHTML = `Productos del programa cargados: <strong>${numero.format(catalogo.size)}</strong>. Al escanear uno, aparece su nombre y solo ponés la cantidad.`;
+}
+
+// ---------- Excel ----------
+function descargarExcel() {
+  if (!datos.items.length) return;
+  const filas = datos.items.map((x) => ({
+    'Código': x.codigo, 'Producto': x.nombre, 'Categoría': x.categoria, 'Unidad': x.unidad, 'Proveedor': x.proveedor, 'Ubicación': x.ubicacion,
+    'Stock': x.cantidad, 'Stock mínimo': x.minimo ?? '', 'Costo': x.costo ?? '', 'Precio': x.precio ?? '',
+  }));
+  const hoja = XLSX.utils.json_to_sheet(filas, { header: ['Código', 'Producto', 'Categoría', 'Unidad', 'Proveedor', 'Ubicación', 'Stock', 'Stock mínimo', 'Costo', 'Precio'] });
+  // El código como texto, para que Excel no le saque los ceros ni lo pase a notación científica
+  filas.forEach((f, i) => { const c = hoja[XLSX.utils.encode_cell({ r: i + 1, c: 0 })]; if (c) { c.t = 's'; c.v = String(f['Código'] || ''); c.z = '@'; } });
+  hoja['!cols'] = [{ wch: 16 }, { wch: 42 }, { wch: 16 }, { wch: 9 }, { wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, hoja, 'Productos');
+  XLSX.writeFile(libro, `productos_cargados_${hoy()}.xlsx`);
+  const sin = datos.items.filter((x) => x.precio == null && !x.existente).length;
+  toast(`Excel descargado con ${datos.items.length} productos.${sin ? ` Ojo: ${sin} sin precio.` : ''}`);
+}
+
+function cargarCatalogo(file) {
+  const lector = new FileReader();
+  lector.onload = () => {
+    try {
+      const libro = XLSX.read(new Uint8Array(lector.result), { type: 'array', codepage: 65001, raw: true });
+      const filas = XLSX.utils.sheet_to_json(libro.Sheets[libro.SheetNames[0]], { defval: '' });
+      const col = (f, ...nombres) => { for (const k of Object.keys(f)) if (nombres.includes(normal(k).trim())) return f[k]; return ''; };
+      const lista = [];
+      for (const f of filas) {
+        const codigo = String(col(f, 'codigo', 'cod', 'codigo de barras')).trim().toUpperCase();
+        const nombre = String(col(f, 'producto', 'nombre', 'descripcion')).trim();
+        if (!codigo || !nombre) continue;
+        lista.push({ codigo, nombre, categoria: String(col(f, 'categoria')).trim(), unidad: String(col(f, 'unidad')).trim(), proveedor: String(col(f, 'proveedor')).trim(),
+          ubicacion: String(col(f, 'ubicacion')).trim(), stock: parseNum(col(f, 'stock')), minimo: parseNum(col(f, 'stock minimo', 'minimo')), costo: parseNum(col(f, 'costo')), precio: parseNum(col(f, 'precio', 'precio de venta')) });
+      }
+      if (!lista.length) { toast('Esa planilla no tiene productos con Código y Producto.'); return; }
+      datos.catalogo = lista;
+      catalogo = new Map(lista.map((p) => [p.codigo, p]));
+      guardar();
+      pintar();
+      toast(`Se cargaron ${lista.length} productos del programa.`);
+    } catch (e) {
+      toast('No pude leer ese archivo. Tiene que ser el Excel del inventario.');
+    }
+    $('#escanear').focus();
+  };
+  lector.readAsArrayBuffer(file);
+}
+
+// ---------- Eventos ----------
+$('#escanear').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const v = $('#escanear').value;
+  $('#escanear').value = '';
+  escaneo(v);
+});
+$('#sin-codigo').addEventListener('click', () => { estado('Producto sin código: el programa le va a poner uno (P-0001…).', 'info'); abrirForm({ codigo: '' }); });
+$('#form').addEventListener('submit', (e) => { e.preventDefault(); guardarForm(); });
+$('#cancelar').addEventListener('click', () => { estado(''); cerrarForm(); });
+// Enter en el nombre pasa al precio; en el resto guarda
+$('#c-nombre').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#c-precio').focus(); } });
+$('#form').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); estado(''); cerrarForm(); } });
+
+/* El lector escribe muy rápido y termina con Enter. Si escanea con el cursor en un campo del formulario,
+ * no se mezcla con lo escrito: el campo vuelve a como estaba y se toma como un escaneo. */
+const rafaga = { el: null, antes: '', texto: '', ult: 0 };
+// Un código de barras: 6 o más letras/números seguidos, sin espacios, con algún número
+const pareceCodigo = (t) => /^[0-9A-Za-z.\-]{6,}$/.test(t) && /\d/.test(t);
+document.addEventListener('keydown', (e) => {
+  const el = e.target;
+  const ahora = performance.now();
+  if (el === $('#escanear')) return;
+  const enCampo = el && el.closest && el.closest('#form') && el.tagName === 'INPUT';
+  if (!enCampo) {
+    // Sin el cursor en un campo: lo que escribe el lector va al cuadro de escanear
+    if ($('#dlg').open || !$('#form').hidden || e.ctrlKey || e.altKey || e.metaKey || !e.key || e.key.length !== 1) return;
+    if (el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return;
+    $('#escanear').focus();
+    return;
+  }
+  if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    if (rafaga.el !== el || ahora - rafaga.ult > 60) { rafaga.el = el; rafaga.antes = el.value; rafaga.texto = ''; }
+    rafaga.texto += e.key;
+    rafaga.ult = ahora;
+    return;
+  }
+  if (e.key === 'Enter' && rafaga.el === el && pareceCodigo(rafaga.texto) && ahora - rafaga.ult < 100) {
+    e.preventDefault();
+    e.stopPropagation();
+    el.value = rafaga.antes;
+    const codigo = rafaga.texto;
+    rafaga.el = null;
+    const actual = $('#c-codigo').value.trim().toUpperCase();
+    if (actual && actual === codigo.trim().toUpperCase()) { sumarCampoCantidad(); return; }
+    if ($('#c-nombre').value.trim()) guardarForm(); else { toast('Se dejó sin guardar el producto anterior porque no tenía nombre.'); cerrarForm(); }
+    escaneo(codigo);
+  }
+}, true);
+
+$('#lista').addEventListener('click', async (e) => {
+  const ed = e.target.closest('[data-editar]');
+  if (ed) { const x = datos.items.find((i) => i.id === ed.dataset.editar); if (x) { estado(''); abrirForm(x, x.id); } return; }
+  const bo = e.target.closest('[data-borrar]');
+  if (bo) {
+    const x = datos.items.find((i) => i.id === bo.dataset.borrar);
+    if (!x || !(await confirmar(`¿Quitar «${x.nombre}» de la lista?`, 'Quitar', true))) return;
+    datos.items = datos.items.filter((i) => i.id !== x.id);
+    guardar(); pintar(); $('#escanear').focus();
+  }
+});
+$('#estado').addEventListener('click', (e) => {
+  const ed = e.target.closest('[data-editar]');
+  if (ed) { const x = datos.items.find((i) => i.id === ed.dataset.editar); if (x) abrirForm(x, x.id); }
+});
+$('#buscar').addEventListener('input', pintar);
+$('#descargar').addEventListener('click', descargarExcel);
+$('#catalogo').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) cargarCatalogo(f); });
+$('#nueva').addEventListener('click', async () => {
+  if (!datos.items.length) return;
+  if (!(await confirmar(`¿Borrar la lista (${datos.items.length} productos) y empezar otra? Descargá el Excel antes si no lo hiciste.`, 'Borrar la lista', true))) return;
+  datos.items = [];
+  ultimoId = null;
+  guardar(); pintar(); estado(''); $('#escanear').focus();
+});
+window.addEventListener('beforeunload', () => guardar());
+
+pintar();
+$('#escanear').focus();
+</script>
+</body>
+</html>
