@@ -35,13 +35,13 @@ Al abrir el programa, cada persona toca su nombre y escribe su PIN (de 4 a 6 nú
 | Administrador | `1234` | Todo, incluido Resumen del día, Reportes, Configuración (usuarios y copias), anular ventas y cambiar precios en bloque |
 | Empleado | `0000` | Vender, cargar mercadería, productos y proveedores. No ve totales de ventas, costos ni reportes, y no cambia el precio de los productos que ya existen. Puede hacer descuentos hasta un 10 % (se cambia en Datos del negocio); para uno mayor hace falta el PIN de un administrador |
 
-**Lo primero que hay que hacer** es entrar como Administrador e ir a **Configuración → Usuarios** para cambiar los dos PIN. Mientras sigan con el PIN inicial, el programa lo recuerda con un aviso. Ahí mismo se crean más usuarios (uno por cada empleado) y se puede renombrar a "Empleado" con su nombre real.
+**Lo primero que hay que hacer** es entrar como Administrador e ir a **Configuración → Usuarios** para cambiar los dos PIN. Mientras sigan con el PIN inicial, el programa lo recuerda con un aviso en **Configuración** y un número naranja sobre ese botón de la barra. Ahí mismo se crean más usuarios (uno por cada empleado) y se puede renombrar a "Empleado" con su nombre real.
 
 Cada venta y cada movimiento de stock queda registrado con el nombre de quien lo hizo.
 
 Después de 5 PIN equivocados seguidos, ese usuario tiene que esperar 5 minutos para volver a probar.
 
-**Clave de recuperación:** al instalar, el administrador entra a **Configuración → Usuarios → Crear clave de recuperación**. El programa muestra una vez una clave de 12 letras y números (por ejemplo `QZ85-RNVC-RNSN`) que hay que anotar en papel y guardar fuera del mostrador; el programa guarda solo un resumen cifrado. Mientras no se cree, el administrador ve un aviso.
+**Clave de recuperación:** al instalar, el administrador entra a **Configuración → Usuarios → Crear clave de recuperación**. El programa muestra una vez una clave de 12 letras y números (por ejemplo `QZ85-RNVC-RNSN`) que hay que anotar en papel y guardar fuera del mostrador; el programa guarda solo un resumen cifrado. Mientras no se cree, el administrador ve un aviso en **Configuración** (con el botón **Crearla**).
 
 **Si se olvida el PIN del administrador:** en la pantalla de ingreso, tocá **Me olvidé el PIN del administrador**, escribí la clave de recuperación y elegí un PIN nuevo. Si se pierde la clave, se puede crear otra desde la misma pantalla de Usuarios (la anterior deja de servir).
 

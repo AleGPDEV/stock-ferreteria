@@ -921,8 +921,15 @@ function avisoStock(p) {
 function render() {
   if (!sesion) return;
   $('#banner-ejemplo').hidden = !db.ejemplo;
-  $('#banner-pin').hidden = !(esAdmin() && db.usuarios.some((u) => u.pinPorDefecto));
-  $('#banner-recuperacion').hidden = !(esAdmin() && !(db.recuperacion && db.recuperacion.hash) && !db.ejemplo);
+  // Los avisos de PIN inicial y clave de recuperación están en Configuración; en la barra queda un número
+  const faltaPin = esAdmin() && db.usuarios.some((u) => u.pinPorDefecto);
+  const faltaClave = esAdmin() && !(db.recuperacion && db.recuperacion.hash) && !db.ejemplo;
+  $('#banner-pin').hidden = !faltaPin;
+  $('#banner-recuperacion').hidden = !faltaClave;
+  const pendientes = faltaPin + faltaClave;
+  $('#badge-ajustes').hidden = !pendientes;
+  $('#badge-ajustes').textContent = pendientes;
+  $('#badge-ajustes').title = [faltaPin && 'Cambiar los PIN iniciales', faltaClave && 'Crear la clave de recuperación'].filter(Boolean).join(' · ');
   $('#marca-nombre').textContent = (db.negocio && db.negocio.nombre) || 'Stock Ferretería';
   renderAlertaStock();
   // Solo se dibuja la pantalla que se está viendo
@@ -3023,10 +3030,7 @@ function iniciarLogin() {
     entrar(g.usuario);
   });
   $('#btn-salir').addEventListener('click', () => arrancar());
-  $('#banner-pin-ir').addEventListener('click', () => {
-    location.hash = '#ajustes';
-    setTimeout(() => $('#card-usuarios').scrollIntoView({ block: 'start' }), 50);
-  });
+  $('#banner-pin-ir').addEventListener('click', () => $('#tabla-usuarios').scrollIntoView({ block: 'center' }));
 }
 
 /* ---------- Usuarios (solo administrador) ---------- */
@@ -3081,10 +3085,8 @@ function iniciarRecuperacion() {
   });
   $('#rec-clave-copiar').addEventListener('click', () => copiarTexto($('#rec-clave').textContent, 'Clave copiada. Anotala también en papel.'));
   $('#dlg-rec').addEventListener('close', () => { $('#rec-clave').textContent = ''; });
-  $('#banner-recuperacion-ir').addEventListener('click', () => {
-    location.hash = '#ajustes';
-    setTimeout(() => $('#card-usuarios').scrollIntoView({ block: 'start' }), 50);
-  });
+  // Ya se está en Configuración: el botón del aviso crea la clave directamente
+  $('#banner-recuperacion-ir').addEventListener('click', () => $('#btn-rec-crear').click());
 }
 
 function iniciarUsuarios() {
