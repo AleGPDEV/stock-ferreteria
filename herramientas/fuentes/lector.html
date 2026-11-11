@@ -90,6 +90,8 @@ main.una { grid-template-columns: minmax(0, 1fr); }
 .factura { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
 .factura .sp { flex: 1; }
 .factura.repetida { border-color: var(--warn); background: var(--warn-soft); }
+.num-mano { font-weight: 600; }
+.num-mano input { width: 9em; margin-left: 6px; }
 .opciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
 .radio { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; font-size: 15.5px; cursor: pointer; }
 .radio input { width: 20px; height: 20px; margin-top: 2px; flex: none; }
@@ -138,6 +140,7 @@ tr.fuera td { opacity: .45; }
         </select>
         <small id="iva-ayuda"></small>
       </label>
+      <label class="f" for="cambio" id="cambio-campo" hidden>Tipo de cambio (pesos por dólar)<input id="cambio" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej.: 40,25"><small>Hay facturas en dólares: los costos se pasan a pesos con este valor.</small><small class="err" id="cambio-err" role="alert"></small></label>
       <label class="f" for="margen">Ganancia para el precio de venta (%)<input id="margen" type="text" inputmode="decimal" value="0"><small>0 = precio de venta igual al costo (después lo cambiás en el programa).</small></label>
       <label class="f" for="redondeo">Redondear el precio de venta
         <select id="redondeo"><option value="0">No redondear</option><option value="1">Al peso</option><option value="5">De a $ 5</option><option value="10">De a $ 10</option></select>
@@ -171,6 +174,7 @@ tr.fuera td { opacity: .45; }
 
 <script>__XLSX__</script>
 <script>__LECTOR_PDF__</script>
+<script>__LECTOR_PRODUCTOS__</script>
 <script>
 'use strict';
 const $ = (s) => document.querySelector(s);
@@ -192,30 +196,9 @@ function parseNum(v) {
 }
 const fechaUy = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
 
-/* ---------- Nombres, códigos y categorías ---------- */
-const MARCAS = ['TOYOKI', 'MAKAWA', 'UYUSTOOLS', 'UYUS', 'PENNSYLVANIA', 'CONDOR', 'KAMASA', 'ARCAL', 'CABLINUR', 'DENZEL', 'ODIM', 'CLARA', 'TIGON', 'GAOQIANG', 'HORUSDY', 'CHALIMEX', 'TIMELIN', 'CORO', 'TOOLS', 'GREEN', 'KILLER', 'MAUSER', 'STANLEY', 'BOSCH', 'TRAMONTINA', 'TRUPER', 'INCOLOR', 'SHERWIN', 'SINTEPLAST', 'CALOPLAST', 'TIGRE', 'NICOLL', 'DUKE', 'PRETUL', 'BLACK', 'DECKER', 'DEWALT', 'MAKITA', 'GAMMA', 'LUSQTOFF', 'SICA', 'ACRILEX', 'FISCHER', 'POXIPOL', 'LOCTITE', 'WD-40', 'TEKNO', 'ACQUAFLEX'];
-function nombreLindo(t) {
-  return String(t).split(/\s+/).filter(Boolean).map((w, i) => {
-    if (/\d/.test(w)) return w.toUpperCase();
-    if (MARCAS.includes(w.toUpperCase())) return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-    const l = w.toLowerCase();
-    return i === 0 ? l.charAt(0).toUpperCase() + l.slice(1) : l;
-  }).join(' ').replace(/”/g, '"');
-}
-// Código del modelo: LH-1234, MK-0153, EBM301… (la última palabra con letras y números)
-const RE_COD = /^[A-Z]{1,4}-?\d{2,6}[A-Z]?$/;
-function separarCodigo(desc) {
-  let d = String(desc).trim();
-  let interno = '';
-  const mi = /^(\d{3,6})\s+(?=\D)/.exec(d); // código interno del proveedor al principio
-  if (mi) { interno = mi[1]; d = d.slice(mi[0].length); }
-  const pal = d.split(' ');
-  let codigo = '';
-  const lh = pal.findIndex((w) => /^LH-?\d+$/i.test(w));
-  if (lh >= 0) { codigo = pal[lh].toUpperCase().replace(/^LH-?/, 'LH-'); pal.splice(lh, 1); }
-  else if (pal.length > 2 && RE_COD.test(pal[pal.length - 1])) codigo = pal.pop().toUpperCase();
-  return { codigo, interno, nombre: pal.join(' ').trim() };
-}
+/* ---------- Nombres, códigos y categorías ----------
+ * Los códigos, nombres y cómo se juntan los renglones están en lector-productos.js (LectorProductos). */
+const { nombreLindo, numeroFactura, mismaFactura, problemaFactura, armarProductos, enDolares } = LectorProductos;
 const CATS = [
   ['Mascotas', /MASCOTA/], ['Limpieza', /PALA CON CEPILLO/],
   ['Cerrajería', /CANDADO|CERRADURA|CERROJO|PASADOR|BANDOLA|LLAVE DE PUERTA|CILINDRO/],
@@ -263,23 +246,10 @@ function ivaDe(f) {
 }
 
 function armar() {
-  const porClave = new Map();
-  const ordenadas = facturas.slice().sort((a, b) => (a.r.fecha || '').localeCompare(b.r.fecha || ''));
-  for (const f of ordenadas) {
-    const iva = ivaDe(f);
-    for (const it of f.r.items) {
-      const s = separarCodigo(it.descripcion);
-      const clave = s.codigo || normal(s.nombre).replace(/[^a-z0-9]/g, '');
-      const costo = red2(it.importe / it.cantidad * (1 + iva / 100));
-      let p = porClave.get(clave);
-      if (!p) { p = { clave, codigo: s.codigo, nombre: nombreLindo(s.nombre), categoria: categoria(s.nombre), cantidad: 0, facturas: [] }; porClave.set(clave, p); }
-      p.cantidad += it.cantidad;
-      p.costo = costo; // la más nueva queda última
-      const nf = `${f.r.serie || ''} ${f.r.numero || ''}`.trim();
-      if (nf && !p.facturas.includes(nf)) p.facturas.push(nf);
-    }
-  }
-  productos = [...porClave.values()];
+  const r = armarProductos(facturas, { iva: ivaDe, tipoCambio: parseNum($('#cambio').value) });
+  productos = r.productos;
+  productos.forEach((p) => { p.categoria = categoria(p.descripcion); });
+  $('#cambio-err').textContent = r.error;
   pintar();
 }
 
@@ -294,19 +264,22 @@ const valor = (p, k) => { const e = editados[p.clave] || {}; return e[k] != null
 const incluido = (p) => (editados[p.clave] || {}).incluir !== false;
 
 function pintarFacturas() {
-  const vistas = new Map();
   $('#facturas').innerHTML = facturas.map((f, i) => {
-    const id = `${f.r.rucEmisor}|${f.r.serie}|${f.r.numero}`;
-    const rep = vistas.has(id); vistas.set(id, true);
+    const rep = facturas.slice(0, i).some((g) => mismaFactura(g.r, f.r));
     const ivaTxt = f.r.ivaIncluido === true ? '<span class="chip ok">IVA incluido</span>' : f.r.ivaIncluido === false ? '<span class="chip warn">sin IVA: se suma</span>' : '<span class="chip warn">IVA: revisar</span>';
-    return `<div class="factura${rep ? ' repetida' : ''}"><strong>${esc(f.r.tipo || 'Factura')} ${esc(f.r.serie)} ${esc(f.r.numero)}</strong>
+    const num = f.r.numero && !f.r.numeroAMano ? `<strong>${esc(f.r.tipo || 'Factura')} ${esc(numeroFactura(f.r))}</strong>`
+      : `<label class="num-mano">Número de la factura <input type="text" data-numero="${i}" value="${esc(numeroFactura(f.r))}" placeholder="Ej.: A 1234" autocomplete="off"></label>${f.r.numero ? '' : '<span class="chip warn">no pude leer el número: escribilo</span>'}`;
+    return `<div class="factura${rep ? ' repetida' : ''}">${num}
       <span>${esc(f.r.emisor)}</span><span>${fechaUy(f.r.fecha)}</span><span>${f.r.items.length} productos</span>
-      ${f.r.total ? `<span>Total ${plata.format(f.r.total)}</span>` : ''} ${ivaTxt} ${rep ? '<span class="chip warn">repetida: se cuenta una vez</span>' : ''}
+      ${f.r.total ? `<span>Total ${plata.format(f.r.total)}</span>` : ''} ${ivaTxt} ${enDolares(f.r) ? '<span class="chip warn">en dólares</span>' : ''} ${rep ? '<span class="chip warn">repetida: se cuenta una vez</span>' : ''}
       <span class="sp"></span><button class="btn sm danger" type="button" data-quitar="${i}">Quitar</button></div>`;
   }).join('');
   const hay = facturas.length > 0;
   $('#paso2').hidden = !hay;
   $('#paso3').hidden = !hay;
+  $('#cambio-campo').hidden = !facturas.some((f) => enDolares(f.r));
+  const tcFactura = (facturas.find((f) => enDolares(f.r) && f.r.tipoCambio) || {}).r;
+  if (tcFactura && !$('#cambio').value) $('#cambio').value = String(tcFactura.tipoCambio).replace('.', ',');
   const est = facturas.map((f) => f.r.ivaIncluido);
   $('#iva-ayuda').textContent = est.every((x) => x === true) ? 'Detectado: los precios de las facturas ya incluyen IVA (no se suma).'
     : est.every((x) => x === false) ? 'Detectado: los precios no incluyen IVA (se suma).' : 'No pude saberlo en todas: revisá esta opción.';
@@ -315,12 +288,12 @@ function pintarFacturas() {
 function pintar() {
   const q = normal($('#buscar').value.trim());
   $('#cuenta').textContent = productos.filter(incluido).length;
-  $('#descargar').disabled = !productos.some(incluido);
+  $('#descargar').disabled = !productos.some(incluido) || !!$('#cambio-err').textContent;
   const lista = productos.filter((p) => !q || normal(`${p.codigo} ${valor(p, 'nombre')} ${valor(p, 'categoria')}`).includes(q));
   $('#lista').innerHTML = lista.map((p) => `
     <tr class="${incluido(p) ? '' : 'fuera'}" data-clave="${esc(p.clave)}">
       <td class="chk"><input type="checkbox" data-k="incluir" ${incluido(p) ? 'checked' : ''} aria-label="Incluir"></td>
-      <td><input type="text" data-k="nombre" value="${esc(valor(p, 'nombre'))}" aria-label="Nombre"><div class="meta"><span class="mono">${esc(p.codigo || 'sin código')}</span> · factura ${esc(p.facturas.join(', '))}</div></td>
+      <td><input type="text" data-k="nombre" value="${esc(valor(p, 'nombre'))}" aria-label="Nombre"><div class="meta"><span class="mono">${esc(p.codigo || 'sin código')}</span> · factura ${esc(p.facturas.join(', ') || 'sin número')}</div></td>
       <td><input class="cat" type="text" list="lista-cat" data-k="categoria" value="${esc(valor(p, 'categoria'))}" aria-label="Categoría"></td>
       <td class="num">${numero.format(p.cantidad)}</td>
       <td class="num"><input class="num" type="text" inputmode="decimal" data-k="costo" value="${String(costoDe(p)).replace('.', ',')}" aria-label="Costo"></td>
@@ -337,9 +310,11 @@ async function cargarArchivos(lista) {
     if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') { errores.push(`${file.name}: no es un PDF.`); continue; }
     try {
       const r = await LectorPdf.leerPdf(new Uint8Array(await file.arrayBuffer()));
-      if (!r.items.length) { errores.push(`${file.name}: no encontré la lista de productos.`); continue; }
-      const id = `${r.rucEmisor}|${r.serie}|${r.numero}`;
-      if (facturas.some((f) => `${f.r.rucEmisor}|${f.r.serie}|${f.r.numero}` === id)) { errores.push(`${file.name}: esa factura ya está cargada.`); continue; }
+      const problema = problemaFactura(r);
+      if (problema) { errores.push(`${file.name}: ${problema}`); continue; }
+      // Solo se compara si se pudo leer el número: sin número no se sabe si es la misma
+      if (facturas.some((f) => mismaFactura(f.r, r))) { errores.push(`${file.name}: esa factura ya está cargada.`); continue; }
+      if (!r.numero) r.numeroAMano = true;
       facturas.push({ archivo: file.name, r });
     } catch (e) {
       errores.push(`${file.name}: ${e.message || 'no se pudo leer.'}`);
@@ -357,7 +332,7 @@ function descargar() {
   const llego = document.querySelector('input[name=modo]:checked').value === 'llego';
   const prov = $('#proveedor').value.trim();
   const sel = productos.filter(incluido);
-  if (!sel.length) return;
+  if (!sel.length || $('#cambio-err').textContent) return;
   const cab = ['Código', 'Producto', 'Categoría', 'Unidad', 'Proveedor', 'Costo', 'Precio', 'Llegó', 'Factura'];
   const filas = sel.map((p) => ({
     'Código': p.codigo, 'Producto': valor(p, 'nombre'), 'Categoría': valor(p, 'categoria'), 'Unidad': 'unidad', 'Proveedor': prov,
@@ -368,7 +343,7 @@ function descargar() {
   hoja['!cols'] = [12, 50, 18, 9, 16, 10, 10, 8, 16].map((wch) => ({ wch }));
   const libro = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(libro, hoja, 'Productos');
-  const nums = facturas.map((f) => f.r.numero).filter(Boolean).slice(0, 3).join('-');
+  const nums = facturas.map((f) => String(f.r.numero || '').replace(/[^\w-]+/g, '')).filter(Boolean).slice(0, 3).join('-');
   XLSX.writeFile(libro, `factura_${(prov || 'proveedor').replace(/[^\w-]+/g, '_')}_${nums || 'productos'}.xlsx`);
   toast(`Excel descargado con ${sel.length} productos${llego ? ' y las cantidades que llegaron' : ''}.`);
 }
@@ -387,6 +362,17 @@ $('#facturas').addEventListener('click', (e) => {
   pintarFacturas();
   armar();
 });
+$('#facturas').addEventListener('change', (e) => {
+  const inp = e.target.closest('[data-numero]');
+  if (!inp) return;
+  const f = facturas[Number(inp.dataset.numero)];
+  // «A 1234», «A-1234» o «1234»
+  const m = /^\s*([A-Za-z]{1,2})?[\s-]*(\d{1,9})\s*$/.exec(inp.value);
+  if (m) { f.r.serie = (m[1] || f.r.serie || '').toUpperCase(); f.r.numero = m[2]; } else { f.r.numero = ''; if (inp.value.trim()) toast('Escribí el número así: A 1234'); }
+  pintarFacturas();
+  armar();
+});
+$('#cambio').addEventListener('input', () => { Object.values(editados).forEach((x) => { delete x.costo; delete x.precio; }); armar(); });
 $('#iva').addEventListener('change', () => { Object.values(editados).forEach((x) => { delete x.costo; delete x.precio; }); armar(); });
 $('#margen').addEventListener('input', () => { Object.values(editados).forEach((x) => { delete x.precio; }); pintar(); });
 $('#redondeo').addEventListener('change', () => { Object.values(editados).forEach((x) => { delete x.precio; }); pintar(); });

@@ -680,6 +680,7 @@ const COLUMNAS = {
   precio: ['precio', 'precio de venta', 'precio venta', 'pvp', 'venta'],
   entrada: ['llego', 'entrada', 'cantidad que llego', 'sumar al stock', 'llegada'],
   factura: ['factura', 'comprobante', 'documento'],
+  conteo: ['contado', 'conteo', 'stock contado'], // la pone el Cargador de productos: el Stock es lo que se contó
 };
 const UNIDADES = ['unidad', 'kg', 'm', 'litro', 'caja', 'paquete', 'rollo', 'par'];
 const ALIAS_UNIDAD = { u: 'unidad', un: 'unidad', und: 'unidad', unid: 'unidad', unidades: 'unidad', kilo: 'kg', kilos: 'kg', kgs: 'kg', metro: 'm', metros: 'm', mt: 'm', mts: 'm', l: 'litro', lt: 'litro', lts: 'litro', litros: 'litro', cajas: 'caja', paq: 'paquete', paquetes: 'paquete', rollos: 'rollo', pares: 'par' };
@@ -704,12 +705,29 @@ function parseNum(v) {
 }
 
 /** Campos que se pueden cambiar en los productos que ya existen al importar. */
-const CAMPOS_IMPORTAR = { precio: true, costo: true, stock: false, nombre: false, otros: false, entrada: true };
+const CAMPOS_IMPORTAR = { precio: true, costo: true, stock: false, nombre: false, otros: false, entrada: true, repetidas: false };
+
+/* Facturas que ya se cargaron: las entradas tienen la nota «Factura A 1234» (o «Factura A 1234, A 1300»). */
+const normFactura = (f) => String(f || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^([A-Z]*)0+/, '$1');
+const facturasDeTexto = (t) => String(t || '').split(/\s*[,;]\s*/).map((x) => x.trim()).filter((x) => /\d/.test(x));
+function facturasCargadas(d) {
+  const mapa = new Map(); // número normalizado → [{ fecha, proveedorId }]
+  for (const m of d.movimientos) {
+    if (m.tipo !== 'entrada' || !/^Factura\s/.test(m.nota || '')) continue;
+    for (const f of facturasDeTexto(m.nota.replace(/^Factura\s+/, ''))) {
+      const k = normFactura(f);
+      if (!mapa.has(k)) mapa.set(k, []);
+      mapa.get(k).push({ fecha: m.fecha, proveedorId: m.proveedorId || '' });
+    }
+  }
+  return mapa;
+}
 
 /** Lee las filas de la planilla y arma qué se agregaría y qué se actualizaría, sin tocar los datos.
  *  Si la planilla no tiene columna «Producto» pero sí «Código», solo actualiza productos que ya existen. */
 function planImportacion(d, filas) {
-  const plan = { nuevos: [], actualizados: [], salteadas: 0, sinProducto: 0, columnas: [], soloActualiza: false };
+  const plan = { nuevos: [], actualizados: [], salteadas: 0, sinProducto: 0, columnas: [], soloActualiza: false, facturasRepetidas: [], deConteo: false };
+  let cargadas = null;
   const mapa = {};
   const claves = new Set();
   filas.forEach((f) => Object.keys(f).forEach((k) => claves.add(k)));
@@ -748,6 +766,19 @@ function planImportacion(d, filas) {
       ubicacion: txt('ubicacion'), stock: num('stock'), minimo: num('minimo'), costo: num('costo'), precio: num('precio'),
       entrada: num('entrada'), factura: txt('factura'), barras,
     };
+    if (mapa.conteo && /^(si|sí|s|x|1|true)$/i.test(txt('conteo'))) { datos.contado = true; plan.deConteo = true; }
+    // ¿La mercadería de esta factura ya se sumó antes? (mismo número y, si se sabe, mismo proveedor)
+    if (datos.factura && datos.entrada > 0) {
+      const provId = (d.proveedores.find((v) => datos.proveedor && normal(v.nombre) === normal(datos.proveedor)) || {}).id || '';
+      for (const f of facturasDeTexto(datos.factura)) {
+        const previas = (cargadas || (cargadas = facturasCargadas(d))).get(normFactura(f)) || [];
+        const igual = previas.filter((x) => !provId || !x.proveedorId || x.proveedorId === provId);
+        if (!igual.length) continue;
+        datos.repetida = true;
+        const fecha = igual.map((x) => x.fecha).sort()[0];
+        if (!plan.facturasRepetidas.some((x) => x.factura === f)) plan.facturasRepetidas.push({ factura: f, fecha });
+      }
+    }
     if (existente) plan.actualizados.push({ id: existente.id, codigo: existente.codigo, nombreActual: existente.nombre, stockActual: existente.stock, precioActual: existente.precio, datos });
     else {
       if (!codigo) { codigo = codigoNuevo(); vistos.add(codigo); }
@@ -772,6 +803,7 @@ function aplicarImportacion(d, plan, campos) {
   // Mercadería que llegó (columna «Llegó»): se suma al stock como una entrada, con su costo y su factura
   const sumarLlegada = (p, x) => {
     if (!(c.entrada && x.entrada > 0)) return;
+    if (x.repetida && !c.repetidas) return; // factura ya cargada: solo se vuelve a sumar si se marcó a propósito
     const err = registrar(d, { tipo: 'entrada', productoId: p.id, cantidad: x.entrada, costoUnit: c.costo && x.costo > 0 ? x.costo : '', proveedorId: p.proveedorId, nota: x.factura ? `Factura ${x.factura}` : 'Llegó (importado)' });
     if (!err) llegadas++;
   };
@@ -3325,11 +3357,17 @@ function mostrarPlan(nombreArchivo) {
     <div class="table-wrap"><table class="tabla"><thead><tr><th>Código</th><th>Producto</th><th class="num">Stock</th><th class="num">Precio</th></tr></thead>
       <tbody>${muestra.map((m) => `<tr><td class="mono">${esc(m.codigo)}</td><td>${esc(m.datos.nombre || m.nombreActual || '')}</td><td class="num">${m.datos.stock == null ? '—' : n(m.datos.stock)}</td><td class="num">${m.datos.precio == null ? '—' : $u(m.datos.precio)}</td></tr>`).join('')}
       ${total > muestra.length ? `<tr><td colspan="4" class="muted">… y ${total - muestra.length} más</td></tr>` : ''}</tbody></table></div>
+    ${planImp.facturasRepetidas.length ? `<div class="banner banner-error imp-repetida" role="alert"><div>${planImp.facturasRepetidas.map((f) => `<p><strong>Esta factura ya se cargó el ${new Date(f.fecha).toLocaleDateString('es-UY')}</strong> (Factura ${esc(f.factura)}).</p>`).join('')}
+      <p>Su mercadería ya se sumó al stock, así que no se vuelve a sumar. Si de verdad llegó otra vez, marcá la casilla de abajo.</p></div></div>` : ''}
+    ${planImp.deConteo ? '<p class="nota-edit">Planilla del <strong>Cargador de productos</strong>: el stock de los productos que ya existen se cambia por lo que se contó. Revisalo abajo.</p>' : ''}
     ${db.ejemplo ? '<p class="nota-edit">Estás con los datos de ejemplo: lo importado se va a mezclar con ellos. Si no querés eso, cancelá y tocá primero «Empezar de cero».</p>' : ''}`;
   $$('#imp-campos [data-campo]').forEach((x) => { x.checked = !!CAMPOS_IMPORTAR[x.dataset.campo]; });
   // Planilla del Lector de facturas: el precio de venta de los que ya existen no se toca
   if (planImp.deFactura) $('#imp-campos [data-campo=precio]').checked = false;
+  // Planilla del Cargador: el conteo se aplica sin tener que marcar nada
+  if (planImp.deConteo) $('#imp-campos [data-campo=stock]').checked = true;
   $('#imp-entrada').hidden = !planImp.conEntrada;
+  $('#imp-repetida').hidden = !planImp.facturasRepetidas.length;
   $$('#imp-campos .solo-existentes').forEach((x) => { x.hidden = !planImp.actualizados.length; });
   if (planImp.actualizados.length || planImp.conEntrada) {
     $('#imp-campos').hidden = false;
