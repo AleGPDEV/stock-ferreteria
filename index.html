@@ -46,6 +46,13 @@
   </aside>
 
   <main class="main">
+    <div id="banner-guardado" class="banner banner-error" role="alert" hidden>
+      <p><strong>No se están guardando los cambios.</strong> No cobres hasta que se arregle: descargá una copia de seguridad y avisá a quien instaló el programa.</p>
+      <div class="banner-acc">
+        <button class="btn sm" id="banner-guardado-copia" type="button">Descargar copia</button>
+        <button class="btn sm primary" id="banner-guardado-reintentar" type="button">Reintentar</button>
+      </div>
+    </div>
     <div id="banner-stock" class="banner banner-stock" role="status" hidden>
       <p id="banner-stock-texto"></p>
       <div class="banner-acc">
@@ -205,6 +212,8 @@
           <option value="bajo">Bajo mínimo</option>
           <option value="sin">Sin stock</option>
           <option value="ok">En stock</option>
+          <option value="sincosto" class="solo-admin">Sin costo cargado</option>
+          <option value="sinprecio">Sin precio</option>
         </select>
       </div>
       <div class="table-wrap">
@@ -239,7 +248,7 @@
             <input type="hidden" id="mov-prod">
           </div>
           <label class="f" for="mov-cant"><span id="mov-cant-label">Cantidad</span><input id="mov-cant" type="number" step="any" min="0" inputmode="decimal" required><small id="mov-hint" class="muted"></small></label>
-          <label class="f solo-entrada" for="mov-costo">Costo unitario<input id="mov-costo" type="number" step="any" min="0" inputmode="decimal"></label>
+          <label class="f solo-entrada solo-admin" for="mov-costo">Costo unitario<input id="mov-costo" type="number" step="any" min="0" inputmode="decimal"></label>
           <label class="f solo-entrada" for="mov-prov">Proveedor<select id="mov-prov"></select></label>
           <label class="f f-wide" for="mov-nota">Nota<input id="mov-nota" type="text" placeholder="Ej.: Factura A-1234, rotura, uso interno"></label>
         </div>
@@ -336,6 +345,14 @@
           </table></div>
         </article>
 
+        <article class="card" id="card-precios-hist">
+          <header class="card-h">
+            <div><h2>Cambios de precio</h2><p class="sub">Quién cambió cada precio y cuándo, en el período elegido arriba.</p></div>
+            <button class="btn sm" type="button" data-export="precios">Exportar Excel</button>
+          </header>
+          <div id="rep-precios"></div>
+        </article>
+
         <article class="card mod-usuarios" id="card-usuarios">
           <header class="card-h">
             <div><h2>Usuarios</h2><p class="sub">Quién puede entrar al programa. El empleado vende, carga mercadería y productos; el administrador además ve el resumen, los reportes y las copias.</p></div>
@@ -357,6 +374,7 @@
             <label class="f" for="n-telefono">Teléfono<input id="n-telefono" type="tel"></label>
             <label class="f" for="n-rut">RUT<input id="n-rut" type="text" inputmode="numeric"></label>
             <label class="f f-wide" for="n-pie">Mensaje al pie del ticket<input id="n-pie" type="text" placeholder="¡Gracias por su compra!"></label>
+            <label class="f" for="n-descmax">Descuento máximo de un empleado (%)<input id="n-descmax" type="number" min="0" max="100" step="any" inputmode="decimal" placeholder="10"><small>Para un descuento mayor hace falta el PIN de un administrador.</small></label>
             <div class="f-wide"><button class="btn primary" type="submit">Guardar datos</button></div>
           </form>
         </article>
@@ -398,13 +416,14 @@
           <p class="sub" id="dev-clave-sub"></p>
           <label class="f" for="dev-clave">Clave<input id="dev-clave" type="password" autocomplete="off"></label>
           <label class="f" for="dev-clave2" id="dev-clave2-wrap">Repetí la clave<input id="dev-clave2" type="password" autocomplete="off"></label>
+          <label class="f" for="dev-rec" id="dev-rec-wrap">Código de recuperación (del generador de licencias, para esta computadora)<textarea id="dev-rec" rows="3" spellcheck="false"></textarea></label>
           <p class="err" id="dev-clave-err" role="alert"></p>
           <div class="botonera"><button class="btn primary" type="submit">Entrar</button><button class="btn ghost" type="button" id="dev-olvide">Me olvidé la clave</button></div>
         </form>
         <form class="card" id="form-dev-olvide" novalidate hidden>
           <h2>Borrar la clave de desarrollador</h2>
-          <p class="sub">Pegá un código de activación generado para esta computadora (aunque esté vencido). Así se comprueba que sos el desarrollador.</p>
-          <label class="f" for="dev-olvide-codigo">Código de activación<textarea id="dev-olvide-codigo" rows="3" spellcheck="false"></textarea></label>
+          <p class="sub">Pegá un código de recuperación generado para esta computadora con el generador de licencias. Así se comprueba que sos el desarrollador. Los códigos de activación no sirven para esto.</p>
+          <label class="f" for="dev-olvide-codigo">Código de recuperación<textarea id="dev-olvide-codigo" rows="3" spellcheck="false"></textarea></label>
           <p class="err" id="dev-olvide-err" role="alert"></p>
           <div><button class="btn primary" type="submit">Borrar la clave</button></div>
         </form>
@@ -467,7 +486,7 @@
       <label class="f" for="p-proveedor">Proveedor<select id="p-proveedor"></select></label>
       <label class="f" for="p-ubicacion">Ubicación<input id="p-ubicacion" type="text" placeholder="Ej.: Estante A-01"></label>
       <label class="f solo-admin" for="p-costo">Costo<input id="p-costo" type="number" step="any" min="0" inputmode="decimal"></label>
-      <label class="f" for="p-precio">Precio de venta<input id="p-precio" type="number" step="any" min="0" inputmode="decimal"><small class="muted" id="p-margen"></small></label>
+      <label class="f" for="p-precio">Precio de venta<input id="p-precio" type="number" step="any" min="0.01" inputmode="decimal"><small class="muted" id="p-margen"></small><small class="muted" id="p-precio-nota" hidden>Solo el administrador puede cambiar el precio.</small></label>
       <label class="f" for="p-minimo">Stock mínimo<input id="p-minimo" type="number" step="any" min="0" inputmode="decimal"></label>
       <label class="f" for="p-stock" id="p-stock-wrap">Stock inicial<input id="p-stock" type="number" step="any" min="0" inputmode="decimal" placeholder="0"></label>
       <p class="muted f-wide nota-edit" id="p-stock-nota" hidden>Para cambiar el stock usá la caja, una entrada o un ajuste por conteo. Así queda registrado en los movimientos.</p>
@@ -620,7 +639,7 @@
 <dialog id="dlg-import" aria-labelledby="imp-titulo">
   <header class="dlg-h">
     <h2 id="imp-titulo">Importar productos desde Excel</h2>
-    <p class="sub">Sirve para cargar muchos productos de una vez. La planilla lleva un producto por fila y estas columnas: Código, Producto, Categoría, Unidad, Proveedor, Ubicación, Stock, Stock mínimo, Costo y Precio. La única obligatoria es Producto.</p>
+    <p class="sub">Sirve para cargar muchos productos de una vez. La planilla lleva un producto por fila y estas columnas: Código, Producto, Categoría, Unidad, Proveedor, Ubicación, Stock, Stock mínimo, Costo y Precio. Para productos nuevos hace falta la columna Producto; para actualizar precios alcanza con Código y Precio.</p>
   </header>
   <div class="dlg-b imp-b">
     <div class="botonera">
@@ -629,6 +648,15 @@
       <input type="file" id="imp-archivo" accept=".xlsx,.xls,.csv" hidden>
     </div>
     <div id="imp-resumen" class="imp-resumen"></div>
+    <fieldset id="imp-campos" class="imp-campos" hidden>
+      <legend>En los productos que ya existen, cambiar:</legend>
+      <label class="check"><input type="checkbox" data-campo="precio" checked> Precio de venta</label>
+      <label class="check"><input type="checkbox" data-campo="costo" checked> Costo</label>
+      <label class="check"><input type="checkbox" data-campo="stock"> Stock (reemplaza el stock por el de la planilla)</label>
+      <label class="check"><input type="checkbox" data-campo="nombre"> Nombre del producto</label>
+      <label class="check"><input type="checkbox" data-campo="otros"> Categoría, unidad, proveedor, ubicación y stock mínimo</label>
+      <div id="imp-stock" class="imp-stock"></div>
+    </fieldset>
   </div>
   <p class="err dlg-err" id="imp-err" role="alert"></p>
   <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" data-cerrar>Cancelar</button><button type="button" class="btn primary" id="imp-ok" disabled>Importar</button></footer>
@@ -651,12 +679,26 @@
           <option value="5">De a $ 5</option>
           <option value="10">De a $ 10</option>
         </select>
+        <small>Los precios bajos se redondean al peso o a centésimos, para que no suban de más.</small>
       </label>
       <label class="check f-wide" for="pr-costo"><input type="checkbox" id="pr-costo"> Cambiar también el costo en el mismo porcentaje</label>
       <p class="nota-edit f-wide" id="pr-prev"></p>
     </div>
     <p class="err dlg-err" id="precios-err" role="alert"></p>
     <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" data-cerrar>Cancelar</button><button class="btn primary" type="submit">Actualizar precios</button></footer>
+  </form>
+</dialog>
+
+<!-- Autorización de un administrador (descuento grande) -->
+<dialog id="dlg-autorizar" class="dlg-chico" aria-labelledby="aut-titulo">
+  <form method="dialog" id="form-autorizar" novalidate>
+    <header class="dlg-h"><h2 id="aut-titulo">Autorización del administrador</h2><p class="sub" id="aut-texto"></p></header>
+    <div class="dlg-b campos-col">
+      <label class="f" for="aut-usuario">Administrador<select id="aut-usuario"></select></label>
+      <label class="f" for="aut-pin">PIN del administrador<input id="aut-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6"></label>
+    </div>
+    <p class="err dlg-err" id="aut-err" role="alert"></p>
+    <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" id="aut-cancel">Cancelar</button><button class="btn primary" type="submit">Autorizar</button></footer>
   </form>
 </dialog>
 
@@ -685,6 +727,26 @@
   </div>
 </div>
 
+<!-- Datos dañados: no se toca nada hasta que se restaure una copia -->
+<div id="danado" class="login bloqueo" hidden>
+  <div class="login-caja">
+    <svg class="login-logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2.5 27.7 9.25v13.5L16 29.5 4.3 22.75V9.25Z" fill="var(--danger)"/><circle cx="16" cy="16" r="5.2" fill="var(--surface)"/></svg>
+    <h1>No se pudieron leer los datos</h1>
+    <p class="bloq-texto" id="danado-texto"></p>
+    <p class="bloq-texto"><strong>No se borró ni se cambió nada.</strong> Para seguir, restaurá el último respaldo. Los respaldos diarios están en <span id="danado-carpeta">Documentos › Stock Ferreteria › Respaldos</span>.</p>
+    <div class="danado-acc">
+      <label class="btn verde btn-grande" for="danado-archivo">Restaurar un respaldo</label>
+      <input type="file" id="danado-archivo" accept=".json,.gz,application/json,application/gzip" hidden>
+      <button class="btn btn-grande" type="button" id="danado-carpeta-btn" hidden>Abrir la carpeta de respaldos</button>
+      <button class="btn" type="button" id="danado-reparar" hidden>Recuperar quitando solo lo dañado</button>
+      <button class="btn ghost" type="button" id="danado-descargar" hidden>Descargar lo guardado (para revisar)</button>
+      <button class="btn ghost" type="button" id="danado-ejemplo" hidden>Borrar lo guardado y empezar con el ejemplo</button>
+    </div>
+    <p class="err" id="danado-err" role="alert"></p>
+    <p class="muted" id="danado-detalle"></p>
+  </div>
+</div>
+
 <!-- Ingreso -->
 <div id="login" class="login">
   <div class="login-caja">
@@ -693,7 +755,24 @@
     <div id="login-paso1" class="login-paso">
       <p class="paso">¿Quién sos? Tocá tu nombre</p>
       <div id="login-usuarios" class="login-usuarios"></div>
+      <button type="button" class="btn ghost sm login-olvide mod-usuarios" id="login-olvide">Me olvidé el PIN del administrador</button>
     </div>
+    <form id="login-rec" class="login-paso login-rec" novalidate hidden>
+      <p class="paso">Restablecer el PIN de un administrador</p>
+      <p class="bloq-texto">Hace falta un <strong>código de recuperación</strong>. Pedíselo a <span id="rec-contacto">tu proveedor</span> y pasale el código de esta computadora.</p>
+      <div class="id-box"><span>Código de esta computadora</span><strong class="mono" id="rec-id"></strong><button class="btn sm" type="button" id="rec-copiar">Copiar</button></div>
+      <label class="f" for="rec-codigo">Código de recuperación<textarea id="rec-codigo" rows="3" spellcheck="false" placeholder="Pegá acá el código que te mandó tu proveedor"></textarea></label>
+      <label class="f" for="rec-usuario">Administrador<select id="rec-usuario"></select></label>
+      <div class="campos">
+        <label class="f" for="rec-pin">PIN nuevo (4 a 6 números)<input id="rec-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6"></label>
+        <label class="f" for="rec-pin2">Repetí el PIN<input id="rec-pin2" type="password" inputmode="numeric" autocomplete="off" maxlength="6"></label>
+      </div>
+      <p class="err" id="rec-err" role="alert"></p>
+      <div class="login-acc">
+        <button type="button" class="btn btn-grande" id="rec-volver">Volver</button>
+        <button class="btn verde btn-grande" type="submit">Restablecer y entrar</button>
+      </div>
+    </form>
     <form id="login-paso2" class="login-paso" novalidate hidden>
       <label class="paso" for="login-pin">Hola, <span id="login-nombre"></span>. Escribí tu PIN</label>
       <input id="login-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6">

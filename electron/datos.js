@@ -59,7 +59,45 @@ class Almacen {
     });
   }
 
-  vacia() { return this.leerConfig.get() === undefined; }
+  /** Vacía de verdad: sin configuración y sin filas. Si falta la configuración pero hay filas, la base está dañada (ver revisar). */
+  vacia() {
+    if (this.leerConfig.get() !== undefined) return false;
+    return TABLAS.every((t) => this.db.prepare(`SELECT 1 FROM ${t} LIMIT 1`).get() === undefined);
+  }
+
+  /**
+   * Busca filas que no se pueden leer (texto que no es un objeto JSON válido).
+   * Devuelve [{ tabla, id }]. Si la base misma está rota, SQLite tira un error.
+   */
+  revisar() {
+    const malas = [];
+    for (const t of TABLAS) {
+      this.db.prepare(`SELECT id FROM ${t} WHERE CASE WHEN json_valid(datos) THEN json_type(datos) <> 'object' ELSE 1 END`).pluck().all()
+        .forEach((id) => malas.push({ tabla: t, id }));
+    }
+    const config = this.leerConfig.get();
+    if (config === undefined) {
+      if (!this.vacia()) malas.push({ tabla: 'config', id: 'datos' });
+    } else if (!this.db.prepare("SELECT CASE WHEN json_valid(@c) THEN json_type(@c) = 'object' ELSE 0 END").pluck().get({ c: config })) {
+      malas.push({ tabla: 'config', id: 'datos' });
+    }
+    return malas;
+  }
+
+  /** Guarda una copia exacta de la base en otro archivo (antes de reparar o restaurar). */
+  copiarA(destino) {
+    this.db.prepare('VACUUM INTO ?').run(destino);
+  }
+
+  /** Quita las filas dañadas. Si la configuración está dañada, se deja vacía (se pierden datos del negocio y cajas). */
+  quitarDanadas(malas) {
+    this.db.transaction(() => {
+      for (const m of malas) {
+        if (m.tabla === 'config') this.ponerConfig.run('{}');
+        else if (TABLAS.includes(m.tabla)) this.st[m.tabla].borrar.run(String(m.id));
+      }
+    })();
+  }
 
   /** Todos los datos como un texto JSON, con la misma forma que usa la pantalla. */
   leerJson() {

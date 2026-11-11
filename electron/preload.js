@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('almacen', {
   elegirCarpetaExtra: () => ipcRenderer.invoke('almacen:elegirCarpetaExtra'),
   quitarCarpetaExtra: () => ipcRenderer.invoke('almacen:quitarCarpetaExtra'),
   respaldarAhora: () => ipcRenderer.invoke('almacen:respaldarAhora'),
+  reparar: () => ipcRenderer.sendSync('almacen:reparar'),
+  marcarDanada: () => ipcRenderer.sendSync('almacen:marcarDanada'),
   // Tamaño de letra: zoom real de la ventana, para que toda la pantalla se acomode
   zoom: (factor) => webFrame.setZoomFactor(Math.min(2, Math.max(0.8, Number(factor) || 1))),
 });

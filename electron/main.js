@@ -23,6 +23,9 @@ app.setPath('userData', path.join(APPDATA, 'Stock Ferreteria'));
 
 let ventana = null;
 let almacen = null;
+// Si la base tiene filas que no se pueden leer, no se escribe nada ni se hacen respaldos
+// hasta que se restaure una copia o se reparen, para no pisar los respaldos buenos.
+let danada = null;
 
 function rutas() {
   const base = app.getPath('userData');
@@ -100,7 +103,7 @@ function copiarAExtra(archivo) {
 
 /** Hace el respaldo del día si todavía no existe (o siempre, si forzar) y lo copia a la carpeta extra. */
 async function hacerRespaldo(forzar = false) {
-  if (respaldando || !almacen) return null;
+  if (respaldando || !almacen || danada) return null;
   respaldando = true;
   try {
     const { respaldos } = rutas();
@@ -137,6 +140,25 @@ function infoRespaldos() {
   };
 }
 
+/** Respaldo al cerrar el programa (sincrónico, porque la app se está cerrando). */
+function respaldoAlCerrar() {
+  if (!almacen || danada || respaldando) return;
+  try {
+    const { respaldos } = rutas();
+    fs.mkdirSync(respaldos, { recursive: true });
+    const archivo = path.join(respaldos, `respaldo_${hoy()}.json.gz`);
+    const texto = almacen.leerJson();
+    if (!texto) return;
+    fs.writeFileSync(archivo + '.tmp', zlib.gzipSync(texto, { level: 3 }));
+    fs.renameSync(archivo + '.tmp', archivo);
+    podar(respaldos);
+    almacen.ponerAjuste('ultimoRespaldo', { fecha: new Date().toISOString(), archivo });
+    copiarAExtra(archivo);
+  } catch (e) {
+    console.error('No se pudo hacer el respaldo al cerrar:', e);
+  }
+}
+
 let respaldoProgramado = null;
 function programarRespaldo() {
   if (respaldoProgramado) return;
@@ -165,11 +187,70 @@ function calcularIdEquipo() {
 /* ---------- Comunicación con la pantalla ---------- */
 
 ipcMain.on('almacen:idEquipo', (e) => { e.returnValue = calcularIdEquipo(); });
+/** Copia la base dañada con otro nombre antes de tocarla. Devuelve la ruta de la copia. */
+function apartarDanada() {
+  const r = rutas();
+  const sello = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const destino = path.join(r.base, `datos-danado-${sello}.sqlite`);
+  try {
+    almacen.copiarA(destino);
+  } catch (e) {
+    // Si SQLite no puede copiarla, se copian los archivos tal cual
+    for (const suf of ['', '-wal', '-shm']) {
+      try { fs.copyFileSync(r.datos + suf, destino + suf); } catch (err) { /* puede no existir */ }
+    }
+  }
+  return destino;
+}
+
 ipcMain.on('almacen:leer', (e) => {
-  try { e.returnValue = almacen.leerJson(); } catch (err) { e.returnValue = null; }
+  try {
+    const malas = almacen.revisar();
+    if (malas.length) {
+      danada = { tipo: 'filas', filas: malas };
+      e.returnValue = { error: 'filas', filas: malas.slice(0, 50), cantidad: malas.length, configDanada: malas.some((m) => m.tabla === 'config'), base: rutas().datos };
+      return;
+    }
+    danada = null;
+    e.returnValue = almacen.leerJson();
+  } catch (err) {
+    danada = { tipo: 'base' };
+    e.returnValue = { error: 'base', detalle: String(err.message || err), base: rutas().datos };
+  }
+});
+ipcMain.on('almacen:marcarDanada', (e) => { danada = danada || { tipo: 'json' }; e.returnValue = null; });
+// Repara quitando solo las filas dañadas, después de guardar una copia de la base como está
+ipcMain.on('almacen:reparar', (e) => {
+  try {
+    if (!danada || danada.tipo !== 'filas') { e.returnValue = { error: 'No hay filas dañadas para quitar.' }; return; }
+    const copia = apartarDanada();
+    almacen.quitarDanadas(danada.filas);
+    const quitadas = danada.filas.length;
+    danada = null;
+    e.returnValue = { ok: true, quitadas, copia };
+  } catch (err) {
+    e.returnValue = { error: String(err.message || err) };
+  }
 });
 ipcMain.on('almacen:cambios', (e, cambios) => {
   try {
+    if (danada) {
+      // Con la base dañada solo se acepta reemplazar todo (restaurar una copia), y antes se aparta la base vieja
+      if (!cambios || !cambios.completo) { e.returnValue = 'Los datos guardados están dañados: restaurá una copia antes de seguir.'; return; }
+      if (danada.tipo === 'base') {
+        // La base misma no se puede leer: se cierra, se renombra y se empieza un archivo nuevo con la copia
+        const r = rutas();
+        const sello = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        try { almacen.cerrar(); } catch (err) { /* puede fallar si está rota */ }
+        for (const suf of ['', '-wal', '-shm']) {
+          try { fs.renameSync(r.datos + suf, path.join(r.base, `datos-danado-${sello}.sqlite${suf}`)); } catch (err) { /* puede no existir */ }
+        }
+        almacen = new Almacen(r.datos);
+      } else {
+        apartarDanada();
+      }
+      danada = null;
+    }
     almacen.aplicar(cambios);
     e.returnValue = null;
     const ult = almacen.ajuste('ultimoRespaldo');
@@ -288,5 +369,6 @@ if (!app.requestSingleInstanceLock()) {
     setTimeout(() => hacerRespaldo(), 8000);
   });
   app.on('window-all-closed', () => app.quit());
+  app.on('before-quit', respaldoAlCerrar);
   app.on('will-quit', () => { if (almacen) { try { almacen.cerrar(); } catch (e) { /* nada */ } almacen = null; } });
 }

@@ -255,6 +255,7 @@ input:focus, select:focus { border-color: var(--accent); outline: none; box-shad
 }
 .prod-btn:hover { border-color: var(--accent); background: var(--box-hover); }
 .prod-btn:disabled { opacity: .55; cursor: not-allowed; }
+.prod-btn.sin-stock { opacity: .7; border-style: dashed; }
 .prod-btn .nom { font-weight: 500; overflow-wrap: anywhere; line-height: 1.35; }
 .prod-btn .fila { display: flex; justify-content: space-between; width: 100%; gap: 8px; font-size: 13.5px; color: var(--muted); }
 .prod-btn .precio { font-family: var(--f-mono); font-weight: 600; color: var(--fg); font-size: 17px; }
@@ -336,6 +337,9 @@ dialog::backdrop { background: var(--backdrop); }
 .imp-b { display: flex; flex-direction: column; gap: 14px; }
 .imp-resumen { display: flex; flex-direction: column; gap: 10px; }
 .imp-resumen:empty { display: none; }
+.imp-campos { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.imp-campos legend { font-weight: 600; padding: 0 4px; }
+.imp-stock:empty { display: none; }
 
 /* Ticket impreso: pensado para impresora térmica de 80 mm, también sale bien en hoja común */
 .solo-impresion { display: none; }
@@ -472,6 +476,16 @@ textarea { width: 100%; resize: vertical; }
 .login-user small { font-size: 14px; font-weight: 500; color: var(--muted); }
 #login-pin { font-size: 30px; letter-spacing: .5em; text-align: center; padding: 14px; font-family: var(--f-mono); }
 .login-acc { display: flex; gap: 10px; flex-wrap: wrap; }
+.login-olvide { align-self: center; }
+.login-rec textarea { font-family: var(--f-mono); font-size: 13px; }
+.login .login-caja { max-height: calc(100vh - 32px); overflow-y: auto; }
+.danado-acc { display: flex; flex-direction: column; gap: 10px; }
+.danado-acc .btn { justify-content: center; text-align: center; }
+#danado-detalle { font-size: 12.5px; overflow-wrap: anywhere; }
+
+/* Aviso de que no se está guardando */
+.banner-error { background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.banner-error strong { color: var(--danger); }
 
 /* Celular y tablet */
 @media (max-width: 960px) {

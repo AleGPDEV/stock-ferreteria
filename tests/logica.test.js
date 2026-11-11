@@ -331,3 +331,153 @@ test('abrir, vender, retirar y cerrar la caja con arqueo', () => {
   // otra caja: el número sigue
   assert.equal(app.abrirCaja(d, 0).caja.numero, 2);
 });
+
+// ---------- Revisión QA #1 ----------
+const XLSX = require('../vendor/xlsx.full.min.js');
+function filasCsv(texto) {
+  const libro = XLSX.read(new TextEncoder().encode(texto), { type: 'array', codepage: 65001, raw: true });
+  return XLSX.utils.sheet_to_json(libro.Sheets[libro.SheetNames[0]], { defval: '' });
+}
+
+test('QA 1: un CSV de Excel en español (punto y coma, coma decimal) se importa bien', () => {
+  const d = app.baseVacia();
+  const filas = filasCsv('Código;Producto;Stock;Costo;Precio\n0012345;Tornillo;1,5;3.490;450,50\nX-2;Pinza;10;100;1.290,00\n');
+  const plan = app.planImportacion(d, filas);
+  assert.equal(plan.nuevos.length, 2);
+  const [t, p] = plan.nuevos;
+  assert.equal(t.codigo, '0012345', 'conserva los ceros del código');
+  assert.equal(t.datos.precio, 450.5);
+  assert.equal(t.datos.costo, 3490);
+  assert.equal(t.datos.stock, 1.5);
+  assert.equal(p.datos.precio, 1290);
+});
+
+test('QA 9: «Cantidad» no se toma como stock; se puede actualizar solo con Código y Precio', () => {
+  const d = base();
+  const plan = app.planImportacion(d, [{ 'Código': 'MAR-16', 'Precio': 700, 'Cantidad': 100 }, { 'Código': 'NO-EXISTE', 'Precio': 5 }]);
+  assert.equal(plan.error, undefined);
+  assert.equal(plan.soloActualiza, true);
+  assert.equal(plan.actualizados.length, 1);
+  assert.equal(plan.nuevos.length, 0);
+  assert.equal(plan.sinProducto, 1);
+  assert.equal(plan.actualizados[0].datos.stock, null);
+  app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+  assert.equal(d.productos[0].precio, 700);
+  assert.equal(d.productos[0].stock, 10);
+  assert.equal(d.productos[0].nombre, 'Martillo 16 oz');
+  assert.equal(d.historialPrecios.length, 1, 'el cambio de precio queda anotado');
+  // sin «Producto» ni «Código» sí es un error
+  assert.match(app.planImportacion(d, [{ Precio: 1 }]).error, /Producto/);
+});
+
+test('QA 9: con las opciones por defecto la lista de un proveedor no pisa nombre ni stock', () => {
+  const d = base();
+  const plan = app.planImportacion(d, [{ 'Código': 'MAR-16', 'Producto': 'MARTILLO C/MANGO 16OZ', 'Stock': 3, 'Costo': 400, 'Precio': 650 }]);
+  assert.deepEqual(app.cambiosStockImportacion(plan), [{ codigo: 'MAR-16', nombre: 'Martillo 16 oz', antes: 10, despues: 3 }]);
+  app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+  const p = d.productos[0];
+  assert.equal(p.nombre, 'Martillo 16 oz');
+  assert.equal(p.stock, 10);
+  assert.equal(p.costo, 400);
+  assert.equal(p.precio, 650);
+  app.aplicarImportacion(d, plan, { ...app.CAMPOS_IMPORTAR, stock: true, nombre: true });
+  assert.equal(p.stock, 3);
+  assert.equal(p.nombre, 'MARTILLO C/MANGO 16OZ');
+});
+
+test('QA 6: el redondeo no dispara los precios baratos', () => {
+  assert.equal(app.precioConAumento(2, 10, 10), 2.2);
+  assert.equal(app.precioConAumento(8, 10, 10), 8.8);
+  assert.equal(app.precioConAumento(3, 10, 5), 3.3);
+  assert.equal(app.precioConAumento(45, 10, 5), 50, 'de 10 o más, al peso');
+  assert.equal(app.precioConAumento(620, 12, 5), 695);
+  assert.equal(app.precioConAumento(1000, 0.4, 10), 1000, 'nunca baja en una suba');
+  assert.equal(app.precioConAumento(1000, -0.4, 10), 1000, 'nunca sube en una bajada');
+  // el cambio real nunca se aleja más de 2,5 puntos (salvo centésimos)
+  for (let precio = 0.5; precio < 3000; precio += 7.3) {
+    for (const paso of [0, 1, 5, 10]) {
+      const nuevo = app.precioConAumento(precio, 10, paso);
+      const real = (nuevo / precio - 1) * 100;
+      assert.ok(Math.abs(real - 10) <= 5.1, `${precio} paso ${paso} → ${nuevo} (${real.toFixed(1)} %)`);
+    }
+  }
+});
+
+test('QA 5: no se cobra un producto con precio 0 o negativo', () => {
+  const d = base();
+  assert.match(app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: -500 }], 'Débito', '').error, /precio/);
+  assert.match(app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 0 }], 'Débito', '').error, /precio/);
+  assert.equal(d.ventas.length, 0);
+});
+
+test('QA 7: un efectivo recibido absurdo (un código escaneado) no se acepta', () => {
+  const d = base();
+  assert.match(app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 620 }], 'Efectivo', 7790001000101).error, /Revisá el efectivo/);
+  assert.equal(app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 620 }], 'Efectivo', 2000).venta.vuelto, 1380);
+});
+
+test('QA 4: el empleado necesita autorización para un descuento mayor al tope', () => {
+  const d = base();
+  const it = [{ productoId: 'a', cantidad: 1, precio: 620 }];
+  const r = app.cobrar(d, it, 'Débito', '', '', undefined, 100, { topeDescuento: 10 });
+  assert.equal(r.autorizar, true);
+  assert.equal(d.ventas.length, 0);
+  assert.ok(app.cobrar(d, it, 'Débito', '', '', undefined, 10, { topeDescuento: 10 }).venta);
+  const v = app.cobrar(d, it, 'Débito', '', '', undefined, 50, { topeDescuento: 10, autorizo: 'Administrador' }).venta;
+  assert.equal(v.descuentoAutorizo, 'Administrador');
+});
+
+test('QA 11: se puede vender sin stock si se confirma, y el stock queda en negativo', () => {
+  const d = base();
+  const it = [{ productoId: 'a', cantidad: 12, precio: 620 }];
+  const r = app.cobrar(d, it, 'Débito', '');
+  assert.match(r.error, /No alcanza/);
+  assert.equal(r.faltan[0].id, 'a');
+  const ok = app.cobrar(d, it, 'Débito', '', '', undefined, 0, { sinStock: true });
+  assert.ok(ok.venta);
+  assert.equal(d.productos[0].stock, -2);
+  assert.equal(app.estado(d.productos[0]), 'sin');
+  assert.deepEqual(ok.venta.sinStock, ['Martillo 16 oz']);
+  // al anular vuelve
+  app.anularVenta(d, ok.venta.id);
+  assert.equal(d.productos[0].stock, 10);
+});
+
+test('QA 3: después de 5 PIN incorrectos hay que esperar', () => {
+  const d = base();
+  const t = 1_000_000;
+  for (let i = 0; i < 4; i++) assert.equal(app.fallarPin(d, 'u1', t), 0);
+  assert.ok(app.fallarPin(d, 'u1', t) > 0);
+  assert.ok(app.esperaPin(d, 'u1', t + 1000) > 0);
+  assert.equal(app.esperaPin(d, 'u1', t + 6 * 60 * 1000), 0);
+  assert.ok(app.fallarPin(d, 'u1', t + 6 * 60 * 1000) > 0, 'otro error después de esperar vuelve a bloquear');
+  app.acertarPin(d, 'u1');
+  assert.equal(app.esperaPin(d, 'u1', t + 6 * 60 * 1000), 0);
+  assert.equal(app.esperaPin(d, 'u2', t), 0);
+});
+
+test('QA 3 y 14: los códigos de recuperación no activan, y los de activación no recuperan', async () => {
+  const { privada, publica } = await clavesDePrueba();
+  const id = 'K7Q2-9XMA';
+  const activacion = await firmar(privada, { v: 1, i: id, h: '2026-12-10', m: 31, f: '2026-11-10' });
+  const rec = await firmar(privada, { v: 1, t: 'rec', i: id, h: '2026-11-17', f: '2026-11-10', n: 'abc' });
+  assert.equal((await app.verificarCodigo(rec, id, '2026-11-10', publica)).motivo, 'es-rec');
+  assert.equal((await app.verificarCodigo(activacion, id, '2026-11-10', publica, 'rec')).motivo, 'no-rec');
+  assert.equal((await app.verificarCodigo(rec, id, '2026-11-10', publica, 'rec')).ok, true);
+  assert.equal((await app.verificarCodigo(rec, id, '2026-11-18', publica, 'rec')).motivo, 'vencido');
+  assert.equal((await app.verificarCodigo(rec, 'AAAA-BBBB', '2026-11-10', publica, 'rec')).motivo, 'equipo');
+});
+
+test('QA 15 y 16: compras sin stock inicial; ganancia sin productos sin costo', () => {
+  const d = base();
+  app.registrar(d, { tipo: 'entrada', productoId: 'a', cantidad: 5, costoUnit: 400, nota: 'Stock inicial', origen: 'inicial' });
+  app.registrar(d, { tipo: 'entrada', productoId: 'a', cantidad: 5, costoUnit: 400, nota: 'Stock inicial (importado)' });
+  app.registrar(d, { tipo: 'entrada', productoId: 'a', cantidad: 2, costoUnit: 400, nota: 'Factura 12' });
+  assert.equal(app.totalCompras(d.movimientos), 800);
+  d.productos[1].costo = 0;
+  const v = app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: 620 }, { productoId: 'b', cantidad: 10, precio: 48 }], 'Débito', '', '', undefined, 10).venta;
+  const g = app.gananciaBruta([v]);
+  assert.equal(g.ganancia, 158); // 620 × 0,9 − 400
+  assert.equal(g.sinCosto, 1);
+  assert.equal(g.vendidoSinCosto, 432);
+});

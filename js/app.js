@@ -84,8 +84,12 @@ function estadoLicencia(lic, hoy, aviso = 7) {
   return { estado: dias < aviso ? 'por-vencer' : 'activa', dias };
 }
 
-/** Comprueba la firma, la computadora y la fecha de un código. No guarda nada. */
-async function verificarCodigo(codigo, id, hoy, clave = CLAVE_PUBLICA) {
+/**
+ * Comprueba la firma, la computadora y la fecha de un código. No guarda nada.
+ * tipo '' = código de activación; tipo 'rec' = código de recuperación (sirve para restablecer el PIN
+ * del administrador o la clave de desarrollador; dura pocos días y se usa una sola vez).
+ */
+async function verificarCodigo(codigo, id, hoy, clave = CLAVE_PUBLICA, tipo = '') {
   const limpio = String(codigo || '').replace(/\s+/g, '');
   const partes = limpio.split('.');
   if (partes.length !== 3 || partes[0] !== PREFIJO_CODIGO) return { ok: false, motivo: 'formato' };
@@ -104,7 +108,8 @@ async function verificarCodigo(codigo, id, hoy, clave = CLAVE_PUBLICA) {
     valida = await sutil.verify({ name: 'ECDSA', hash: 'SHA-256' }, k, firma, cuerpo);
   } catch (e) { valida = false; }
   if (!valida) return { ok: false, motivo: 'firma' };
-  const lic = { i: datos.i, h: datos.h, m: Number(datos.m) || 0, f: datos.f || '', c: datos.c || '', codigo: limpio };
+  if ((datos.t || '') !== tipo) return { ok: false, motivo: tipo === 'rec' ? 'no-rec' : 'es-rec' };
+  const lic = { i: datos.i, h: datos.h, m: Number(datos.m) || 0, f: datos.f || '', c: datos.c || '', t: datos.t || '', codigo: limpio };
   if (normalizarId(lic.i) !== normalizarId(id)) return { ok: false, motivo: 'equipo', lic };
   if (estadoLicencia(lic, hoy).estado === 'vencida') return { ok: false, motivo: 'vencido', lic };
   return { ok: true, lic };
@@ -115,7 +120,10 @@ function mensajeMotivo(r) {
     formato: 'El código está incompleto o tiene un error. Copialo de nuevo, entero.',
     firma: 'Ese código no es válido.',
     equipo: `Ese código es para otra computadora (${r.lic ? r.lic.i : ''}). Esta computadora es ${idEquipo()}.`,
-    vencido: `Ese código ya venció el ${r.lic ? fechaLarga(r.lic.h) : ''}.`,
+    vencido: r.lic && r.lic.t === 'rec' ? 'Ese código de recuperación ya venció. Pedile uno nuevo a tu proveedor.' : `Ese código ya venció el ${r.lic ? fechaLarga(r.lic.h) : ''}.`,
+    'no-rec': 'Ese es un código de activación. Acá hace falta un código de recuperación: pedíselo a tu proveedor.',
+    'es-rec': 'Ese es un código de recuperación, no de activación.',
+    usado: 'Ese código de recuperación ya se usó. Pedile uno nuevo a tu proveedor.',
     'sin-cripto': 'Esta computadora no puede comprobar el código. Probá con la versión instalada del programa.',
   })[r.motivo] || 'No se pudo activar.';
 }
@@ -170,6 +178,17 @@ async function activarCodigo(codigo) {
   return { lic: r.lic };
 }
 
+/** Comprueba un código de recuperación y lo marca como usado. Devuelve { error } o { ok: true }. */
+async function usarCodigoRecuperacion(codigo) {
+  const r = await verificarCodigo(codigo, idEquipo(), isoLocal(), CLAVE_PUBLICA, 'rec');
+  if (!r.ok) return { error: mensajeMotivo(r) };
+  const huella = sha256(r.lic.codigo);
+  db.codigosUsados = Array.isArray(db.codigosUsados) ? db.codigosUsados : [];
+  if (db.codigosUsados.includes(huella)) return { error: mensajeMotivo({ motivo: 'usado' }) };
+  db.codigosUsados = db.codigosUsados.concat(huella).slice(-50);
+  return { ok: true };
+}
+
 function aplicarModulos() {
   MODULOS.forEach((m) => document.body.classList.toggle('sin-' + m.clave, !tieneModulo(m.clave)));
 }
@@ -221,6 +240,27 @@ const ROLES = { admin: 'Administrador', empleado: 'Empleado' };
 const pinValido = (p) => /^\d{4,6}$/.test(String(p));
 const hashPin = (pin, sal) => sha256(`${sal}:${pin}`);
 const verificarPin = (u, pin) => !!u && hashPin(String(pin), u.sal) === u.pin;
+
+/* Límite de intentos de PIN: después de 5 errores seguidos, hay que esperar 5 minutos (y otra vez con cada error más). */
+const INTENTOS_PIN = 5;
+const ESPERA_PIN = 5 * 60 * 1000;
+function esperaPin(d, id, ahora = Date.now()) {
+  const b = (d.intentosPin || {})[id];
+  return b && b.hasta > ahora ? b.hasta - ahora : 0;
+}
+function fallarPin(d, id, ahora = Date.now()) {
+  d.intentosPin = d.intentosPin || {};
+  const b = d.intentosPin[id] || (d.intentosPin[id] = { fallos: 0, hasta: 0 });
+  b.fallos++;
+  if (b.fallos >= INTENTOS_PIN) { b.hasta = ahora + ESPERA_PIN; return ESPERA_PIN; }
+  return 0;
+}
+function acertarPin(d, id) {
+  if (!d.intentosPin || !d.intentosPin[id]) return false;
+  delete d.intentosPin[id];
+  return true;
+}
+const textoEspera = (ms) => (ms > 60000 ? `${Math.ceil(ms / 60000)} minutos` : `${Math.ceil(ms / 1000)} segundos`);
 
 function crearUsuario(nombre, rol, pin, porDefecto = false) {
   const sal = uid();
@@ -346,24 +386,52 @@ function calcularCambios(foto, d, completo = false) {
 let fotoGuardada = null;
 const guardaEnBase = () => escritorio() && typeof window.almacen.cambios === 'function';
 
+// Si los datos guardados existen pero no se pueden leer, no se toca nada: se muestra la pantalla de datos dañados.
+let datosDanados = null;
+
 function cargar() {
+  datosDanados = null;
+  let raw = null;
   try {
-    const raw = escritorio() ? window.almacen.leer() : localStorage.getItem(CLAVE);
-    if (raw) {
-      db = Object.assign(baseVacia(), JSON.parse(raw));
-      fotoGuardada = guardaEnBase() ? fotoDe(db) : null;
-      if (asegurarUsuarios(db)) guardar();
-      return;
+    raw = escritorio() ? window.almacen.leer() : localStorage.getItem(CLAVE);
+  } catch (e) {
+    if (escritorio()) raw = { error: 'base', detalle: String(e.message || e) };
+    // En el navegador sin almacenamiento se usa el ejemplo en memoria
+  }
+  if (raw && typeof raw === 'object') { marcarDanados(raw); return false; }
+  if (raw) {
+    let datos;
+    try { datos = JSON.parse(raw); } catch (e) { datos = null; }
+    if (!datos || typeof datos !== 'object' || !Array.isArray(datos.productos)) {
+      if (escritorio() && window.almacen.marcarDanada) window.almacen.marcarDanada();
+      marcarDanados({ error: 'json', detalle: 'El texto guardado no se puede leer.' });
+      return false;
     }
-  } catch (e) { /* sin almacenamiento: se usa el ejemplo en memoria */ }
+    db = Object.assign(baseVacia(), datos);
+    // Por si se perdió el número de la última venta, nunca se repite uno
+    db.numVenta = Math.max(Number(db.numVenta) || 0, ...db.ventas.map((v) => Number(v.numero) || 0));
+    fotoGuardada = guardaEnBase() ? fotoDe(db) : null;
+    if (asegurarUsuarios(db)) guardar();
+    return true;
+  }
   db = semilla();
   fotoGuardada = null;
   asegurarUsuarios(db);
   guardar();
+  return true;
 }
 
-let avisoErrorGuardado = false;
+function marcarDanados(info) {
+  datosDanados = info;
+  db = baseVacia();
+  asegurarUsuarios(db);
+  fotoGuardada = null;
+}
+
+// Si no se puede guardar, queda un aviso fijo y no se puede cobrar hasta que se arregle
+let errorGuardado = '';
 function guardar(opc = {}) {
+  if (datosDanados && !opc.completo) return false;
   try {
     if (guardaEnBase()) {
       const r = calcularCambios(fotoGuardada, db, !!opc.completo);
@@ -375,13 +443,19 @@ function guardar(opc = {}) {
     } else {
       localStorage.setItem(CLAVE, JSON.stringify(db));
     }
-    avisoErrorGuardado = false;
+    if (errorGuardado) { errorGuardado = ''; avisoGuardado(); }
+    return true;
   } catch (e) {
-    if (!avisoErrorGuardado && typeof toast === 'function') {
-      avisoErrorGuardado = true;
-      toast('No se pudieron guardar los cambios. Descargá una copia de seguridad.');
-    }
+    errorGuardado = String((e && e.message) || e || 'error');
+    avisoGuardado();
+    return false;
   }
+}
+
+function avisoGuardado() {
+  if (typeof document === 'undefined') return;
+  const b = document.getElementById('banner-guardado');
+  if (b) b.hidden = !errorGuardado;
 }
 
 const producto = (id) => db.productos.find((p) => p.id === id);
@@ -416,7 +490,7 @@ function registrar(d, m) {
     delta = q;
     if (Number(m.costoUnit) > 0) p.costo = Number(m.costoUnit);
   } else if (m.tipo === 'salida') {
-    if (q > p.stock + 1e-9) return `No alcanza el stock de ${p.nombre}: hay ${n(p.stock)} ${p.unidad}.`;
+    if (!m.permitirNegativo && q > p.stock + 1e-9) return `No alcanza el stock de ${p.nombre}: hay ${n(p.stock)} ${p.unidad}.`;
     delta = -q;
   } else if (m.tipo === 'ajuste') {
     delta = q - p.stock;
@@ -437,6 +511,7 @@ function registrar(d, m) {
     precioUnit: m.precioUnit ?? p.precio,
     proveedorId: m.proveedorId || '',
     nota: m.nota || '',
+    origen: m.origen || '',
     ventaId: m.ventaId || '',
     usuario: m.usuario || (sesion ? sesion.nombre : ''),
     stockAntes: antes,
@@ -445,25 +520,49 @@ function registrar(d, m) {
   return null;
 }
 
-/** Cobra un ticket: valida stock, descuenta cada línea y guarda la venta. */
-function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0) {
+/** Monto recibido que no tiene sentido (por ejemplo, un código de barras escrito en ese campo). */
+const recibidoRaro = (recibido, total) => recibido > total + 100000 && recibido > total * 10;
+
+/**
+ * Cobra un ticket: valida stock, precios y descuento, descuenta cada línea y guarda la venta.
+ * opc.sinStock: vender aunque no alcance el stock (queda en negativo; se confirma antes en la pantalla).
+ * opc.topeDescuento: descuento máximo sin autorización; opc.autorizo: administrador que autorizó uno mayor.
+ */
+function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0, opc = {}) {
   if (!items.length) return { error: 'El ticket está vacío.' };
   // Validar todo antes de tocar el stock
   const porProducto = {};
   for (const it of items) porProducto[it.productoId] = (porProducto[it.productoId] || 0) + Number(it.cantidad);
+  const faltan = [];
   for (const [id, q] of Object.entries(porProducto)) {
     const p = d.productos.find((x) => x.id === id);
     if (!p) return { error: 'Un producto del ticket ya no existe.' };
     if (!(q > 0)) return { error: `Revisá la cantidad de ${p.nombre}.` };
-    if (q > p.stock + 1e-9) return { error: `No alcanza el stock de ${p.nombre}: hay ${n(p.stock)} ${p.unidad}.` };
+    if (q > p.stock + 1e-9) faltan.push({ id, nombre: p.nombre, hay: p.stock, pide: q, unidad: p.unidad });
+  }
+  for (const it of items) {
+    if (!(Number(it.precio) > 0)) {
+      const p = d.productos.find((x) => x.id === it.productoId);
+      return { error: `${p.nombre} no tiene precio. Poné un precio mayor a 0.` };
+    }
+  }
+  if (faltan.length && !opc.sinStock) {
+    const f = faltan[0];
+    return { error: `No alcanza el stock de ${f.nombre}: hay ${n(f.hay)} ${f.unidad}.`, faltan };
   }
   const pct = Number(descuentoPct) || 0;
   if (pct < 0 || pct > 100) return { error: 'El descuento tiene que estar entre 0 y 100.' };
+  if (opc.topeDescuento != null && pct > opc.topeDescuento && !opc.autorizo) {
+    return { error: `Un descuento de más del ${n(opc.topeDescuento)} % lo tiene que autorizar un administrador.`, autorizar: true };
+  }
   const subtotal = red2(items.reduce((s, it) => s + it.cantidad * it.precio, 0));
   const descuento = red2(subtotal * pct / 100);
   const total = red2(subtotal - descuento);
   if (medio === 'Efectivo' && recibido !== '' && recibido != null && Number(recibido) < total) {
     return { error: `El efectivo recibido no alcanza: faltan ${$u(total - Number(recibido))}.` };
+  }
+  if (medio === 'Efectivo' && recibido !== '' && recibido != null && recibidoRaro(Number(recibido), total)) {
+    return { error: `Revisá el efectivo recibido: ${$u(Number(recibido))} es mucho más que el total.` };
   }
   d.numVenta = (d.numVenta || 0) + 1;
   const venta = {
@@ -477,6 +576,7 @@ function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0) {
     subtotal,
     descuentoPct: pct,
     descuento,
+    descuentoAutorizo: pct > 0 && opc.autorizo ? opc.autorizo : '',
     total,
     medio,
     recibido: medio === 'Efectivo' && recibido !== '' && recibido != null ? Number(recibido) : null,
@@ -487,8 +587,10 @@ function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0) {
     anulada: false,
   };
   for (const it of venta.items) {
-    registrar(d, { tipo: 'salida', productoId: it.productoId, cantidad: it.cantidad, precioUnit: it.precio, nota: `Venta N.º ${venta.numero}`, ventaId: venta.id, fecha: venta.fecha });
+    const sinStock = faltan.some((f) => f.id === it.productoId);
+    registrar(d, { tipo: 'salida', productoId: it.productoId, cantidad: it.cantidad, precioUnit: it.precio, nota: `Venta N.º ${venta.numero}${sinStock ? ' (vendido sin stock)' : ''}`, ventaId: venta.id, fecha: venta.fecha, permitirNegativo: true });
   }
+  if (faltan.length) venta.sinStock = faltan.map((f) => f.nombre);
   d.ventas.push(venta);
   return { venta };
 }
@@ -583,9 +685,40 @@ function productosDeFiltro(d, filtro) {
   return d.productos.filter((p) => (tipo === 'c' ? (p.categoria || '') === valor : p.proveedorId === valor));
 }
 
+/* ---------- Historial de cambios de precio ---------- */
+const MAX_HISTORIAL_PRECIOS = 5000;
+
+/** Anota un cambio de precio de un producto (quién, cuándo, de cuánto a cuánto). */
+function anotarPrecio(d, p, nuevo, motivo = '') {
+  if (!p || red2(nuevo) === red2(p.precio)) return;
+  anotarHistorial(d, { productoId: p.id, codigo: p.codigo, producto: p.nombre, antes: p.precio, despues: red2(nuevo), motivo });
+}
+function anotarHistorial(d, x) {
+  d.historialPrecios = Array.isArray(d.historialPrecios) ? d.historialPrecios : [];
+  d.historialPrecios.push({ id: uid(), fecha: new Date().toISOString(), usuario: sesion ? sesion.nombre : '', ...x });
+  if (d.historialPrecios.length > MAX_HISTORIAL_PRECIOS) d.historialPrecios.splice(0, d.historialPrecios.length - MAX_HISTORIAL_PRECIOS);
+}
+
+/**
+ * Redondea un precio nuevo al más cercano. El paso (1, 5, 10) se usa solo si el precio es al menos
+ * 20 veces el paso, así el redondeo nunca mueve el precio más de un 2,5 %; si no, se redondea a 1
+ * (precios de 10 o más) o a 2 decimales. Un artículo de $ 2 no pasa a $ 10.
+ */
 function redondearPrecio(x, paso) {
   if (!(x > 0)) return 0;
-  return paso > 0 ? Math.max(paso, Math.round(x / paso) * paso) : red2(x);
+  let p = Number(paso) || 0;
+  if (p > 0 && x < p * 20) p = x >= 10 ? 1 : 0;
+  if (!(p > 0)) return red2(x);
+  const r = Math.round(red2(x / p)) * p;
+  return r > 0 ? r : red2(x);
+}
+
+/** Precio nuevo al subir o bajar un porcentaje: redondeado, y sin ir nunca en la dirección contraria. */
+function precioConAumento(precio, pct, paso) {
+  let nuevo = redondearPrecio(precio * (1 + pct / 100), paso);
+  if (pct > 0 && nuevo < precio) nuevo = precio;
+  if (pct < 0 && nuevo > precio) nuevo = precio;
+  return nuevo;
 }
 
 /** Sube o baja precios. op: { redondeo: 0|1|5|10, costo: true para cambiar también el costo }. */
@@ -595,11 +728,15 @@ function actualizarPrecios(d, filtro, pct, op = {}) {
   if (f <= 0) return { error: 'No se puede bajar un 100 % o más.' };
   const lista = productosDeFiltro(d, filtro);
   if (!lista.length) return { error: 'No hay productos en ese grupo.' };
+  let cambiados = 0;
   lista.forEach((p) => {
-    p.precio = redondearPrecio(p.precio * f, op.redondeo || 0);
+    const nuevo = precioConAumento(p.precio, Number(pct), op.redondeo || 0);
+    if (nuevo !== p.precio) cambiados++;
+    p.precio = nuevo;
     if (op.costo) p.costo = red2(p.costo * f);
   });
-  return { cantidad: lista.length };
+  anotarHistorial(d, { masivo: true, producto: `${lista.length} productos (${op.grupo || (filtro ? filtro.slice(2) : 'todos')})`, pct: Number(pct), motivo: `Actualizar precios ${Number(pct) > 0 ? '+' : ''}${n(Number(pct))} %` });
+  return { cantidad: lista.length, cambiados };
 }
 
 /* ---------- Importar productos desde una planilla ---------- */
@@ -611,7 +748,7 @@ const COLUMNAS = {
   unidad: ['unidad', 'um', 'unidad de medida'],
   proveedor: ['proveedor'],
   ubicacion: ['ubicacion', 'estante', 'lugar'],
-  stock: ['stock', 'cantidad', 'existencia', 'existencias'],
+  stock: ['stock', 'stock actual', 'existencia', 'existencias'],
   minimo: ['stock minimo', 'minimo', 'stock min', 'min'],
   costo: ['costo', 'precio de costo', 'costo unitario', 'precio costo'],
   precio: ['precio', 'precio de venta', 'precio venta', 'pvp', 'venta'],
@@ -638,9 +775,13 @@ function parseNum(v) {
   return Number.isFinite(x) ? x : null;
 }
 
-/** Lee las filas de la planilla y arma qué se agregaría y qué se actualizaría, sin tocar los datos. */
+/** Campos que se pueden cambiar en los productos que ya existen al importar. */
+const CAMPOS_IMPORTAR = { precio: true, costo: true, stock: false, nombre: false, otros: false };
+
+/** Lee las filas de la planilla y arma qué se agregaría y qué se actualizaría, sin tocar los datos.
+ *  Si la planilla no tiene columna «Producto» pero sí «Código», solo actualiza productos que ya existen. */
 function planImportacion(d, filas) {
-  const plan = { nuevos: [], actualizados: [], salteadas: 0, columnas: [] };
+  const plan = { nuevos: [], actualizados: [], salteadas: 0, sinProducto: 0, columnas: [], soloActualiza: false };
   const mapa = {};
   const claves = new Set();
   filas.forEach((f) => Object.keys(f).forEach((k) => claves.add(k)));
@@ -649,11 +790,12 @@ function planImportacion(d, filas) {
     for (const [campo, alias] of Object.entries(COLUMNAS)) if (!mapa[campo] && alias.includes(nk)) mapa[campo] = k;
   }
   plan.columnas = Object.values(mapa);
-  if (!mapa.nombre) {
-    plan.error = 'No encontré la columna «Producto». La primera fila de la planilla tiene que tener los títulos de las columnas.';
+  if (!mapa.nombre && !mapa.codigo) {
+    plan.error = 'No encontré la columna «Producto» ni la columna «Código». La primera fila de la planilla tiene que tener los títulos de las columnas.';
     return plan;
   }
-  const porCodigo = new Map(d.productos.map((p) => [p.codigo, p]));
+  plan.soloActualiza = !mapa.nombre;
+  const porCodigo = new Map(d.productos.map((p) => [String(p.codigo).toUpperCase(), p]));
   const porNombre = new Map(d.productos.map((p) => [normal(p.nombre), p]));
   const vistos = new Set();
   let sec = 0;
@@ -662,9 +804,10 @@ function planImportacion(d, filas) {
     const txt = (c) => (mapa[c] ? String(f[mapa[c]] ?? '').trim() : '');
     const num = (c) => (mapa[c] ? parseNum(f[mapa[c]]) : null);
     const nombre = txt('nombre');
-    if (!nombre) { plan.salteadas++; continue; }
     let codigo = txt('codigo').toUpperCase();
+    if (plan.soloActualiza ? !codigo : !nombre) { plan.salteadas++; continue; }
     const existente = codigo ? porCodigo.get(codigo) : porNombre.get(normal(nombre));
+    if (plan.soloActualiza && !existente) { plan.sinProducto++; continue; }
     const clave = existente ? existente.codigo : (codigo || 'n:' + normal(nombre));
     if (vistos.has(clave)) { plan.salteadas++; continue; }
     vistos.add(clave);
@@ -672,7 +815,7 @@ function planImportacion(d, filas) {
       nombre, categoria: txt('categoria'), unidad: txt('unidad') ? normUnidad(txt('unidad')) : '', proveedor: txt('proveedor'),
       ubicacion: txt('ubicacion'), stock: num('stock'), minimo: num('minimo'), costo: num('costo'), precio: num('precio'),
     };
-    if (existente) plan.actualizados.push({ id: existente.id, codigo: existente.codigo, datos });
+    if (existente) plan.actualizados.push({ id: existente.id, codigo: existente.codigo, nombreActual: existente.nombre, stockActual: existente.stock, precioActual: existente.precio, datos });
     else {
       if (!codigo) { codigo = codigoNuevo(); vistos.add(codigo); }
       plan.nuevos.push({ codigo, datos });
@@ -681,7 +824,17 @@ function planImportacion(d, filas) {
   return plan;
 }
 
-function aplicarImportacion(d, plan) {
+/** Cambios de stock que haría la importación en productos que ya existen (para mostrarlos antes de confirmar). */
+function cambiosStockImportacion(plan) {
+  return plan.actualizados
+    .filter((a) => a.datos.stock != null && a.datos.stock >= 0 && red(a.datos.stock) !== a.stockActual)
+    .map((a) => ({ codigo: a.codigo, nombre: a.nombreActual, antes: a.stockActual, despues: red(a.datos.stock) }));
+}
+
+/** campos: qué se cambia en los productos que ya existen ({ precio, costo, stock, nombre, otros }).
+ *  Sin campos, se cambia todo (comportamiento de las versiones anteriores). Los productos nuevos se cargan completos. */
+function aplicarImportacion(d, plan, campos) {
+  const c = campos || { precio: true, costo: true, stock: true, nombre: true, otros: true };
   const provId = (nombre) => {
     if (!nombre) return '';
     let v = d.proveedores.find((x) => normal(x.nombre) === normal(nombre));
@@ -696,21 +849,23 @@ function aplicarImportacion(d, plan) {
       ubicacion: x.ubicacion, costo: pos(x.costo) || 0, precio: pos(x.precio) || 0, minimo: pos(x.minimo) || 0, stock: 0,
     };
     d.productos.push(p);
-    if (x.stock > 0) registrar(d, { tipo: 'entrada', productoId: p.id, cantidad: x.stock, costoUnit: p.costo, proveedorId: p.proveedorId, nota: 'Stock inicial (importado)' });
+    if (x.stock > 0) registrar(d, { tipo: 'entrada', productoId: p.id, cantidad: x.stock, costoUnit: p.costo, proveedorId: p.proveedorId, nota: 'Stock inicial (importado)', origen: 'inicial' });
   }
   for (const act of plan.actualizados) {
     const p = d.productos.find((q) => q.id === act.id);
     if (!p) continue;
     const x = act.datos;
-    p.nombre = x.nombre;
-    if (x.categoria) p.categoria = x.categoria;
-    if (x.unidad) p.unidad = x.unidad;
-    if (x.ubicacion) p.ubicacion = x.ubicacion;
-    if (x.proveedor) p.proveedorId = provId(x.proveedor);
-    if (pos(x.costo) != null) p.costo = x.costo;
-    if (pos(x.precio) != null) p.precio = x.precio;
-    if (pos(x.minimo) != null) p.minimo = x.minimo;
-    if (pos(x.stock) != null && red(x.stock) !== p.stock) registrar(d, { tipo: 'ajuste', productoId: p.id, cantidad: x.stock, nota: 'Corrección por importación' });
+    if (c.nombre && x.nombre) p.nombre = x.nombre;
+    if (c.otros) {
+      if (x.categoria) p.categoria = x.categoria;
+      if (x.unidad) p.unidad = x.unidad;
+      if (x.ubicacion) p.ubicacion = x.ubicacion;
+      if (x.proveedor) p.proveedorId = provId(x.proveedor);
+      if (pos(x.minimo) != null) p.minimo = x.minimo;
+    }
+    if (c.costo && pos(x.costo) != null) p.costo = x.costo;
+    if (c.precio && x.precio > 0 && x.precio !== p.precio) { anotarPrecio(d, p, x.precio, 'Importación'); p.precio = x.precio; }
+    if (c.stock && pos(x.stock) != null && red(x.stock) !== p.stock) registrar(d, { tipo: 'ajuste', productoId: p.id, cantidad: x.stock, nota: 'Corrección por importación' });
   }
   return { nuevos: plan.nuevos.length, actualizados: plan.actualizados.length };
 }
@@ -751,7 +906,7 @@ function semilla() {
   lista.forEach(([codigo, nombre, categoria, unidad, pi, costo, precio, minimo, ubicacion, inicial, salidas], idx) => {
     const p = { id: uid(), codigo, nombre, categoria, unidad, proveedorId: prov[pi].id, costo, precio, stock: 0, minimo, ubicacion };
     d.productos.push(p);
-    registrar(d, { tipo: 'entrada', productoId: p.id, cantidad: inicial, costoUnit: costo, proveedorId: prov[pi].id, nota: 'Stock inicial', fecha: new Date(ahora - 24 * DIA).toISOString() });
+    registrar(d, { tipo: 'entrada', productoId: p.id, cantidad: inicial, costoUnit: costo, proveedorId: prov[pi].id, nota: 'Stock inicial', origen: 'inicial', fecha: new Date(ahora - 24 * DIA).toISOString() });
     salidas.forEach((q, i) => {
       const f = ahora - (19 - i * 5) * DIA - ((idx * 7 + i * 3) % 9) * 36e5;
       registrar(d, { tipo: 'salida', productoId: p.id, cantidad: q, nota: 'Venta mostrador', fecha: new Date(f).toISOString() });
@@ -932,7 +1087,76 @@ function renderPanel() {
 
 /* ---------- Caja ---------- */
 
+const CANTIDAD_MAX = 9999;
 let ticket = []; // { productoId, cantidad, precio }
+
+const topeDescuentoEmpleado = () => {
+  const x = Number((db.negocio || {}).descuentoMaxEmpleado);
+  return Number.isFinite(x) && (db.negocio || {}).descuentoMaxEmpleado !== '' && (db.negocio || {}).descuentoMaxEmpleado != null ? x : 10;
+};
+
+/** Pide el PIN de un administrador. Devuelve el usuario administrador o null si se cancela. */
+function pedirAdmin(texto) {
+  return new Promise((res) => {
+    const d = $('#dlg-autorizar');
+    const admins = db.usuarios.filter((u) => u.rol === 'admin');
+    $('#aut-usuario').innerHTML = admins.map((u) => `<option value="${u.id}">${esc(u.nombre)}</option>`).join('');
+    $('#aut-texto').textContent = texto;
+    $('#aut-pin').value = '';
+    $('#aut-err').textContent = '';
+    let listo = false;
+    const fin = (v) => { if (listo) return; listo = true; d.close(); res(v); };
+    $('#aut-cancel').onclick = () => fin(null);
+    d.oncancel = () => fin(null);
+    $('#form-autorizar').onsubmit = (e) => {
+      e.preventDefault();
+      const u = admins.find((x) => x.id === $('#aut-usuario').value);
+      if (!u) return;
+      const espera = esperaPin(db, u.id);
+      if (espera) { $('#aut-err').textContent = `Demasiados intentos. Esperá ${textoEspera(espera)}.`; return; }
+      if (!verificarPin(u, $('#aut-pin').value)) {
+        const b = fallarPin(db, u.id); guardar();
+        $('#aut-err').textContent = b ? `PIN incorrecto. Esperá ${textoEspera(b)}.` : 'El PIN no es correcto.';
+        $('#aut-pin').value = '';
+        return;
+      }
+      if (acertarPin(db, u.id)) guardar();
+      fin(u);
+    };
+    d.showModal();
+    $('#aut-pin').focus();
+  });
+}
+
+/* Lector de códigos con el cursor en otro campo de la caja (efectivo, descuento, cliente, cantidad):
+ * una tira de 6 o más caracteres escritos muy rápido y seguidos de Enter es un escaneo, no algo que
+ * escribió una persona. Se deja el campo como estaba y el producto se agrega al ticket. */
+const rafaga = { el: null, antes: '', texto: '', ult: 0 };
+const esCampoCaja = (el) => !!el && (el.id === 'caja-recibido' || el.id === 'caja-desc' || el.id === 'caja-cliente' || (el.dataset && el.dataset.cant != null));
+function vigilarEscaner(e) {
+  const el = e.target;
+  if (!esCampoCaja(el)) return;
+  const ahora = (typeof performance !== 'undefined' ? performance : Date).now();
+  if (e.key && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    if (rafaga.el !== el || ahora - rafaga.ult > 60) { rafaga.el = el; rafaga.antes = el.value; rafaga.texto = ''; }
+    rafaga.texto += e.key;
+    rafaga.ult = ahora;
+    return;
+  }
+  if (e.key === 'Enter' && rafaga.el === el && rafaga.texto.length >= 6 && ahora - rafaga.ult < 100) {
+    e.preventDefault();
+    e.stopPropagation();
+    const codigo = rafaga.texto.trim();
+    el.value = rafaga.antes;
+    rafaga.el = null;
+    if (el.id === 'caja-recibido') actualizarVuelto();
+    if (el.id === 'caja-desc') renderTicket();
+    const p = db.productos.find((x) => normal(x.codigo) === normal(codigo));
+    if (p) { agregarAlTicket(p.id); toast(`Se escaneó ${p.nombre} con el cursor en otro campo: se agregó al ticket.`); }
+    else abrirAltaRapida(codigo);
+    $('#caja-buscar').focus();
+  }
+}
 
 function medioActual() { return ($('input[name="medio"]:checked') || {}).value || 'Efectivo'; }
 function descuentoActual() { const x = Number($('#caja-desc').value); return x > 0 && x <= 100 ? x : 0; }
@@ -945,8 +1169,7 @@ function agregarAlTicket(id, cant = 1) {
   const linea = ticket.find((it) => it.productoId === id);
   const enTicket = linea ? linea.cantidad : 0;
   if (enTicket + cant > p.stock + 1e-9) {
-    toast(`No hay más stock de ${p.nombre} (quedan ${n(p.stock)} ${p.unidad}).`);
-    return;
+    toast(p.stock > 0 ? `Ojo: según el programa quedan ${n(p.stock)} ${p.unidad} de ${p.nombre}.` : `Ojo: según el programa no hay stock de ${p.nombre}. Al cobrar se pide confirmar.`);
   }
   if (linea) linea.cantidad = red(linea.cantidad + cant);
   else ticket.push({ productoId: id, cantidad: cant, precio: p.precio });
@@ -1041,7 +1264,7 @@ function renderResultados() {
   lista = lista.slice(0, cajaLimite);
   $('#caja-resultados').innerHTML = lista.length
     ? lista.map((p) => `
-      <button class="prod-btn" type="button" data-agregar="${p.id}" ${p.stock <= 0 ? 'disabled' : ''}>
+      <button class="prod-btn${p.stock <= 0 ? ' sin-stock' : ''}" type="button" data-agregar="${p.id}">
         <span class="nom">${esc(p.nombre)}</span>
         <span class="fila"><span class="mono">${esc(p.codigo)}</span><span class="${estado(p) === 'bajo' ? 'stock-bajo' : ''}">${p.stock <= 0 ? 'Sin stock' : estado(p) === 'bajo' ? `Quedan ${n(p.stock)} ${esc(p.unidad)}` : `Stock ${n(p.stock)} ${esc(p.unidad)}`}</span></span>
         <span class="precio">${$u(p.precio)}</span>
@@ -1208,7 +1431,7 @@ function iniciarAltaRapida() {
     if (db.productos.some((p) => p.codigo === codigo)) return err(`El código ${codigo} ya lo usa otro producto.`);
     const p = { id: uid(), codigo, nombre, categoria: '', unidad: 'unidad', proveedorId: '', ubicacion: '', costo: 0, precio, minimo: 0, stock: 0 };
     db.productos.push(p);
-    registrar(db, { tipo: 'entrada', productoId: p.id, cantidad: stock, costoUnit: 0, nota: 'Agregado desde la venta' });
+    registrar(db, { tipo: 'entrada', productoId: p.id, cantidad: stock, costoUnit: 0, nota: 'Agregado desde la venta', origen: 'inicial' });
     guardar();
     $('#dlg-rapido').close();
     $('#caja-buscar').value = '';
@@ -1276,7 +1499,8 @@ function iniciarCaja() {
     const p = producto(it.productoId);
     let q = Number(e.target.value);
     if (!(q > 0)) { ticket.splice(+i, 1); renderTicket(); return; }
-    if (q > p.stock) { q = p.stock; toast(`Solo hay ${n(p.stock)} ${p.unidad} de ${p.nombre}.`); }
+    if (q > CANTIDAD_MAX) { e.target.value = it.cantidad; toast(`Revisá la cantidad: ${n(q)} es demasiado.`); return; }
+    if (q > p.stock) toast(`Ojo: según el programa hay ${n(p.stock)} ${p.unidad} de ${p.nombre}.`);
     it.cantidad = red(q);
     renderTicket();
   });
@@ -1298,14 +1522,41 @@ function iniciarCaja() {
     if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'radio') return;
     $('#caja-buscar').focus();
   });
+  document.addEventListener('keydown', vigilarEscaner, true);
   $('#medios').addEventListener('change', actualizarVuelto);
   $('#caja-recibido').addEventListener('input', actualizarVuelto);
 
-  $('#btn-cobrar').addEventListener('click', () => {
+  let cobrando = false;
+  $('#btn-cobrar').addEventListener('click', async () => {
+    if (cobrando) return;
     if (!cajaAbierta(db)) { $('#caja-err').textContent = 'Abrí la caja antes de cobrar.'; render(); return; }
-    const r = cobrar(db, ticket, medioActual(), $('#caja-recibido').value, $('#caja-cliente').value.trim(), undefined, Number($('#caja-desc').value) || 0);
-    if (r.error) { $('#caja-err').textContent = r.error; return; }
-    guardar();
+    if (errorGuardado && !guardar({ completo: true })) {
+      $('#caja-err').textContent = 'No se puede cobrar: los cambios no se están guardando. Descargá una copia y avisá a quien instaló el programa.';
+      return;
+    }
+    cobrando = true;
+    try {
+      const opc = { topeDescuento: esAdmin() ? null : topeDescuentoEmpleado() };
+      const intentar = () => cobrar(db, ticket, medioActual(), $('#caja-recibido').value, $('#caja-cliente').value.trim(), undefined, Number($('#caja-desc').value) || 0, opc);
+      let r = intentar();
+      if (r.autorizar) {
+        const adm = await pedirAdmin(`El descuento de ${n(Number($('#caja-desc').value))} % supera el máximo de ${n(opc.topeDescuento)} % para empleados.`);
+        if (!adm) { $('#caja-err').textContent = r.error; return; }
+        opc.autorizo = adm.nombre;
+        r = intentar();
+      }
+      if (r.faltan) {
+        const lista = r.faltan.map((f) => `${f.nombre} (hay ${n(f.hay)}, se venden ${n(f.pide)})`).join('; ');
+        if (!(await confirmar(`Según el programa no alcanza el stock de: ${lista}. ¿Vender igual? El stock va a quedar en negativo; después corregilo contando lo que hay.`, 'Vender igual'))) { $('#caja-err').textContent = r.error; return; }
+        opc.sinStock = true;
+        r = intentar();
+      }
+      if (r.error) { $('#caja-err').textContent = r.error; return; }
+      if (!guardar()) toast('La venta quedó registrada en pantalla pero NO se pudo guardar. Descargá una copia.');
+      cobrarListo(r);
+    } finally { cobrando = false; }
+  });
+  function cobrarListo(r) {
     ticket = [];
     $('#caja-recibido').value = '';
     $('#caja-cliente').value = '';
@@ -1315,7 +1566,7 @@ function iniciarCaja() {
     render();
     const v = r.venta;
     mostrarVentaCobrada(v);
-  });
+  }
 
   $('#ventas-hoy').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-anular]');
@@ -1345,7 +1596,7 @@ function renderProductos() {
   const lista = db.productos
     .filter((p) => !q || normal(`${p.codigo} ${p.nombre} ${p.ubicacion} ${nombreProv(p.proveedorId)}`).includes(q))
     .filter((p) => !cat || p.categoria === cat)
-    .filter((p) => !est || (est === 'reponer' ? estado(p) !== 'ok' : estado(p) === est))
+    .filter((p) => !est || (est === 'reponer' ? estado(p) !== 'ok' : est === 'sincosto' ? !(p.costo > 0) : est === 'sinprecio' ? !(p.precio > 0) : estado(p) === est))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   $('#prod-sub').textContent = `${db.productos.length} productos cargados${lista.length !== db.productos.length ? ` · mostrando ${lista.length}` : ''}.`;
@@ -1382,6 +1633,10 @@ function abrirProducto(id) {
   $('#p-ubicacion').value = p.ubicacion;
   $('#p-costo').value = p.costo;
   $('#p-precio').value = p.precio;
+  // Solo el administrador cambia el precio de un producto que ya existe (queda anotado en el historial)
+  const bloqueaPrecio = !!id && !esAdmin();
+  $('#p-precio').disabled = bloqueaPrecio;
+  $('#p-precio-nota').hidden = !bloqueaPrecio;
   $('#p-minimo').value = p.minimo;
   $('#p-stock').value = '';
   $('#p-stock-wrap').hidden = !!id;
@@ -1427,15 +1682,21 @@ function iniciarProductos() {
     };
     if (!datos.codigo) return err('Escribí un código para el producto.');
     if (!datos.nombre) return err('Escribí el nombre del producto.');
+    const actual = editandoProd ? producto(editandoProd) : null;
+    if (actual && !esAdmin()) { datos.precio = actual.precio; datos.costo = actual.costo; }
+    if (!actual && !esAdmin()) datos.costo = 0;
+    if (!(datos.precio > 0)) return err('Escribí el precio de venta (mayor a 0).');
+    if (datos.costo < 0 || datos.minimo < 0) return err('El costo y el stock mínimo no pueden ser negativos.');
     if (db.productos.some((p) => p.codigo === datos.codigo && p.id !== editandoProd)) return err(`El código ${datos.codigo} ya lo usa otro producto.`);
-    if (editandoProd) {
-      Object.assign(producto(editandoProd), datos);
+    if (actual) {
+      anotarPrecio(db, actual, datos.precio, 'Editar producto');
+      Object.assign(actual, datos);
       toast('Producto guardado.');
     } else {
       const p = { id: uid(), ...datos, stock: 0 };
       db.productos.push(p);
       const ini = Number($('#p-stock').value);
-      if (ini > 0) registrar(db, { tipo: 'entrada', productoId: p.id, cantidad: ini, costoUnit: datos.costo, proveedorId: datos.proveedorId, nota: 'Stock inicial' });
+      if (ini > 0) registrar(db, { tipo: 'entrada', productoId: p.id, cantidad: ini, costoUnit: datos.costo, proveedorId: datos.proveedorId, nota: 'Stock inicial', origen: 'inicial' });
       toast(`Producto agregado: ${p.nombre}.`);
     }
     guardar();
@@ -1464,7 +1725,7 @@ function abrirMovRapido(tipo, id) {
   $('#qm-sub').textContent = `${p.nombre} · stock actual ${n(p.stock)} ${p.unidad}`;
   $('#qm-cant').value = tipo === 'entrada' && p.stock <= p.minimo ? red(Math.max(p.minimo * 2 - p.stock, 1)) : '';
   $('#qm-costo').value = p.costo;
-  $('#qm-costo-wrap').hidden = tipo !== 'entrada';
+  $('#qm-costo-wrap').hidden = tipo !== 'entrada' || !esAdmin();
   $('#qm-nota').value = '';
   $('#qm-nota').placeholder = tipo === 'entrada' ? 'Ej.: Factura A-1234' : 'Ej.: Rotura, uso interno';
   $('#qm-ok').textContent = tipo === 'entrada' ? 'Sumar al stock' : 'Restar del stock';
@@ -1480,7 +1741,7 @@ function iniciarMovRapido() {
     const p = producto(movRapido.id);
     const err = registrar(db, {
       tipo: movRapido.tipo, productoId: p.id, cantidad: $('#qm-cant').value,
-      costoUnit: $('#qm-costo').value, proveedorId: movRapido.tipo === 'entrada' ? p.proveedorId : '', nota: $('#qm-nota').value.trim(),
+      costoUnit: esAdmin() ? $('#qm-costo').value : '', proveedorId: movRapido.tipo === 'entrada' ? p.proveedorId : '', nota: $('#qm-nota').value.trim(),
     });
     if (err) { $('#qm-err').textContent = err; return; }
     guardar();
@@ -1507,7 +1768,7 @@ function tipoForm() { return ($('input[name="tipo"]:checked') || {}).value || 'e
 
 function actualizarFormMov() {
   const t = tipoForm();
-  $$('.solo-entrada').forEach((el) => { el.hidden = t !== 'entrada'; });
+  $$('.solo-entrada').forEach((el) => { el.hidden = t !== 'entrada' || (el.classList.contains('solo-admin') && !esAdmin()); });
   $('#mov-cant-label').textContent = { entrada: '¿Cuántos llegaron?', salida: '¿Cuántos sacás?', ajuste: '¿Cuántos contaste?' }[t];
   $('#mov-submit').textContent = { entrada: 'Sumar al stock', salida: 'Restar del stock', ajuste: 'Corregir el stock' }[t];
   $('#mov-submit').className = 'btn ' + { entrada: 'verde', salida: 'rojo', ajuste: 'primary' }[t];
@@ -1674,7 +1935,7 @@ function iniciarMovimientos() {
     const p = producto($('#mov-prod').value);
     const err = registrar(db, {
       tipo, productoId: $('#mov-prod').value, cantidad: $('#mov-cant').value === '' ? NaN : $('#mov-cant').value,
-      costoUnit: $('#mov-costo').value, proveedorId: tipo === 'entrada' ? $('#mov-prov').value : '', nota: $('#mov-nota').value.trim(),
+      costoUnit: esAdmin() ? $('#mov-costo').value : '', proveedorId: tipo === 'entrada' ? $('#mov-prov').value : '', nota: $('#mov-nota').value.trim(),
     });
     if (err) { $('#mov-err').textContent = err; return; }
     $('#mov-err').textContent = '';
@@ -1760,21 +2021,60 @@ function ventasPeriodo() {
   return db.ventas.filter((v) => { const t = Date.parse(v.fecha); return t >= a && t <= b; });
 }
 
+/** Ganancia de las ventas, sin contar los productos que no tienen costo (darían 100 % de ganancia). */
+function gananciaBruta(ventas) {
+  let ganancia = 0, vendidoSinCosto = 0;
+  const sinCosto = new Set();
+  ventas.forEach((v) => {
+    const factor = v.subtotal > 0 ? v.total / v.subtotal : 1; // reparte el descuento entre los productos
+    v.items.forEach((it) => {
+      const neto = it.subtotal * factor;
+      if (it.costo > 0) ganancia += neto - it.cantidad * it.costo;
+      else { vendidoSinCosto += neto; sinCosto.add(it.productoId); }
+    });
+  });
+  return { ganancia: red2(ganancia), vendidoSinCosto: red2(vendidoSinCosto), sinCosto: sinCosto.size };
+}
+
+/** Lo que entró por compras: sin stock inicial, importaciones, altas desde la venta ni anulaciones. */
+const esCarga = (m) => m.origen === 'inicial' || /^(Stock inicial|Agregado desde la venta)/.test(m.nota || '');
+function totalCompras(movs) {
+  return red2(movs.filter((m) => m.tipo === 'entrada' && !m.ventaId && !esCarga(m)).reduce((s, m) => s + m.cantidad * m.costoUnit, 0));
+}
+
+function cambiosPrecioPeriodo() {
+  const a = inicioDia($('#rep-desde').value), b = finDia($('#rep-hasta').value);
+  return (db.historialPrecios || []).filter((h) => { const t = Date.parse(h.fecha); return t >= a && t <= b; }).reverse();
+}
+
+function renderCambiosPrecio() {
+  const lista = cambiosPrecioPeriodo();
+  $('#rep-precios').innerHTML = lista.length
+    ? `<div class="table-wrap"><table class="tabla"><thead><tr><th>Fecha</th><th>Producto</th><th class="num">Antes</th><th class="num">Ahora</th><th>Quién</th></tr></thead>
+      <tbody>${lista.slice(0, 200).map((h) => `<tr><td class="num">${fechaHora(h.fecha)}</td>
+        <td><div class="nom">${esc(h.producto)}</div><div class="meta">${esc(h.motivo || '')}${h.codigo ? ` · <span class="mono">${esc(h.codigo)}</span>` : ''}</div></td>
+        <td class="num">${h.masivo ? '—' : $u(h.antes)}</td><td class="num">${h.masivo ? '—' : `<strong>${$u(h.despues)}</strong>`}</td><td>${esc(h.usuario || '')}</td></tr>`).join('')}
+      ${lista.length > 200 ? `<tr><td colspan="5" class="muted">… y ${lista.length - 200} más (exportá a Excel para verlos todos)</td></tr>` : ''}</tbody></table></div>`
+    : '<p class="vacio">No hubo cambios de precio en este período.</p>';
+}
+
 function renderReportes() {
   renderUsuarios();
+  renderCambiosPrecio();
   renderCierresCaja();
   renderRespaldoExtra();
   if (!$('#form-negocio').contains(document.activeElement)) {
     ['nombre', 'direccion', 'telefono', 'rut', 'pie'].forEach((k) => { $('#n-' + k).value = (db.negocio || {})[k] || ''; });
+    $('#n-descmax').value = topeDescuentoEmpleado();
   }
   // Período
   const ventas = ventasPeriodo();
   const validas = ventas.filter((v) => !v.anulada);
   const total = validas.reduce((s, v) => s + v.total, 0);
-  const costoVendido = validas.reduce((s, v) => s + v.items.reduce((t, it) => t + it.cantidad * (it.costo || 0), 0), 0);
+  const g = gananciaBruta(validas);
   const a = inicioDia($('#rep-desde').value), b = finDia($('#rep-hasta').value);
   const movs = db.movimientos.filter((m) => { const t = Date.parse(m.fecha); return t >= a && t <= b; });
-  const compras = movs.filter((m) => m.tipo === 'entrada' && !m.ventaId).reduce((s, m) => s + m.cantidad * m.costoUnit, 0);
+  const compras = totalCompras(movs);
   const porMedio = {};
   validas.forEach((v) => { porMedio[v.medio] = (porMedio[v.medio] || 0) + v.total; });
   const masVendidos = {};
@@ -1789,9 +2089,11 @@ function renderReportes() {
     <div class="resumen">
       <div><div class="lbl">Ventas</div><div class="val">${validas.length}</div></div>
       <div><div class="lbl">Total vendido</div><div class="val">${$u(total)}</div></div>
-      <div><div class="lbl">Ganancia bruta</div><div class="val">${$u(total - costoVendido)}</div></div>
+      <div><div class="lbl">Ganancia bruta</div><div class="val">${$u(g.ganancia)}</div></div>
       <div><div class="lbl">Compras</div><div class="val">${$u(compras)}</div></div>
     </div>
+    ${g.sinCosto ? `<p class="nota-edit">La ganancia no cuenta ${$u(g.vendidoSinCosto)} vendidos de ${g.sinCosto} producto${g.sinCosto === 1 ? '' : 's'} sin costo cargado. Cargales el costo (en Productos, filtro «Sin costo») para que la ganancia sea exacta.</p>` : ''}
+    <p class="muted">Compras: mercadería que llegó en el período. No incluye el stock inicial ni lo importado de una planilla.</p>
     ${Object.keys(porMedio).length ? `<p class="subt">Por medio de pago</p>
       <ul class="lista">${Object.entries(porMedio).sort((x, y) => y[1] - x[1]).map(([m, t]) => `<li><span>${esc(m)}</span><span class="num">${$u(t)}</span></li>`).join('')}</ul>` : ''}
     ${top.length ? `<p class="subt">Más vendidos</p>
@@ -1911,6 +2213,10 @@ function exportar(tipo) {
         'Ingresos': r.ingresos, 'Retiros': r.retiros, 'Debería haber': r.esperado, 'Se contó': c.cerrada ? c.contado : '', 'Diferencia': c.cerrada ? c.diferencia : '', 'Nota': c.nota || '',
       };
     }), 'Cierres de caja', 'cierres_de_caja');
+  } else if (tipo === 'precios') {
+    descargarExcel(cambiosPrecioPeriodo().map((h) => ({
+      'Fecha': f(h.fecha), 'Usuario': h.usuario || '', 'Código': h.codigo || '', 'Producto': h.producto, 'Precio antes': h.masivo ? '' : h.antes, 'Precio nuevo': h.masivo ? '' : h.despues, 'Motivo': h.motivo || '',
+    })), 'Cambios de precio', 'cambios_de_precio');
   } else if (tipo === 'ventas') {
     const filas = [];
     ventasPeriodo().forEach((v) => v.items.forEach((it) => filas.push({
@@ -2057,28 +2363,53 @@ function iniciarLetra() {
 /* ---------- Importar desde Excel ---------- */
 
 let planImp = null;
+const MAX_PLANILLA = 15 * 1048576; // planillas más grandes no son de productos y pueden trabar el programa
+
+const camposImportar = () => {
+  const c = {};
+  $$('#imp-campos [data-campo]').forEach((x) => { c[x.dataset.campo] = x.checked; });
+  return c;
+};
+
+function mostrarCambiosStock() {
+  const caja = $('#imp-stock');
+  if (!planImp || planImp.error || !camposImportar().stock) { caja.innerHTML = ''; return; }
+  const cambios = cambiosStockImportacion(planImp);
+  caja.innerHTML = cambios.length
+    ? `<p class="nota-edit">Se va a cambiar el stock de <strong>${cambios.length} producto${cambios.length === 1 ? '' : 's'}</strong>. Revisá que la columna sea el stock real y no la cantidad por paquete.</p>
+      <div class="table-wrap"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Ahora</th><th class="num">Queda</th></tr></thead>
+      <tbody>${cambios.slice(0, 50).map((c) => `<tr><td>${esc(c.nombre)}<div class="meta mono">${esc(c.codigo)}</div></td><td class="num">${n(c.antes)}</td><td class="num"><strong>${n(c.despues)}</strong></td></tr>`).join('')}
+      ${cambios.length > 50 ? `<tr><td colspan="3" class="muted">… y ${cambios.length - 50} más</td></tr>` : ''}</tbody></table></div>`
+    : '<p class="muted">La planilla no cambia el stock de ningún producto que ya existe.</p>';
+}
 
 function mostrarPlan(nombreArchivo) {
   const r = $('#imp-resumen');
   $('#imp-ok').disabled = true;
+  $('#imp-campos').hidden = true;
   if (!planImp || planImp.error) { $('#imp-err').textContent = (planImp && planImp.error) || ''; r.innerHTML = ''; return; }
   $('#imp-err').textContent = '';
   const total = planImp.nuevos.length + planImp.actualizados.length;
-  if (!total) { $('#imp-err').textContent = 'La planilla no tiene productos para importar.'; r.innerHTML = ''; return; }
+  if (!total) { $('#imp-err').textContent = planImp.sinProducto ? `Ningún código de la planilla está cargado (${planImp.sinProducto} filas). Para agregar productos nuevos hace falta la columna «Producto».` : 'La planilla no tiene productos para importar.'; r.innerHTML = ''; return; }
   const muestra = planImp.nuevos.concat(planImp.actualizados).slice(0, 4);
   r.innerHTML = `
     <p><strong>${esc(nombreArchivo)}</strong></p>
     <ul class="lista">
       <li><span>Productos nuevos que se agregan</span><strong>${planImp.nuevos.length}</strong></li>
       <li><span>Productos que ya existen y se actualizan</span><strong>${planImp.actualizados.length}</strong></li>
-      ${planImp.salteadas ? `<li><span>Filas que se saltean (sin nombre o repetidas)</span><strong>${planImp.salteadas}</strong></li>` : ''}
+      ${planImp.sinProducto ? `<li><span>Códigos que no están cargados (se saltean)</span><strong>${planImp.sinProducto}</strong></li>` : ''}
+      ${planImp.salteadas ? `<li><span>Filas que se saltean (vacías o repetidas)</span><strong>${planImp.salteadas}</strong></li>` : ''}
     </ul>
-    <p class="muted">Columnas reconocidas: ${planImp.columnas.map(esc).join(', ')}.</p>
+    <p class="muted">Columnas reconocidas: ${planImp.columnas.map(esc).join(', ')}.${planImp.soloActualiza ? ' Sin columna «Producto»: solo se actualizan productos que ya existen.' : ''}</p>
     <div class="table-wrap"><table class="tabla"><thead><tr><th>Código</th><th>Producto</th><th class="num">Stock</th><th class="num">Precio</th></tr></thead>
-      <tbody>${muestra.map((m) => `<tr><td class="mono">${esc(m.codigo)}</td><td>${esc(m.datos.nombre)}</td><td class="num">${m.datos.stock == null ? '—' : n(m.datos.stock)}</td><td class="num">${m.datos.precio == null ? '—' : $u(m.datos.precio)}</td></tr>`).join('')}
+      <tbody>${muestra.map((m) => `<tr><td class="mono">${esc(m.codigo)}</td><td>${esc(m.datos.nombre || m.nombreActual || '')}</td><td class="num">${m.datos.stock == null ? '—' : n(m.datos.stock)}</td><td class="num">${m.datos.precio == null ? '—' : $u(m.datos.precio)}</td></tr>`).join('')}
       ${total > muestra.length ? `<tr><td colspan="4" class="muted">… y ${total - muestra.length} más</td></tr>` : ''}</tbody></table></div>
-    ${planImp.actualizados.length ? '<p class="muted">En los productos que ya existen, si la planilla trae otro stock, se corrige a ese número.</p>' : ''}
     ${db.ejemplo ? '<p class="nota-edit">Estás con los datos de ejemplo: lo importado se va a mezclar con ellos. Si no querés eso, cancelá y tocá primero «Empezar de cero».</p>' : ''}`;
+  if (planImp.actualizados.length) {
+    $$('#imp-campos [data-campo]').forEach((x) => { x.checked = !!CAMPOS_IMPORTAR[x.dataset.campo]; });
+    $('#imp-campos').hidden = false;
+    mostrarCambiosStock();
+  }
   $('#imp-ok').disabled = false;
 }
 
@@ -2087,6 +2418,7 @@ function iniciarImportacion() {
     planImp = null;
     $('#imp-resumen').innerHTML = '';
     $('#imp-err').textContent = '';
+    $('#imp-campos').hidden = true;
     $('#imp-ok').disabled = true;
     $('#dlg-import').showModal();
   });
@@ -2098,10 +2430,17 @@ function iniciarImportacion() {
     const file = e.target.files[0];
     e.target.value = '';
     if (!file) return;
+    if (file.size > MAX_PLANILLA) {
+      planImp = { error: `La planilla pesa ${n(Math.round(file.size / 1048576))} MB. El máximo es ${MAX_PLANILLA / 1048576} MB: dejá solo la hoja con los productos.` };
+      mostrarPlan(file.name);
+      return;
+    }
     const lector = new FileReader();
     lector.onload = () => {
       try {
-        const libro = XLSX.read(new Uint8Array(lector.result), { type: 'array', codepage: 65001 });
+        // raw: los números de un .csv llegan como texto y los lee parseNum, que entiende "1.290,50" (formato uruguayo)
+        // y conserva los ceros de los códigos ("0012345"). En un .xlsx no cambia nada.
+        const libro = XLSX.read(new Uint8Array(lector.result), { type: 'array', codepage: 65001, raw: true });
         const filas = XLSX.utils.sheet_to_json(libro.Sheets[libro.SheetNames[0]], { defval: '' });
         planImp = planImportacion(db, filas);
       } catch (err) {
@@ -2111,9 +2450,10 @@ function iniciarImportacion() {
     };
     lector.readAsArrayBuffer(file);
   });
+  $$('#imp-campos [data-campo]').forEach((x) => x.addEventListener('change', mostrarCambiosStock));
   $('#imp-ok').addEventListener('click', () => {
     if (!planImp || planImp.error) return;
-    const r = aplicarImportacion(db, planImp);
+    const r = aplicarImportacion(db, planImp, camposImportar());
     planImp = null;
     guardar();
     $('#dlg-import').close();
@@ -2139,9 +2479,19 @@ function vistaPreviaPrecios() {
   const prev = $('#pr-prev');
   if (!lista.length) { prev.textContent = 'No hay productos en ese grupo.'; return; }
   if (!o.pct || o.pct <= -100) { prev.textContent = `${lista.length} productos. Escribí el porcentaje para ver un ejemplo.`; return; }
-  const p = lista.find((x) => x.precio > 0) || lista[0];
-  const nuevo = redondearPrecio(p.precio * (1 + o.pct / 100), o.redondeo);
-  prev.innerHTML = `Se ${o.pct > 0 ? 'suben' : 'bajan'} <strong>${lista.length} productos</strong>. Ejemplo: ${esc(p.nombre)} pasa de ${$u(p.precio)} a <strong>${$u(nuevo)}</strong>.`;
+  const conPrecio = lista.filter((x) => x.precio > 0);
+  const p = conPrecio[0] || lista[0];
+  const cambios = conPrecio.map((x) => ({ x, nuevo: precioConAumento(x.precio, o.pct, o.redondeo) }))
+    .map((c) => ({ ...c, real: (c.nuevo / c.x.precio - 1) * 100 }));
+  const reales = cambios.map((c) => c.real);
+  const min = Math.min(...reales), max = Math.max(...reales);
+  const lejos = cambios.filter((c) => Math.abs(c.real - o.pct) > 2);
+  const fmt = (v) => `${v > 0 ? '+' : ''}${n(Math.round(v * 10) / 10)} %`;
+  const ej = cambios.length ? cambios[0] : null;
+  prev.innerHTML = `Se ${o.pct > 0 ? 'suben' : 'bajan'} <strong>${lista.length} productos</strong>.`
+    + (ej ? ` Ejemplo: ${esc(p.nombre)} pasa de ${$u(p.precio)} a <strong>${$u(ej.nuevo)}</strong>.` : '')
+    + (cambios.length ? `<br>Cambio real con el redondeo: entre <strong>${fmt(min)}</strong> y <strong>${fmt(max)}</strong>.` : '')
+    + (lejos.length ? `<br><span class="stock-bajo">${lejos.length} producto${lejos.length === 1 ? '' : 's'} cambia${lejos.length === 1 ? '' : 'n'} más de 2 puntos distinto de lo pedido (casi siempre artículos muy baratos), por ejemplo ${esc(lejos[0].x.nombre)}: ${$u(lejos[0].x.precio)} → ${$u(lejos[0].nuevo)}.</span>` : '');
 }
 
 function iniciarPrecios() {
@@ -2166,7 +2516,8 @@ function iniciarPrecios() {
     const cant = productosDeFiltro(db, o.filtro).length;
     if (!o.pct) { $('#precios-err').textContent = 'Escribí un porcentaje, por ejemplo 10.'; return; }
     if (!(await confirmar(`¿${o.pct > 0 ? 'Subir' : 'Bajar'} un ${n(Math.abs(o.pct))} % el precio de ${cant} productos?`, 'Sí, actualizar'))) return;
-    const r = actualizarPrecios(db, o.filtro, o.pct, o);
+    const sel = $('#pr-filtro');
+    const r = actualizarPrecios(db, o.filtro, o.pct, { ...o, grupo: sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '' });
     if (r.error) { $('#precios-err').textContent = r.error; return; }
     guardar();
     $('#dlg-precios').close();
@@ -2182,6 +2533,8 @@ function iniciarNegocio() {
     e.preventDefault();
     db.negocio = {};
     ['nombre', 'direccion', 'telefono', 'rut', 'pie'].forEach((k) => { db.negocio[k] = $('#n-' + k).value.trim(); });
+    const dm = $('#n-descmax').value.trim();
+    if (dm !== '') db.negocio.descuentoMaxEmpleado = Math.min(100, Math.max(0, Number(dm) || 0));
     guardar();
     render();
     toast('Datos del negocio guardados.');
@@ -2204,6 +2557,7 @@ function mostrarLogin() {
     </button>`).join('');
   $('#login-paso1').hidden = false;
   $('#login-paso2').hidden = true;
+  $('#login-rec').hidden = true;
   $('#login').hidden = false;
   const primero = $('#login-usuarios .login-user');
   if (primero) primero.focus();
@@ -2253,13 +2607,49 @@ function iniciarLogin() {
     e.preventDefault();
     const pin = $('#login-pin').value;
     if (!pin) { $('#login-err').textContent = 'Escribí tu PIN.'; return; }
+    const espera = esperaPin(db, loginUsuario.id);
+    if (espera) { $('#login-err').textContent = `Demasiados intentos. Esperá ${textoEspera(espera)} y probá de nuevo.`; $('#login-pin').value = ''; return; }
     if (!verificarPin(loginUsuario, pin)) {
-      $('#login-err').textContent = 'El PIN no es correcto. Probá de nuevo.';
+      const bloq = fallarPin(db, loginUsuario.id);
+      guardar();
+      $('#login-err').textContent = bloq ? `PIN incorrecto. Por seguridad, esperá ${textoEspera(bloq)} antes de volver a probar.` : 'El PIN no es correcto. Probá de nuevo.';
       $('#login-pin').value = '';
       $('#login-pin').focus();
       return;
     }
+    if (acertarPin(db, loginUsuario.id)) guardar();
     entrar(loginUsuario);
+  });
+  $('#login-olvide').addEventListener('click', () => {
+    const admins = db.usuarios.filter((u) => u.rol === 'admin');
+    $('#rec-usuario').innerHTML = admins.map((u) => `<option value="${u.id}">${esc(u.nombre)}</option>`).join('');
+    $('#rec-contacto').innerHTML = contactoCorto();
+    $('#rec-id').textContent = idEquipo();
+    ['#rec-codigo', '#rec-pin', '#rec-pin2'].forEach((x) => { $(x).value = ''; });
+    $('#rec-err').textContent = '';
+    $('#login-paso1').hidden = true;
+    $('#login-rec').hidden = false;
+    $('#rec-codigo').focus();
+  });
+  $('#rec-volver').addEventListener('click', mostrarLogin);
+  $('#rec-copiar').addEventListener('click', () => copiarTexto(idEquipo(), 'Código de la computadora copiado.'));
+  ['#rec-pin', '#rec-pin2'].forEach((sel) => $(sel).addEventListener('input', () => { $(sel).value = $(sel).value.replace(/\D/g, '').slice(0, 6); }));
+  $('#login-rec').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = (t) => { $('#rec-err').textContent = t; };
+    const u = db.usuarios.find((x) => x.id === $('#rec-usuario').value && x.rol === 'admin');
+    if (!u) return err('Elegí el administrador.');
+    const pin = $('#rec-pin').value;
+    if (!/^\d{4,6}$/.test(pin)) return err('El PIN tiene que tener de 4 a 6 números.');
+    if (pin !== $('#rec-pin2').value) return err('Los dos PIN no coinciden.');
+    const r = await usarCodigoRecuperacion($('#rec-codigo').value);
+    if (r.error) return err(r.error);
+    const g = guardarUsuario(db, { nombre: u.nombre, rol: 'admin', pin }, u.id);
+    if (g.error) return err(g.error);
+    acertarPin(db, u.id);
+    guardar();
+    toast(`PIN de ${u.nombre} restablecido.`);
+    entrar(g.usuario);
   });
   $('#btn-salir').addEventListener('click', () => { devAbierto = false; arrancar(); });
   $('#banner-pin-ir').addEventListener('click', () => {
@@ -2371,7 +2761,85 @@ function mostrarBloqueo(r) {
   $('#bloqueo').hidden = false;
 }
 
+/* ---------- Datos dañados ---------- */
+
+function mostrarDanado() {
+  const i = datosDanados || {};
+  sesion = null;
+  $$('dialog[open]').forEach((d) => d.close());
+  $('#login').hidden = true;
+  $('#bloqueo').hidden = true;
+  const textos = {
+    filas: `Hay ${i.cantidad === 1 ? 'un dato' : `${i.cantidad || 'algunos'} datos`} guardado${i.cantidad === 1 ? '' : 's'} que no se ${i.cantidad === 1 ? 'puede' : 'pueden'} leer. Puede pasar por un corte de luz o un problema del disco.`,
+    base: 'El archivo de la base de datos no se puede abrir. Puede pasar por un corte de luz o un problema del disco.',
+    json: 'Los datos guardados no se pueden leer. Puede pasar por un corte de luz o un problema del disco.',
+  };
+  $('#danado-texto').textContent = textos[i.error] || textos.json;
+  const det = [];
+  if (i.filas && i.filas.length) det.push('Dañado: ' + i.filas.slice(0, 8).map((f) => `${f.tabla} ${f.id}`).join(', ') + (i.cantidad > 8 ? '…' : ''));
+  if (i.detalle) det.push(i.detalle);
+  if (i.base) det.push('Base: ' + i.base);
+  $('#danado-detalle').textContent = det.join(' · ');
+  const esc_ = escritorio();
+  $('#danado-carpeta-btn').hidden = !esc_ || !window.almacen.abrirRespaldos;
+  if (esc_) { try { $('#danado-carpeta').textContent = window.almacen.info().respaldos; } catch (e) { /* nada */ } }
+  $('#danado-reparar').hidden = !(esc_ && i.error === 'filas' && window.almacen.reparar);
+  $('#danado-descargar').hidden = esc_;
+  $('#danado-ejemplo').hidden = esc_;
+  $('#danado-err').textContent = '';
+  $('#danado').hidden = false;
+}
+
+function iniciarDanado() {
+  $('#danado-archivo').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    (async () => {
+      let datos;
+      try { datos = JSON.parse(await leerCopia(file)); } catch (err) { $('#danado-err').textContent = 'Ese archivo no es una copia válida. Probá con el respaldo del día anterior.'; return; }
+      if (!datos || !Array.isArray(datos.productos) || !Array.isArray(datos.movimientos)) { $('#danado-err').textContent = 'Ese archivo no es una copia de Stock Ferretería.'; return; }
+      if (!(await confirmar(`¿Restaurar la copia «${file.name}» (${datos.productos.length} productos, ${(datos.ventas || []).length} ventas)? En la versión instalada, los datos dañados se guardan aparte por las dudas.`, 'Restaurar'))) return;
+      db = Object.assign(baseVacia(), datos);
+      asegurarUsuarios(db);
+      fotoGuardada = null;
+      if (!guardar({ completo: true })) { $('#danado-err').textContent = 'No se pudo guardar la copia: ' + errorGuardado; return; }
+      datosDanados = null;
+      $('#danado').hidden = true;
+      toast('Copia restaurada.');
+      if (cargar()) arrancar(); else mostrarDanado();
+    })();
+  });
+  $('#danado-carpeta-btn').addEventListener('click', () => window.almacen.abrirRespaldos());
+  $('#danado-reparar').addEventListener('click', async () => {
+    const n_ = (datosDanados && datosDanados.cantidad) || 0;
+    const config = datosDanados && datosDanados.configDanada;
+    const msg = `Se va${n_ === 1 ? '' : 'n'} a quitar ${n_ === 1 ? 'el dato dañado' : `los ${n_} datos dañados`}${config ? ' (incluidos los datos del negocio y las cajas)' : ''}. Antes se guarda una copia de la base tal como está. Lo que se quite habrá que cargarlo de nuevo. ¿Seguir?`;
+    if (!(await confirmar(msg, 'Quitar lo dañado', true))) return;
+    const r = window.almacen.reparar();
+    if (!r || r.error) { $('#danado-err').textContent = 'No se pudo reparar: ' + ((r && r.error) || 'error'); return; }
+    $('#danado').hidden = true;
+    toast(`Listo: se quitaron ${r.quitadas} datos dañados. Revisá el stock y las ventas.`);
+    if (cargar()) arrancar(); else mostrarDanado();
+  });
+  $('#danado-descargar').addEventListener('click', () => {
+    let raw = '';
+    try { raw = localStorage.getItem(CLAVE) || ''; } catch (e) { raw = ''; }
+    descargarBlob(raw, 'text/plain', `datos_danados_${isoLocal()}.txt`);
+  });
+  $('#danado-ejemplo').addEventListener('click', async () => {
+    if (!(await confirmar('¿Borrar lo guardado en este navegador y empezar con los datos de ejemplo? Lo que estaba guardado se pierde. Descargalo antes si lo querés revisar.', 'Borrar y empezar', true))) return;
+    datosDanados = null;
+    db = semilla();
+    asegurarUsuarios(db);
+    guardar({ completo: true });
+    $('#danado').hidden = true;
+    arrancar();
+  });
+}
+
 async function arrancar() {
+  if (datosDanados) { mostrarDanado(); return; }
   const r = await comprobarLicencia();
   if (!r.ok) { mostrarBloqueo(r); return; }
   $('#bloqueo').hidden = true;
@@ -2417,8 +2885,9 @@ function renderDesarrollador() {
     $('#dev-clave-titulo').textContent = tieneClave ? 'Escribí tu clave de desarrollador' : 'Creá tu clave de desarrollador';
     $('#dev-clave-sub').textContent = tieneClave
       ? 'Esta parte es solo para quien instaló el programa.'
-      : 'Es la primera vez que entrás. Elegí una clave de al menos 6 letras o números; el cliente no tiene que saberla.';
+      : 'Es la primera vez que entrás. Pegá un código de recuperación para esta computadora y elegí una clave de al menos 6 letras o números; el cliente no tiene que saberla.';
     $('#dev-clave2-wrap').hidden = tieneClave;
+    $('#dev-rec-wrap').hidden = tieneClave;
     $('#dev-olvide').hidden = !tieneClave;
     return;
   }
@@ -2447,7 +2916,7 @@ function renderDesarrollador() {
 }
 
 function iniciarDesarrollador() {
-  $('#form-dev-clave').addEventListener('submit', (e) => {
+  $('#form-dev-clave').addEventListener('submit', async (e) => {
     e.preventDefault();
     const d = db.desarrollador || (db.desarrollador = {});
     const clave = $('#dev-clave').value;
@@ -2455,6 +2924,9 @@ function iniciarDesarrollador() {
     if (!d.claveHash) {
       if (clave.length < 6) return err('La clave tiene que tener al menos 6 letras o números.');
       if (clave !== $('#dev-clave2').value) return err('Las dos claves no coinciden.');
+      const r = await usarCodigoRecuperacion($('#dev-rec').value);
+      if (r.error) return err(r.error);
+      $('#dev-rec').value = '';
       d.claveSal = uid();
       d.claveHash = hashPin(clave, d.claveSal);
       guardar();
@@ -2472,8 +2944,8 @@ function iniciarDesarrollador() {
   $('#dev-olvide').addEventListener('click', () => { $('#form-dev-olvide').hidden = false; $('#dev-olvide-codigo').focus(); });
   $('#form-dev-olvide').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const r = await verificarCodigo($('#dev-olvide-codigo').value, idEquipo(), isoLocal());
-    if (!r.ok && r.motivo !== 'vencido') { $('#dev-olvide-err').textContent = mensajeMotivo(r); return; }
+    const r = await usarCodigoRecuperacion($('#dev-olvide-codigo').value);
+    if (r.error) { $('#dev-olvide-err').textContent = r.error; return; }
     db.desarrollador.claveHash = '';
     db.desarrollador.claveSal = '';
     guardar();
@@ -2645,6 +3117,8 @@ function iniciarAperturaCaja() {
     const r = cerrarCaja(db, $('#cc-contado').value, sesion ? sesion.nombre : '', $('#cc-nota').value);
     if (r.error) { $('#cc-err').textContent = r.error; return; }
     guardar();
+    // Respaldo al cerrar la caja, así la copia del pendrive incluye las ventas del día
+    if (escritorio() && window.almacen.respaldarAhora) window.almacen.respaldarAhora().catch(() => {});
     $('#dlg-cerrar-caja').close();
     render();
     mostrarResultadoCierre(r.caja);
@@ -2667,6 +3141,9 @@ function iniciar() {
     $('#banner-stock').hidden = true;
   });
   iniciarBloqueo();
+  iniciarDanado();
+  $('#banner-guardado-reintentar').addEventListener('click', () => { if (guardar({ completo: true })) toast('Listo, se guardó.'); else toast('Sigue sin poder guardar.'); });
+  $('#banner-guardado-copia').addEventListener('click', () => descargarBlob(JSON.stringify(db), 'application/json', `respaldo_stock_${isoLocal()}.json`));
   iniciarDesarrollador();
   iniciarLogin();
   iniciarUsuarios();
@@ -2692,12 +3169,12 @@ function iniciar() {
   iniciarProveedores();
   iniciarRespaldo();
   window.addEventListener('hashchange', mostrarVista);
-  window.addEventListener('storage', (e) => { if (e.key === CLAVE) { cargar(); render(); } });
+  window.addEventListener('storage', (e) => { if (e.key === CLAVE && !datosDanados) { if (cargar()) render(); else mostrarDanado(); } });
   arrancar();
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, verificarCodigo, idDesdeHex, fotoDe, calcularCambios, normalizarId, sumarMeses, estadoLicencia, aB64url, deB64url, MODULOS, PERMANENTE };
+  module.exports = { registrar, cobrar, anularVenta, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, verificarCodigo, idDesdeHex, fotoDe, calcularCambios, normalizarId, sumarMeses, estadoLicencia, aB64url, deB64url, MODULOS, PERMANENTE, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, anotarPrecio };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

@@ -133,3 +133,45 @@ test('ajustes de la computadora', () => {
 });
 
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+test('QA 2: una fila dañada se detecta y se puede quitar sin perder lo demás', () => {
+  const al = nueva();
+  const d = app.semilla();
+  app.asegurarUsuarios(d);
+  guardar(al, null, d);
+  assert.deepEqual(al.revisar(), []);
+  // se daña un producto y una venta, como podría pasar con un corte de luz
+  const p = d.productos[3].id, v = d.ventas[0].id;
+  al.db.prepare('UPDATE productos SET datos = ? WHERE id = ?').run('{"id":"' + p + '","nombre":"Tal', p);
+  al.db.prepare('UPDATE ventas SET datos = ? WHERE id = ?').run('42', v);
+  assert.throws(() => JSON.parse(al.leerJson()));
+  const malas = al.revisar();
+  assert.deepEqual(malas.map((m) => m.tabla).sort(), ['productos', 'ventas']);
+  assert.equal(al.vacia(), false);
+  // copia antes de reparar
+  const copia = path.join(tmp, 'copia-danada.sqlite');
+  al.copiarA(copia);
+  assert.ok(fs.existsSync(copia));
+  al.quitarDanadas(malas);
+  assert.deepEqual(al.revisar(), []);
+  const leido = leer(al);
+  assert.equal(leido.productos.length, d.productos.length - 1);
+  assert.equal(leido.ventas.length, d.ventas.length - 1);
+  assert.equal(leido.negocio.nombre, d.negocio.nombre);
+  al.cerrar();
+});
+
+test('QA 2: si falta la configuración pero hay datos, la base no se toma como vacía', () => {
+  const al = nueva();
+  const d = app.semilla();
+  guardar(al, null, d);
+  al.db.prepare('DELETE FROM config').run();
+  assert.equal(al.vacia(), false, 'no se reemplaza por el ejemplo');
+  assert.deepEqual(al.revisar(), [{ tabla: 'config', id: 'datos' }]);
+  al.db.prepare("INSERT INTO config (clave, valor) VALUES ('datos', '{roto')").run();
+  assert.deepEqual(al.revisar(), [{ tabla: 'config', id: 'datos' }]);
+  al.quitarDanadas(al.revisar());
+  assert.deepEqual(al.revisar(), []);
+  assert.equal(leer(al).productos.length, d.productos.length);
+  al.cerrar();
+});
