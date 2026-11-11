@@ -13,7 +13,7 @@ Programa para controlar el stock de una ferretería y cobrar en el mostrador. Se
   - **Historial de precios**: cada cambio de precio queda anotado con fecha y usuario, en **Reportes → Cambios de precio**.
 - **Cargar mercadería**: llegada de mercadería (actualiza el costo), salidas que no son ventas (roturas, uso interno) y corrección después de contar. Todo queda en el historial con el stock antes y después.
 - **Proveedores**: datos de contacto, RUT y cuántos productos de cada uno hay que reponer.
-- **Reportes** (descargables a Excel), en pestañas y para el período que se elija (hoy, 7 días, este mes, mes anterior, este año o fechas a mano):
+- **Reportes** (descargables a Excel con el nombre del negocio, el período, montos con $, fechas que se pueden ordenar, filtros y fila de total), en pestañas y para el período que se elija (hoy, 7 días, este mes, mes anterior, este año o fechas a mano):
   - **Ventas**: total, cantidad, ticket promedio y ganancia comparados con el período anterior; gráfico de ventas por día (o por mes en períodos largos); por medio de pago; por vendedor; los 15 más vendidos.
   - **Ganancias**: costo de lo vendido, ganancia y margen, por categoría y por producto (los que más dejan o los de menor margen).
   - **Stock**: mercadería parada (con stock y sin ventas en 30, 60, 90 días, 6 meses o 1 año, con la plata inmovilizada), reposición, valor del inventario por categoría e inventario completo.
@@ -139,7 +139,8 @@ Prueban la lógica de stock, cobro, descuentos, anulación, actualización de pr
 index.html                Pantallas y formularios
 css/styles.css            Estilos (tema claro y oscuro automático)
 js/app.js                 Lógica: stock, caja, reportes, exportación y respaldo
-vendor/xlsx.full.min.js   SheetJS para exportar a Excel sin conexión
+vendor/xlsx.full.min.js   SheetJS (lo usan las herramientas y las pruebas)
+vendor/xlsx-estilo.min.js SheetJS con estilos (xlsx-js-style): los Excel del programa con colores, sin conexión
 electron/main.js          Ventana de escritorio, respaldos diarios y carpeta extra
 electron/datos.js         Base SQLite: guarda solo lo que cambió
 electron/preload.js       Puente entre la página y el disco
