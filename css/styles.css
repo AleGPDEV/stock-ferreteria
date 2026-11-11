@@ -503,3 +503,5 @@ textarea { width: 100%; resize: vertical; }
 .p-foto-acc .err:empty { display: none; }
 .dlg-foto { width: min(720px, calc(100vw - 32px)); }
 .dlg-foto img { display: block; max-width: 100%; max-height: 65vh; margin: 0 auto; border-radius: 10px; object-fit: contain; }
+.link-btn { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--accent); text-decoration: underline; cursor: pointer; }
+.qm-sug { line-height: 1.5; }

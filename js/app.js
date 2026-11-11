@@ -1720,7 +1720,11 @@ function abrirMovRapido(tipo, id) {
   movRapido = { tipo, id };
   $('#qm-titulo').textContent = tipo === 'entrada' ? 'Llegó mercadería' : 'Sacar del stock';
   $('#qm-sub').textContent = `${p.nombre} · stock actual ${n(p.stock)} ${p.unidad}`;
-  $('#qm-cant').value = tipo === 'entrada' && p.stock <= p.minimo ? red(Math.max(p.minimo * 2 - p.stock, 1)) : '';
+  $('#qm-cant').value = '';
+  // Si está bajo el mínimo, se sugiere cuánto pedir (sin escribirlo solo en el campo)
+  const sug = tipo === 'entrada' && p.minimo > 0 && p.stock <= p.minimo ? sugerido(p) : 0;
+  $('#qm-sug').hidden = !sug;
+  $('#qm-sug').innerHTML = sug ? `Está bajo el mínimo (${n(p.minimo)}). Sugerencia: sumar ${n(sug)}, así queda el doble del mínimo. <button type="button" class="link-btn" id="qm-sug-usar">Usar ${n(sug)}</button>` : '';
   $('#qm-costo').value = p.costo;
   $('#qm-costo-wrap').hidden = tipo !== 'entrada' || !esAdmin();
   $('#qm-nota').value = '';
@@ -1733,6 +1737,12 @@ function abrirMovRapido(tipo, id) {
 }
 
 function iniciarMovRapido() {
+  $('#qm-sug').addEventListener('click', (e) => {
+    if (!e.target.closest('#qm-sug-usar')) return;
+    e.preventDefault();
+    $('#qm-cant').value = sugerido(producto(movRapido.id));
+    $('#qm-cant').focus();
+  });
   $('#form-qm').addEventListener('submit', (e) => {
     e.preventDefault();
     const p = producto(movRapido.id);
