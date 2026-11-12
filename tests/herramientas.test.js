@@ -125,7 +125,7 @@ test('QA2 A1: la clave es el código del proveedor (columna, número al principi
   assert.deepEqual(LP.separarCodigo('1234 TORNILLO MADERA 6X1 CAJA X100'), { codigo: '1234', nombre: 'TORNILLO MADERA 6X1 CAJA X100' });
   assert.equal(LP.separarCodigo('250 GR MASILLA').codigo, '', '«250 GR» es una medida, no un código');
   const r1 = { fecha: '2026-11-01', serie: 'A', numero: '1', items: [{ cantidad: 2, descripcion: 'TORNILLO 8X1" CAJA X100 LH-1234', importe: 200 }, { cantidad: 1, descripcion: 'TARUGO 8MM X100', importe: 50 }] };
-  const r2 = { fecha: '2026-11-05', serie: 'A', numero: '2', items: [{ cantidad: 3, descripcion: 'TORNILLO 8X1 CAJA X100 LH1234', importe: 330 }, { cantidad: 1, descripcion: 'PRECINTO 200MM X100', importe: 80 }] };
+  const r2 = { fecha: '2026-11-05', serie: 'A', numero: '2', items: [{ cantidad: 3, descripcion: 'TORNILLO 8X1" CAJA X100 LH1234', importe: 330 }, { cantidad: 1, descripcion: 'PRECINTO 200MM X100', importe: 80 }] };
   const { productos } = LP.armarProductos([{ r: r2 }, { r: r1 }]);
   const lh = productos.find((p) => p.codigo === 'LH-1234');
   assert.equal(lh.cantidad, 5, 'mismo código del proveedor en dos facturas: se suma');
@@ -191,4 +191,108 @@ test('QA2 M3: acepta Nº, N°, Nro, Número y RUT; facturas distintas no chocan;
   assert.equal(s1.numero, '');
   assert.equal(LP.mismaFactura(s1, s2), false);
   assert.equal(LP.numeroFactura(s1), '');
+});
+
+// ---------- Revisión QA #3 ----------
+test('QA3 A1: el Excel lleva «Código del proveedor» y siempre el proveedor; «Código» queda igual', () => {
+  assert.deepEqual(LP.COLUMNAS_EXCEL, ['Código', 'Código del proveedor', 'Producto', 'Categoría', 'Unidad', 'Proveedor', 'Costo', 'Precio', 'Llegó', 'Factura']);
+  const r = { serie: 'A', numero: '10', items: [
+    { cantidad: 2, descripcion: '1234 TORNILLO MADERA 6X1', importe: 200 },
+    { cantidad: 1, descripcion: 'PINZA UNIVERSAL 8" MAKAWA MK-0099', importe: 500 },
+    { cantidad: 3, descripcion: 'TARUGO NYLON 8MM BOLSA X100', importe: 150 },
+    { cantidad: 1, descripcion: 'TORNILLO 8X1 LH-5563', importe: 90 },
+    { cantidad: 4, descripcion: 'CANDADO 40MM', importe: 400, codigo: 'cand-40' },
+  ] };
+  const { productos } = LP.armarProductos([{ r }]);
+  const { filas, error } = LP.filasExcel(productos.map((p) => ({ ...p, precio: p.costo * 2 })), { proveedor: '  Uruimporta ', llego: true });
+  assert.equal(error, '');
+  assert.deepEqual(filas.map((f) => [f['Código'], f['Código del proveedor']]), [['1234', '1234'], ['MK-0099', 'MK-0099'], ['', ''], ['LH-5563', 'LH-5563'], ['CAND-40', 'CAND-40']],
+    'número inicial, modelo, LH- y columna Código; vacío si se usó la descripción');
+  for (const f of filas) assert.equal(f['Proveedor'], 'Uruimporta');
+  assert.equal(filas[0]['Llegó'], 2);
+  assert.equal(filas[0]['Factura'], 'A 10');
+  const sin = LP.filasExcel(productos, { proveedor: '   ' });
+  assert.match(sin.error, /proveedor/);
+  assert.equal(sin.filas.length, 0, 'sin proveedor no se arma el Excel');
+});
+
+test('QA3 M1: normas, grados y «cantidad + plural» no son código: los 6 ejemplos quedan en 12 productos', async () => {
+  const ejemplos = [
+    ['BULON HEXAGONAL 8X40 DIN933', 'BULON HEXAGONAL 10X50 DIN933'], ['CAÑO PVC 25MM PN10', 'CAÑO PVC 32MM PN10'],
+    ['ESMALTE SINTETICO 1L RAL9010', 'ESMALTE SINTETICO 4L RAL9010'], ['REFLECTOR LED 50W IP65', 'REFLECTOR LED 100W IP65'],
+    ['FICHA MACHO RJ45', 'CONECTOR HEMBRA RJ45'], ['100 TORNILLOS AUTOPERFORANTES 8X1', '100 TARUGOS NYLON 8MM'],
+  ];
+  const r = await L.leerPdf(factura(CABECERA, ejemplos.flat().map((d, i) => [i + 1, d, (i + 1) * 100])));
+  assert.equal(r.items.length, 12);
+  const { productos } = LP.armarProductos([{ r }]);
+  assert.equal(productos.length, 12, 'cada renglón es un producto');
+  for (const p of productos) {
+    assert.equal(p.codigo, '', `${p.nombre}: sin código`);
+    assert.equal(p.cantidad * 100, productos.indexOf(p) * 100 + 100, `${p.nombre}: no se sumó con otro`);
+    assert.equal(p.aviso, undefined);
+  }
+  for (const w of ['DIN933', 'PN10', 'RAL9010', 'IP65', 'RJ45', 'ISO4017', 'AWG12', 'IEC60309', 'NEMA5', 'SCH40', 'CAT6', 'CAT6A']) assert.equal(LP.esMedida(w), true, w);
+  assert.equal(LP.separarCodigo('1234 TORNILLO MADERA 6X1').codigo, '1234', 'un número seguido de singular sigue siendo código');
+  assert.equal(LP.separarCodigo('100 TORNILLOS AUTOPERFORANTES 8X1').nombre, '100 TORNILLOS AUTOPERFORANTES 8X1', 'la cantidad queda en el nombre');
+});
+
+test('QA3 M1: red de seguridad: mismo código y descripción distinta no se juntan y se avisa', () => {
+  const r = { items: [
+    { cantidad: 1, descripcion: 'TORNILLO 8X1 MK-0099', importe: 10 },
+    { cantidad: 2, descripcion: 'TARUGO NYLON 8MM MK-0099', importe: 30 },
+    { cantidad: 3, descripcion: 'tornillo  8x1  MK-0099', importe: 36 }, // solo cambian mayúsculas y espacios: es el mismo
+  ] };
+  const { productos } = LP.armarProductos([{ r }]);
+  assert.equal(productos.length, 2);
+  const [torn, tar] = productos;
+  assert.deepEqual([torn.nombre, torn.cantidad, torn.costo], ['Tornillo 8x1', 4, 12]);
+  assert.deepEqual([tar.nombre, tar.cantidad, tar.costo], ['Tarugo nylon 8mm', 2, 15]);
+  assert.equal(torn.aviso, 'Mismo código y descripción distinta: revisalos');
+  assert.equal(tar.aviso, 'Mismo código y descripción distinta: revisalos');
+  // con la columna «Código» de la factura, igual
+  const col = LP.armarProductos([{ r: { items: [{ cantidad: 1, descripcion: 'LLAVE FRANCESA 8', importe: 10, codigo: '55' }, { cantidad: 1, descripcion: 'LLAVE FRANCESA 10', importe: 20, codigo: '55' }] } }]);
+  assert.equal(col.productos.length, 2);
+  assert.ok(col.productos.every((p) => p.aviso));
+});
+
+test('QA3 B1: dólares sin campo «Moneda»: por los títulos de las columnas o por el total', async () => {
+  const titulos = (unit, imp) => [[37, 600, 'Cantidad'], [90, 600, 'Uni'], [122, 600, 'Descripción'], [325, 600, unit], [468, 600, imp], [554, 600, '*']];
+  const cab = CABECERA.filter((c) => c[1] !== 600);
+  const linea = [[37, 580, '2'], [90, 580, 'UN'], [122, 580, 'CANDADO 40MM'], [330, 580, '10'], [472, 580, '20'], [554, 580, '3']];
+  for (const [unit, imp] of [['P. Unitario U$S', 'Importe U$S'], ['P. Unit. US$', 'Importe US$'], ['Precio USD', 'Total USD']]) {
+    const r = await L.leerPdf(pdfDePrueba([cab.concat(titulos(unit, imp), linea)]));
+    assert.equal(r.items.length, 1, unit);
+    assert.equal(r.dolares, true, `${imp}: dólares`);
+    assert.match(LP.armarProductos([{ r }]).error, /tipo de cambio/);
+    assert.equal(LP.armarProductos([{ r }], { tipoCambio: 40 }).productos[0].costo, 400);
+  }
+  const porTotal = await L.leerPdf(pdfDePrueba([cab.concat(titulos('P. Unitario', 'Importe'), linea, [[300, 400, 'TOTAL U$S 20,00']])]));
+  assert.equal(porTotal.dolares, true, 'el total dice U$S');
+  const pesos = await L.leerPdf(pdfDePrueba([cab.concat(titulos('P. Unitario $', 'Importe $'), linea, [[300, 400, 'TOTAL $ 20,00']])]));
+  assert.equal(pesos.dolares, false, 'con «$» solo son pesos');
+  const conMoneda = await L.leerPdf(pdfDePrueba([cab.concat([[400, 770, 'MONEDA'], [400, 758, 'UYU']], titulos('P. Unitario', 'Importe'), linea, [[300, 400, 'TOTAL US$ 0,50 (referencia)']])]));
+  assert.equal(conMoneda.dolares, false, 'si el campo «Moneda» dice pesos, manda el campo');
+});
+
+test('QA3 A1: el Excel del Lector entra en la importación sin pisar el producto de otro proveedor con el mismo código', () => {
+  const d = app.baseVacia();
+  d.proveedores.push({ id: 'pa', nombre: 'Ferretería Norte' });
+  d.productos.push({ id: 'n1', codigo: '1234', barras: [], nombre: 'Llave francesa 8', categoria: '', unidad: 'unidad', proveedorId: 'pa', ubicacion: '', costo: 300, precio: 500, minimo: 0, stock: 2 });
+  const r = { serie: 'A', numero: '77', items: [{ cantidad: 5, descripcion: '1234 TORNILLO MADERA 6X1', importe: 500 }, { cantidad: 2, descripcion: 'TARUGO NYLON 8MM X100', importe: 60 }] };
+  const excel = () => {
+    const { productos } = LP.armarProductos([{ r }]);
+    return LP.filasExcel(productos.map((p) => ({ ...p, precio: p.costo * 2 })), { proveedor: 'Distribuidora Sur', llego: true }).filas;
+  };
+  app.aplicarImportacion(d, app.planImportacion(d, excel()), { ...app.CAMPOS_IMPORTAR, precio: false });
+  const llave = d.productos.find((p) => p.id === 'n1');
+  assert.deepEqual([llave.nombre, llave.stock, llave.costo], ['Llave francesa 8', 2, 300], 'el «1234» de otro proveedor no se toca');
+  const torn = d.productos.find((p) => p.nombre === 'Tornillo madera 6x1');
+  assert.ok(torn, 'el tornillo se carga como producto nuevo');
+  assert.equal(torn.stock, 5);
+  // La factura siguiente del mismo proveedor encuentra el mismo tornillo por proveedor + código
+  r.numero = '78';
+  const plan = app.planImportacion(d, excel());
+  assert.ok(plan.actualizados.some((a) => a.id === torn.id), 'actualiza el mismo producto');
+  assert.ok(!plan.actualizados.some((a) => a.id === 'n1'));
+  assert.equal(plan.nuevos.length, 0, 'no crea duplicados');
 });
