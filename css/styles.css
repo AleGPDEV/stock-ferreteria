@@ -759,3 +759,75 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 #v-reportes .reportes > .card { margin-top: 0; }
 
 .ajustes { display: grid; gap: 16px; max-width: 1100px; }
+
+/* ---------- Depósito: dónde está cada producto y etiquetas ---------- */
+.dep-buscar { font-size: 20px; padding: 12px 48px 12px 14px; }
+.dep-resultado .meta, .dep-ubicaciones .meta, .etq-lista .meta, .etq-pie .meta, #v-deposito .card-h .meta { color: var(--muted); font-size: 14px; font-weight: 400; }
+.dep-prod { display: flex; flex-direction: column; gap: 12px; }
+.dep-prod-cab { display: flex; gap: 14px; align-items: center; }
+.dep-prod-cab .foto { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; }
+.dep-prod-nom { font-size: 22px; font-weight: 700; line-height: 1.25; }
+.dep-ubi { display: flex; flex-direction: column; gap: 2px; padding: 14px 18px; border-radius: var(--r); background: var(--accent-soft); color: var(--accent); }
+.dep-ubi.sin { background: var(--surface-2); color: var(--muted); }
+.dep-ubi-lbl { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.dep-ubi-txt { font-size: 34px; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
+.dep-ubi.sin .dep-ubi-txt { font-size: 22px; }
+.dep-datos { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 18px; }
+.dep-lugar-cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; color: var(--accent); }
+.dep-lista { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dep-item { width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--fg); font: inherit; cursor: pointer; }
+.dep-item:hover { background: var(--surface-2); }
+.dep-item .foto { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; }
+.dep-item-txt { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.dep-item-ubi { font-weight: 700; font-size: 18px; color: var(--accent); white-space: nowrap; }
+.dep-ubicaciones { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.dep-ubic { display: flex; flex-direction: column; gap: 2px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.dep-ubic:hover { border-color: var(--accent); background: var(--accent-soft); }
+.dep-ubic strong { font-size: 18px; overflow-wrap: anywhere; }
+.dep-ubic span { color: var(--muted); font-size: 14px; }
+#etq-dlg { width: min(860px, calc(100vw / var(--zoom, 1) - 32px)); }
+#etq-dlg[open] { display: flex; flex-direction: column; }
+.etq-b { display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+.etq-saltear input { max-width: 120px; }
+.etq-filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.etq-filtros input { flex: 1; min-width: 180px; }
+.etq-lista { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; max-height: 300px; overflow: auto; }
+.etq-lista li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.etq-lista li:last-child { border-bottom: 0; }
+.etq-lista li.sel { background: var(--accent-soft); }
+.etq-lista .check span { display: flex; flex-direction: column; }
+.etq-copias { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); white-space: nowrap; }
+.etq-copias input { width: 72px; text-align: right; }
+.etq-pie { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+/* Muestra en pantalla, en tamaño real y siempre sobre blanco (como el papel) */
+.etq-muestra { background: #fff; color: #000; border: 1px dashed var(--line); }
+.etq-muestra:empty { display: none; }
+.etq-muestra.a4 .et { width: 70mm; height: 37mm; }
+.etq-muestra.rollo .et { width: 50mm; height: 25mm; }
+
+/* La etiqueta: igual en la muestra y al imprimir */
+.et { box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; gap: 1mm; padding: 2.5mm 3.5mm; font-family: Arial, Helvetica, sans-serif; color: #000; background: #fff; }
+.et .cb { display: block; }
+.et-nom { font-weight: 700; font-size: 11pt; line-height: 1.15; max-height: 2.35em; overflow: hidden; }
+.et-pie { display: flex; justify-content: space-between; align-items: baseline; gap: 2mm; }
+.et-cod { font-family: var(--f-mono); font-size: 9pt; }
+.et-ubi { font-weight: 700; font-size: 13pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.et-sin { font-size: 9pt; }
+.et-titulo { font-size: 8pt; text-transform: uppercase; letter-spacing: .08em; }
+.et-lugar-nom { font-weight: 700; font-size: 20pt; line-height: 1.05; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.et-lista { font-size: 7.5pt; line-height: 1.2; max-height: 2.4em; overflow: hidden; }
+.rollo .et { padding: 1.2mm 2.5mm; gap: .5mm; }
+.rollo .et-nom { font-size: 8pt; max-height: 2.3em; }
+.rollo .et-cod { font-size: 7pt; }
+.rollo .et-ubi { font-size: 9pt; }
+.rollo .et-lugar-nom { font-size: 14pt; }
+.rollo .et-titulo { font-size: 6.5pt; }
+@media print {
+  #impresion.etiquetas { width: auto; max-width: none; font: 10pt/1.2 Arial, Helvetica, sans-serif; }
+  #impresion.etiquetas .pagina { break-after: page; overflow: hidden; }
+  #impresion.etiquetas .pagina:last-child { break-after: auto; }
+  #impresion.etiquetas .pagina.a4 { width: 210mm; height: 296mm; padding: .5mm 0 0; display: grid; grid-template-columns: repeat(3, 70mm); grid-auto-rows: 37mm; box-sizing: border-box; }
+  #impresion.etiquetas .pagina.rollo { width: 50mm; height: 25mm; }
+  #impresion.etiquetas .a4 .et { width: 70mm; height: 37mm; }
+  #impresion.etiquetas .rollo .et { width: 50mm; height: 25mm; }
+}

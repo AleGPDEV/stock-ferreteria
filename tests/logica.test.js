@@ -836,3 +836,71 @@ test('QA3 A1: con el mismo proveedor (o sin proveedor) el código sigue encontra
   assert.equal(plan4.nuevos.length, 2);
   assert.notEqual(plan4.nuevos[0].codigo, plan4.nuevos[1].codigo);
 });
+
+// ---------- Depósito: dónde está y etiquetas con código de barras ----------
+const CB = require('../js/codigo-barras.js');
+
+test('código de barras Code 128: patrones, control y números en código C', () => {
+  assert.equal(CB.PATRONES.length, 106);
+  for (const p of CB.PATRONES) assert.equal([...p].reduce((s, x) => s + Number(x), 0), 11);
+  // «P-0001» en código B: inicio B (104), P=48, -=13, 0=16, 0, 0, 1=17; control = (104 + 48·1 + 13·2 + 16·3 + 16·4 + 16·5 + 17·6) % 103
+  assert.deepEqual(CB.simbolos('P-0001'), [104, 48, 13, 16, 16, 16, 17, (104 + 48 + 26 + 48 + 64 + 80 + 102) % 103]);
+  // EAN de 13 dígitos: inicio C, 6 pares, cambio a B para el último dígito
+  const ean = CB.simbolos('7790001234567');
+  assert.deepEqual(ean.slice(0, 7), [105, 77, 90, 0, 12, 34, 56]);
+  assert.deepEqual(ean.slice(7, 9), [100, 23]);
+  assert.equal(CB.anchos('MAR-16').reduce((s, x) => s + x, 0), (CB.simbolos('MAR-16').length) * 11 + 13, 'cada símbolo 11 módulos y la parada 13');
+  assert.equal(CB.simbolos('Ñandú'), null, 'con tildes o ñ no se puede');
+  assert.equal(CB.svg(''), '');
+  assert.match(CB.svg('A-3'), /^<svg[^>]+viewBox="0 0 \d+ 1"/);
+});
+
+test('depósito: ubicaciones ordenadas y dónde está un producto, una ubicación o una búsqueda', () => {
+  const d = base();
+  d.productos.push(
+    { id: 'c', codigo: 'TOR-8', barras: ['7790001234567'], nombre: 'Tornillo 8x1', categoria: 'Tornillería', unidad: 'caja', proveedorId: '', ubicacion: 'c-02 ', costo: 1, precio: 2, minimo: 0, stock: 4 },
+    { id: 'd', codigo: 'DEP-1', nombre: 'Pala ancha', categoria: '', unidad: 'unidad', proveedorId: '', ubicacion: 'Depósito 10', costo: 1, precio: 2, minimo: 0, stock: 1 },
+    { id: 'e', codigo: 'DEP-2', nombre: 'Pala punta', categoria: '', unidad: 'unidad', proveedorId: '', ubicacion: 'Deposito 2', costo: 1, precio: 2, minimo: 0, stock: 1 },
+  );
+  const u = app.ubicacionesDe(d);
+  assert.deepEqual(u.map((x) => [x.clave, x.productos.length]), [['C-02', 2], ['DEPOSITO 2', 1], ['DEPOSITO 10', 1]], 'sin tildes ni mayúsculas, y el 2 antes que el 10');
+  assert.deepEqual(u[0].productos.map((p) => p.id), ['a', 'c']);
+  // por código de barras, por código propio o por el código de un proveedor
+  assert.equal(app.dondeEsta(d, '7790001234567').producto.id, 'c');
+  assert.equal(app.dondeEsta(d, ' mar-16 ').producto.id, 'a');
+  app.anotarCodigoProv(d.productos[1], 'v1', 'LH-5563');
+  assert.equal(app.dondeEsta(d, 'LH-5563').producto.id, 'b');
+  // la etiqueta de ubicación («UBIC …») o escribir la ubicación
+  assert.equal(app.dondeEsta(d, 'UBIC C-02').ubicacion.clave, 'C-02');
+  assert.equal(app.dondeEsta(d, 'depósito 2').ubicacion.clave, 'DEPOSITO 2');
+  assert.equal(app.dondeEsta(d, 'UBIC Z-99').tipo, 'nada');
+  // por nombre: uno solo va directo al producto; varios, la lista
+  assert.equal(app.dondeEsta(d, 'martillo').producto.id, 'a');
+  assert.deepEqual(app.dondeEsta(d, 'pala').productos.map((p) => p.id), ['d', 'e']);
+  assert.equal(app.dondeEsta(d, 'nada parecido').tipo, 'nada');
+  assert.equal(app.dondeEsta(d, '   ').tipo, 'vacio');
+});
+
+test('etiquetas: código de barras del producto o del programa, copias y hojas A4', () => {
+  const d = base();
+  d.productos[0].barras = ['7790001234567'];
+  assert.equal(app.codigoEtiqueta(d.productos[0]), '7790001234567', 'si tiene código de barras, va ese');
+  assert.equal(app.codigoEtiqueta(d.productos[1]), 'CAB-25', 'si no, el código del programa');
+  const r = app.htmlEtiquetas([{ producto: d.productos[0], copias: 2 }, { producto: d.productos[1], copias: 23 }], 'a4');
+  assert.equal(r.etiquetas, 25);
+  assert.equal(r.hojas, 2, '24 por hoja');
+  assert.equal((r.html.match(/class="et et-prod"/g) || []).length, 25);
+  assert.match(r.html, /C-02/, 'la ubicación va en la etiqueta');
+  assert.match(r.html, /Martillo 16 oz/);
+  // saltear stickers ya usados de la hoja
+  const s = app.htmlEtiquetas([{ producto: d.productos[0], copias: 1 }], 'a4', 5);
+  assert.equal((s.html.match(/et-vacia/g) || []).length, 5);
+  // rollo: una por página
+  assert.equal(app.htmlEtiquetas([{ producto: d.productos[0], copias: 3 }], 'rollo', 5).hojas, 3);
+  // etiqueta de ubicación: el código de barras dice «UBIC C-02»
+  const ub = app.ubicacionesDe(d)[0];
+  const e = app.htmlEtiquetas([{ ubicacion: ub, copias: 1 }], 'a4');
+  assert.match(e.html, /aria-label="Código de barras UBIC C-02"/);
+  assert.match(e.html, /Martillo 16 oz/);
+  assert.equal(app.htmlEtiquetas([{ producto: d.productos[0], copias: 0 }]).etiquetas, 0);
+});

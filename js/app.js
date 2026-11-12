@@ -5,7 +5,7 @@
 'use strict';
 
 const CLAVE = 'ferreteria-stock-v1';
-const VISTAS = ['panel', 'caja', 'productos', 'movimientos', 'proveedores', 'reportes', 'ajustes'];
+const VISTAS = ['panel', 'caja', 'productos', 'deposito', 'movimientos', 'proveedores', 'reportes', 'ajustes'];
 const DIA = 864e5;
 
 const $ = (s) => document.querySelector(s);
@@ -1055,7 +1055,7 @@ function render() {
   $('#marca-nombre').textContent = (db.negocio && db.negocio.nombre) || 'Stock Ferretería';
   renderAlertaStock();
   // Solo se dibuja la pantalla que se está viendo
-  ({ panel: renderPanel, caja: renderCaja, productos: renderProductos, movimientos: renderMovimientos, proveedores: renderProveedores, reportes: renderReportes, ajustes: renderAjustes })[vistaActual()]();
+  ({ panel: renderPanel, caja: renderCaja, productos: renderProductos, deposito: renderDeposito, movimientos: renderMovimientos, proveedores: renderProveedores, reportes: renderReportes, ajustes: renderAjustes })[vistaActual()]();
 }
 
 function opcionesProv(sel, vacio = 'Sin proveedor') {
@@ -4043,6 +4043,7 @@ function iniciar() {
   iniciarImportacion();
   iniciarPrecios();
   iniciarNegocio();
+  iniciarDeposito();
   if (typeof window.print !== 'function' || window.SIN_IMPRESION) $$('[data-imprime]').forEach((b) => { b.hidden = true; });
   $('#venta-imprimir').addEventListener('click', () => { if (ultimaVenta) imprimir(htmlTicket(ultimaVenta)); });
   $('#dlg-venta').addEventListener('close', () => $('#caja-buscar').focus());
@@ -4092,8 +4093,259 @@ function iniciar() {
   arrancar();
 }
 
+/* ---------- Depósito: dónde está cada producto y etiquetas con código de barras ----------
+ * Lógica pura (dondeEsta, ubicacionesDe, htmlEtiquetas…) probada en tests/logica.test.js; la pantalla, más abajo.
+ * El dibujo del código de barras (Code 128) está en js/codigo-barras.js. */
+const barras128 = () => (typeof CodigoBarras !== 'undefined' ? CodigoBarras : require('./codigo-barras.js'));
+// Lo que lleva el código de barras de una etiqueta de ubicación: «UBIC A-3». Así se distingue de un producto.
+const PREFIJO_UBIC = 'UBIC ';
+/** Ubicación para comparar y para el código de barras: sin tildes, en mayúsculas, sin espacios de más. */
+const claveUbic = (u) => String(u || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7E]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+const ordenNatural = (a, b) => a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' });
+
+/** Ubicaciones cargadas, con sus productos: [{ ubicacion, clave, productos }], ordenadas (A-2 antes que A-10). */
+function ubicacionesDe(d) {
+  const mapa = new Map();
+  for (const p of d.productos) {
+    const k = claveUbic(p.ubicacion);
+    if (!k) continue;
+    if (!mapa.has(k)) mapa.set(k, { ubicacion: String(p.ubicacion).trim(), clave: k, productos: [] });
+    mapa.get(k).productos.push(p);
+  }
+  const lista = [...mapa.values()];
+  lista.forEach((u) => u.productos.sort((a, b) => ordenNatural(a.nombre, b.nombre)));
+  return lista.sort((a, b) => ordenNatural(a.ubicacion, b.ubicacion));
+}
+
+/** Código que va en el código de barras de la etiqueta de un producto: su código de barras, si tiene, o el código del programa. */
+function codigoEtiqueta(p) {
+  return codigosDe(p).slice(1).concat(p.codigo).find((c) => barras128().sePuede(c)) || '';
+}
+
+/**
+ * ¿Dónde está? A partir de lo que se escaneó o escribió:
+ * { tipo: 'producto', producto } · { tipo: 'ubicacion', ubicacion } · { tipo: 'lista', productos } · { tipo: 'nada' } · { tipo: 'vacio' }
+ */
+function dondeEsta(d, texto) {
+  const t = String(texto || '').trim();
+  if (!t) return { tipo: 'vacio' };
+  const k = claveUbic(t);
+  const ubics = ubicacionesDe(d);
+  if (k.startsWith(PREFIJO_UBIC)) { // etiqueta de ubicación
+    const u = ubics.find((x) => x.clave === k.slice(PREFIJO_UBIC.length).trim());
+    return u ? { tipo: 'ubicacion', ubicacion: u } : { tipo: 'nada' };
+  }
+  const p = buscarPorCodigo(d, t) || d.productos.find((q) => codigosProvDe(q).some((x) => normCodigo(x.codigo) === normCodigo(t)));
+  if (p) return { tipo: 'producto', producto: p };
+  const u = ubics.find((x) => x.clave === k);
+  if (u) return { tipo: 'ubicacion', ubicacion: u };
+  const q = normal(t);
+  const productos = d.productos.filter((x) => normal(`${textoCodigos(x)} ${x.nombre} ${x.categoria} ${x.ubicacion}`).includes(q))
+    .sort((a, b) => ordenNatural(a.nombre, b.nombre));
+  if (productos.length === 1) return { tipo: 'producto', producto: productos[0] };
+  return productos.length ? { tipo: 'lista', productos } : { tipo: 'nada' };
+}
+
+/* Medidas de las etiquetas. A4: hoja de 24 stickers (3 × 8) de 70 × 37 mm. Rollo: impresora de etiquetas de 50 × 25 mm. */
+const FORMATOS_ETIQUETA = {
+  a4: { nombre: 'Hoja A4 de stickers (24 por hoja, 70 × 37 mm)', porHoja: 24, pagina: '@page { size: A4; margin: 0; }' },
+  rollo: { nombre: 'Impresora de etiquetas (50 × 25 mm)', porHoja: 1, pagina: '@page { size: 50mm 25mm; margin: 0; }' },
+};
+
+/** Una etiqueta (HTML). item: { producto } o { ubicacion } (de ubicacionesDe). */
+function htmlEtiqueta(item, formato) {
+  const alto = formato === 'rollo' ? '9mm' : '12mm';
+  if (item.producto) {
+    const p = item.producto;
+    const cod = codigoEtiqueta(p);
+    return `<div class="et et-prod"><div class="et-nom">${esc(p.nombre)}</div>
+      <div class="et-cb">${cod ? barras128().svg(cod, { alto }) : '<span class="et-sin">Sin código para imprimir</span>'}</div>
+      <div class="et-pie"><span class="et-cod">${esc(cod)}</span>${p.ubicacion ? `<span class="et-ubi">${esc(p.ubicacion)}</span>` : ''}</div></div>`;
+  }
+  const u = item.ubicacion;
+  const nombres = u.productos.slice(0, formato === 'rollo' ? 0 : 3).map((p) => esc(p.nombre));
+  const resto = u.productos.length - nombres.length;
+  return `<div class="et et-lugar"><div class="et-titulo">Ubicación</div><div class="et-lugar-nom">${esc(u.ubicacion)}</div>
+    <div class="et-cb">${barras128().svg(PREFIJO_UBIC + u.clave, { alto })}</div>
+    ${formato === 'rollo' ? '' : `<div class="et-lista">${nombres.join(' · ')}${resto > 0 ? `${nombres.length ? ' y ' : ''}${resto} ${resto === 1 ? 'producto' : 'productos'}${nombres.length ? ' más' : ''}` : ''}</div>`}</div>`;
+}
+
+/**
+ * Todas las etiquetas listas para imprimir. items: [{ producto | ubicacion, copias }].
+ * saltear: en la hoja A4, cuántos stickers ya se usaron (se dejan en blanco al principio).
+ * Devuelve { html, etiquetas, hojas }.
+ */
+function htmlEtiquetas(items, formato = 'a4', saltear = 0) {
+  const f = FORMATOS_ETIQUETA[formato] || FORMATOS_ETIQUETA.a4;
+  const celdas = [];
+  if (formato === 'a4') for (let i = 0; i < Math.min(Math.max(0, Math.floor(saltear) || 0), f.porHoja - 1); i++) celdas.push('<div class="et et-vacia"></div>');
+  let etiquetas = 0;
+  for (const it of items) {
+    const copias = Math.max(0, Math.min(500, Math.floor(Number(it.copias) || 0)));
+    const una = htmlEtiqueta(it, formato);
+    for (let i = 0; i < copias; i++) { celdas.push(una); etiquetas++; }
+  }
+  const hojas = [];
+  for (let i = 0; i < celdas.length; i += f.porHoja) hojas.push(`<div class="pagina ${formato === 'rollo' ? 'rollo' : 'a4'}">${celdas.slice(i, i + f.porHoja).join('')}</div>`);
+  return { html: etiquetas ? hojas.join('') : '', etiquetas, hojas: etiquetas ? hojas.length : 0 };
+}
+
+/* ---------- Pantalla Depósito ---------- */
+
+let depTexto = ''; // lo último que se buscó, para volver a mostrarlo al entrar
+const etq = { tipo: 'producto', copias: new Map() }; // ventana de etiquetas: id del producto o clave de la ubicación → copias
+
+function htmlDonde(r) {
+  const fila = (p) => `<li><button type="button" class="dep-item" data-dep-prod="${p.id}">${miniatura(p)}<span class="dep-item-txt"><strong>${esc(p.nombre)}</strong><span class="meta"><span class="mono">${esc(p.codigo)}</span> · stock ${n(p.stock)} ${esc(p.unidad)}</span></span><span class="dep-item-ubi">${p.ubicacion ? esc(p.ubicacion) : '<span class="meta">sin ubicación</span>'}</span></button></li>`;
+  if (r.tipo === 'vacio') return '<p class="vacio">Escaneá un producto o una etiqueta de ubicación, o escribí un nombre.</p>';
+  if (r.tipo === 'nada') return '<p class="vacio">No encontré nada con eso. Probá con otra palabra.</p>';
+  if (r.tipo === 'producto') {
+    const p = r.producto;
+    const e = estado(p);
+    return `<div class="dep-prod">
+      <div class="dep-prod-cab">${miniatura(p, 'grande')}<div><div class="dep-prod-nom">${esc(p.nombre)}</div>
+        <div class="meta"><span class="mono">${esc(textoCodigos(p))}</span>${p.categoria ? ' · ' + esc(p.categoria) : ''}</div></div></div>
+      <div class="dep-ubi${p.ubicacion ? '' : ' sin'}"><span class="dep-ubi-lbl">Está en</span><span class="dep-ubi-txt">${p.ubicacion ? esc(p.ubicacion) : 'Sin ubicación cargada'}</span></div>
+      <div class="dep-datos"><span>Hay <strong>${n(p.stock)} ${esc(p.unidad)}</strong></span>
+        ${e === 'sin' ? '<span class="chip danger">Sin stock</span>' : e === 'bajo' ? '<span class="chip warn">Bajo el mínimo</span>' : ''}
+        <button class="btn sm" type="button" data-etq-uno="${p.id}">Imprimir su etiqueta</button></div>
+    </div>`;
+  }
+  if (r.tipo === 'ubicacion') {
+    const u = r.ubicacion;
+    return `<div class="dep-lugar-cab"><div><span class="dep-ubi-lbl">Ubicación</span><div class="dep-ubi-txt">${esc(u.ubicacion)}</div><div class="meta">${plural(u.productos.length, 'producto', 'productos')}</div></div>
+      <button class="btn sm" type="button" data-etq-ubic="${esc(u.clave)}">Imprimir etiquetas de este lugar</button></div>
+      <ul class="dep-lista">${u.productos.map(fila).join('')}</ul>`;
+  }
+  return `<p class="meta">${plural(r.productos.length, 'producto encontrado', 'productos encontrados')}. Tocá uno para ver dónde está.</p>
+    <ul class="dep-lista">${r.productos.slice(0, 40).map(fila).join('')}</ul>${r.productos.length > 40 ? '<p class="meta">Hay más: escribí algo más preciso.</p>' : ''}`;
+}
+
+function mostrarDonde(texto) {
+  depTexto = texto;
+  $('#dep-resultado').innerHTML = htmlDonde(dondeEsta(db, texto));
+}
+
+function renderDeposito() {
+  const ubics = ubicacionesDe(db);
+  const sinUbic = db.productos.filter((p) => !claveUbic(p.ubicacion)).length;
+  $('#dep-sub').textContent = `${plural(ubics.length, 'ubicación', 'ubicaciones')} · ${plural(sinUbic, 'producto sin ubicación', 'productos sin ubicación')}`;
+  $('#dep-ubicaciones').innerHTML = ubics.map((u) => `<button type="button" class="dep-ubic" data-dep-ubic="${esc(u.clave)}"><strong>${esc(u.ubicacion)}</strong><span>${plural(u.productos.length, 'producto', 'productos')}</span></button>`).join('')
+    || '<p class="vacio">Todavía no hay ubicaciones. Se cargan en cada producto (Productos → Editar → Ubicación).</p>';
+  $('#dep-resultado').innerHTML = htmlDonde(dondeEsta(db, depTexto));
+  // El lector de códigos escribe donde está el cursor: se deja en el buscador (salvo que se esté escribiendo en otro lado)
+  const activo = document.activeElement;
+  if (!document.querySelector('dialog[open]') && !(activo && activo.matches('input, textarea, select'))) setTimeout(() => $('#dep-buscar').focus(), 0);
+}
+
+/* Ventana «Imprimir etiquetas» */
+function itemsEtiquetas() {
+  if (etq.tipo === 'ubicacion') return ubicacionesDe(db).map((u) => ({ id: u.clave, ubicacion: u, nombre: u.ubicacion, detalle: plural(u.productos.length, 'producto', 'productos') }));
+  return db.productos.slice().sort((a, b) => ordenNatural(a.ubicacion || '~', b.ubicacion || '~') || ordenNatural(a.nombre, b.nombre))
+    .map((p) => ({ id: p.id, producto: p, nombre: p.nombre, detalle: [codigoEtiqueta(p) || 'sin código para imprimir', p.ubicacion || 'sin ubicación'].join(' · '), ubic: claveUbic(p.ubicacion) }));
+}
+
+function renderEtiquetas() {
+  const q = normal($('#etq-buscar').value.trim());
+  const filtroUbic = $('#etq-ubic').value;
+  const todos = itemsEtiquetas();
+  const lista = todos.filter((x) => (!q || normal(`${x.nombre} ${x.detalle}`).includes(q)) && (etq.tipo !== 'producto' || !filtroUbic || x.ubic === filtroUbic));
+  $('#etq-filtro-ubic').hidden = etq.tipo !== 'producto';
+  $('#etq-lista').innerHTML = lista.map((x) => {
+    const c = etq.copias.get(x.id) || 0;
+    return `<li class="${c ? 'sel' : ''}"><label class="check"><input type="checkbox" data-etq-sel="${esc(x.id)}" ${c ? 'checked' : ''}> <span><strong>${esc(x.nombre)}</strong><span class="meta">${esc(x.detalle)}</span></span></label>
+      <label class="etq-copias">Copias <input type="number" min="0" max="500" step="1" inputmode="numeric" data-etq-copias="${esc(x.id)}" value="${c}"></label></li>`;
+  }).join('') || '<li class="vacio">Nada coincide.</li>';
+  const formato = $('#etq-dlg [name=etq-formato]:checked').value;
+  $('#etq-saltear-campo').hidden = formato !== 'a4';
+  const sel = todos.filter((x) => etq.copias.get(x.id) > 0).map((x) => ({ ...x, copias: etq.copias.get(x.id) }));
+  const r = htmlEtiquetas(sel, formato, Number($('#etq-saltear').value));
+  $('#etq-cuenta').textContent = r.etiquetas
+    ? `Se van a imprimir ${plural(r.etiquetas, 'etiqueta', 'etiquetas')}${formato === 'a4' ? ` en ${plural(r.hojas, 'hoja', 'hojas')}` : ''}.`
+    : 'Marcá lo que quieras imprimir.';
+  $('#etq-imprimir').disabled = !r.etiquetas;
+  // Muestra: la primera etiqueta elegida, en su tamaño
+  const primera = sel[0];
+  $('#etq-muestra').className = `etq-muestra ${formato}`;
+  $('#etq-muestra').innerHTML = primera ? htmlEtiqueta(primera, formato) : '';
+}
+
+function abrirEtiquetas(tipo, marcar = []) {
+  etq.tipo = tipo;
+  etq.copias = new Map(marcar.map((id) => [id, 1]));
+  $('#etq-titulo').textContent = tipo === 'ubicacion' ? 'Imprimir etiquetas de ubicación' : 'Imprimir etiquetas de productos';
+  $('#etq-buscar').value = '';
+  $('#etq-ubic').innerHTML = '<option value="">Todas las ubicaciones</option>' + ubicacionesDe(db).map((u) => `<option value="${esc(u.clave)}">${esc(u.ubicacion)}</option>`).join('');
+  renderEtiquetas();
+  $('#etq-dlg').showModal();
+}
+
+function imprimirEtiquetas() {
+  const formato = $('#etq-dlg [name=etq-formato]:checked').value;
+  const sel = itemsEtiquetas().filter((x) => etq.copias.get(x.id) > 0).map((x) => ({ ...x, copias: etq.copias.get(x.id) }));
+  const r = htmlEtiquetas(sel, formato, Number($('#etq-saltear').value));
+  if (!r.etiquetas) return;
+  try { localStorage.setItem('formatoEtiquetas', formato); } catch { /* sin almacenamiento: no pasa nada */ }
+  // La hoja de las etiquetas es distinta a la del ticket: se cambia solo mientras se imprime
+  $('#impresion').classList.add('etiquetas');
+  $('#estilo-etiquetas').textContent = FORMATOS_ETIQUETA[formato].pagina;
+  imprimir(r.html);
+}
+
+function iniciarDeposito() {
+  // Al terminar de imprimir (o cancelar) se vuelve a la hoja del ticket
+  window.addEventListener('afterprint', () => { $('#impresion').classList.remove('etiquetas'); $('#estilo-etiquetas').textContent = ''; });
+  const buscar = $('#dep-buscar');
+  let espera;
+  buscar.addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(() => mostrarDonde(buscar.value), 250); });
+  buscar.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    clearTimeout(espera);
+    mostrarDonde(buscar.value);
+    buscar.select(); // así el próximo escaneo reemplaza lo anterior
+  });
+  $('#dep-limpiar').addEventListener('click', () => { buscar.value = ''; mostrarDonde(''); buscar.focus(); });
+  $('#v-deposito').addEventListener('click', (e) => {
+    const prod = e.target.closest('[data-dep-prod]');
+    if (prod) { $('#dep-resultado').innerHTML = htmlDonde({ tipo: 'producto', producto: producto(prod.dataset.depProd) }); return; }
+    const ub = e.target.closest('[data-dep-ubic]');
+    if (ub) { const u = ubicacionesDe(db).find((x) => x.clave === ub.dataset.depUbic); if (u) { $('#dep-resultado').innerHTML = htmlDonde({ tipo: 'ubicacion', ubicacion: u }); $('#dep-resultado').scrollIntoView({ block: 'nearest' }); } return; }
+    const uno = e.target.closest('[data-etq-uno]');
+    if (uno) { abrirEtiquetas('producto', [uno.dataset.etqUno]); return; }
+    const lugar = e.target.closest('[data-etq-ubic]');
+    if (lugar) {
+      const u = ubicacionesDe(db).find((x) => x.clave === lugar.dataset.etqUbic);
+      if (u) abrirEtiquetas('producto', u.productos.map((p) => p.id));
+    }
+  });
+  $('#btn-etq-productos').addEventListener('click', () => abrirEtiquetas('producto'));
+  $('#btn-etq-ubicaciones').addEventListener('click', () => abrirEtiquetas('ubicacion'));
+  // Ventana de etiquetas
+  try { const f = localStorage.getItem('formatoEtiquetas'); if (f && FORMATOS_ETIQUETA[f]) $(`#etq-dlg [name=etq-formato][value=${f}]`).checked = true; } catch { /* nada */ }
+  $('#etq-buscar').addEventListener('input', renderEtiquetas);
+  $('#etq-ubic').addEventListener('change', renderEtiquetas);
+  $('#etq-saltear').addEventListener('input', renderEtiquetas);
+  $$('#etq-dlg [name=etq-formato]').forEach((r) => r.addEventListener('change', renderEtiquetas));
+  $('#etq-lista').addEventListener('change', (e) => {
+    const s = e.target.closest('[data-etq-sel]');
+    if (s) etq.copias.set(s.dataset.etqSel, s.checked ? Math.max(1, etq.copias.get(s.dataset.etqSel) || 0) : 0);
+    const c = e.target.closest('[data-etq-copias]');
+    if (c) etq.copias.set(c.dataset.etqCopias, Math.max(0, Math.min(500, Math.floor(Number(c.value) || 0))));
+    renderEtiquetas();
+  });
+  $('#etq-todos').addEventListener('click', () => {
+    const q = normal($('#etq-buscar').value.trim()); const fu = $('#etq-ubic').value;
+    itemsEtiquetas().filter((x) => (!q || normal(`${x.nombre} ${x.detalle}`).includes(q)) && (etq.tipo !== 'producto' || !fu || x.ubic === fu))
+      .forEach((x) => { if (!etq.copias.get(x.id)) etq.copias.set(x.id, 1); });
+    renderEtiquetas();
+  });
+  $('#etq-ninguno').addEventListener('click', () => { etq.copias.clear(); renderEtiquetas(); });
+  $('#etq-imprimir').addEventListener('click', imprimirEtiquetas);
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { anotarCodigoProv, codigosProvDe, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias };
+  module.exports = { anotarCodigoProv, codigosProvDe, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }
