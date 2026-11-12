@@ -13,6 +13,7 @@ Programa para controlar el stock de una ferretería y cobrar en el mostrador. Se
   - **Productos nuevos de los empleados**: quedan con quién los creó y su precio va al historial de precios. Al administrador le aparecen con la marca **Nuevo · revisar** (filtro **Nuevos para revisar** y aviso en el Tablero) hasta que los edita.
   - **Fotos**: en **Editar** se elige una foto (la que se pasó del teléfono a la computadora, en JPG o PNG) o se arrastra al recuadro. El programa la achica (unos 900 px, 50 a 150 KB) y la guarda en `%APPDATA%\Stock Ferreteria\Fotos`. Se ve en la lista de Vender, en el ticket y en Productos; tocándola se agranda. El filtro **Sin foto** muestra los que faltan. Las fotos HEIC del iPhone no se pueden abrir: en el iPhone, Ajustes → Cámara → Formatos → «Más compatible».
   - **Historial de precios**: cada cambio de precio queda anotado con fecha y usuario, en **Reportes → Cambios de precio**.
+- **Depósito**: para saber **dónde está** cada producto. Escaneás el producto (o escribís el nombre) y muestra en grande la **ubicación** y cuánto hay; escaneás la etiqueta de un estante y muestra qué productos tiene. También imprime **etiquetas con código de barras**: de producto (nombre, código de barras, código y ubicación) y de ubicación (por ejemplo «A-03»). Sirven las **hojas A4 de stickers** (24 por hoja, de 70 × 37 mm; si la hoja ya está empezada se indica cuántos stickers se usaron) y las **impresoras de etiquetas** de rollo de 50 × 25 mm. Si el producto trae código de barras, la etiqueta lleva ese; si no, el código del programa (por ejemplo `P-0001`), que también se puede escanear para vender. Lo usan el administrador y el empleado.
 - **Cargar mercadería**: llegada de mercadería (actualiza el costo), salidas que no son ventas (roturas, uso interno) y corrección después de contar. Todo queda en el historial con el stock antes y después.
 - **Proveedores**: datos de contacto, RUT y cuántos productos de cada uno hay que reponer.
 - **Reportes** (descargables a Excel con el nombre del negocio, el período, montos con $, fechas que se pueden ordenar, filtros y fila de total), en pestañas:
@@ -110,7 +111,9 @@ Lo cargado queda guardado en esa computadora aunque se cierre. Para **contar el 
 Un lector USB funciona como un teclado: no hay que configurar nada en el programa.
 
 1. Enchufalo y probalo en el Bloc de notas: tiene que escribir los números y saltar de línea. Si no salta de línea, activá el sufijo **Enter (CR)** con el código de configuración del manual del lector.
+   Escaneá también una etiqueta con guion (por ejemplo `PIN-ROD22`). Si sale `PIN'ROD22`, el lector está con **teclado en inglés**: configuralo en **español (Latinoamérica o España, el mismo que Windows)** con el código del manual. Igual el programa encuentra el producto aunque los signos lleguen cambiados, siempre que haya uno solo que coincida en letras y números.
 2. En la **Caja**, escaneás y el producto se agrega al ticket.
+3. En **Depósito**, escaneás un producto o la etiqueta de un estante y ves dónde está o qué hay.
 
 **Código propio y códigos de barras.** Cada producto tiene su **código** (por ejemplo el del modelo del proveedor, `LH-5283`, que usa el Lector de facturas para reconocerlo en la próxima factura) y además puede tener uno o varios **códigos de barras**: los números que trae el paquete y que lee el lector. Se buscan y se venden por cualquiera de los dos.
 
@@ -150,6 +153,7 @@ Prueban la lógica de stock, cobro, descuentos, anulación, actualización de pr
 index.html                Pantallas y formularios
 css/styles.css            Estilos (tema claro y oscuro automático)
 js/app.js                 Lógica: stock, caja, reportes, exportación y respaldo
+js/codigo-barras.js       Código de barras Code 128 (etiquetas del Depósito), sin librerías
 css/fuentes/              Letras incluidas (Barlow, Barlow Semi Condensed, IBM Plex Mono; licencia OFL): se ven igual sin internet
 vendor/xlsx.full.min.js   SheetJS 0.20.3: lee las planillas que se importan (programa, herramientas y pruebas)
 vendor/xlsx-estilo.min.js SheetJS con estilos (xlsx-js-style): solo para escribir los Excel del programa con colores
@@ -166,6 +170,5 @@ tests/almacen.test.js     Pruebas de la base SQLite
 ## Ideas para más adelante
 
 - Varias cajas o PCs compartiendo los mismos datos (requiere una base de datos en un servidor).
-- Etiquetas con código de barras para los estantes.
 - Ventas a crédito (fiado) con cuenta corriente por cliente.
 - Facturación electrónica (CFE de DGI) a través de un proveedor habilitado.

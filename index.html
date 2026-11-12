@@ -22,6 +22,7 @@
     <nav class="nav" aria-label="Secciones">
       <a href="#caja"  title="Vender"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20 8H6.2"/><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/></svg><span class="txt">Vender</span></a>
       <a href="#productos" title="Productos"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg><span class="txt">Productos</span><span id="badge-bajo" class="badge" hidden></span></a>
+      <a href="#deposito" title="Depósito: dónde está cada producto"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V3h18v18M3 9h18M3 15h18"/><path d="M7 6h3M7 12h4M14 18h4"/></svg><span class="txt">Depósito</span></a>
       <a href="#movimientos" title="Cargar mercadería"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h11V6H3zM14 10h4l3 3v4h-7"/><circle cx="7" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg><span class="txt">Cargar mercadería</span></a>
       <a href="#panel" class="solo-admin" title="Resumen del día"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="txt">Resumen del día</span></a>
       <a href="#proveedores" title="Proveedores"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span class="txt">Proveedores</span></a>
@@ -280,6 +281,28 @@
           <thead><tr><th>Proveedor</th><th>Contacto</th><th>Teléfono</th><th>Email</th><th class="num">Productos</th><th class="num">Para reponer</th><th class="num"></th></tr></thead>
           <tbody id="tabla-prov"></tbody>
         </table>
+      </div>
+    </section>
+
+    <!-- DEPÓSITO: dónde está cada producto y etiquetas con código de barras -->
+    <section id="v-deposito" class="vista" hidden>
+      <header class="vh">
+        <div><h1>Depósito</h1><p class="sub" id="dep-sub"></p></div>
+        <div class="acciones">
+          <button class="btn" type="button" id="btn-etq-ubicaciones">Etiquetas de ubicación</button>
+          <button class="btn primary" type="button" id="btn-etq-productos">Etiquetas de productos</button>
+        </div>
+      </header>
+      <div class="card">
+        <label class="f" for="dep-buscar">¿Dónde está?
+          <span class="combo-caja"><input id="dep-buscar" class="dep-buscar" type="text" enterkeyhint="search" autocomplete="off" placeholder="Escaneá el código o escribí el nombre o la ubicación"><button type="button" class="combo-limpiar" id="dep-limpiar" aria-label="Borrar">×</button></span>
+          <small>Escaneá un producto para ver en qué lugar está, o la etiqueta de un estante para ver qué hay.</small>
+        </label>
+        <div id="dep-resultado" class="dep-resultado" aria-live="polite"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Ubicaciones</h2><p class="meta">Tocá una para ver qué productos tiene.</p></div>
+        <div id="dep-ubicaciones" class="dep-ubicaciones"></div>
       </div>
     </section>
 
@@ -725,6 +748,34 @@
 </dialog>
 
 <!-- Importar productos -->
+<dialog id="etq-dlg" class="dlg-ancho" aria-labelledby="etq-titulo">
+  <header class="dlg-h">
+    <h2 id="etq-titulo">Imprimir etiquetas</h2>
+    <p class="sub">Marcá qué imprimir y cuántas copias. El código de barras se lee con el lector, en Vender o en Depósito.</p>
+  </header>
+  <div class="dlg-b etq-b">
+    <fieldset class="imp-campos">
+      <legend>¿En qué imprimís?</legend>
+      <label class="check"><input type="radio" name="etq-formato" value="a4" checked> <span><strong>Hoja A4 de stickers</strong> (24 por hoja, de 70 × 37 mm)</span></label>
+      <label class="check"><input type="radio" name="etq-formato" value="rollo"> <span><strong>Impresora de etiquetas</strong> (rollo de 50 × 25 mm, una por etiqueta)</span></label>
+      <label class="f etq-saltear" id="etq-saltear-campo" for="etq-saltear">Stickers ya usados en la hoja<input id="etq-saltear" type="number" min="0" max="23" step="1" value="0" inputmode="numeric"><small>Si la hoja ya tiene stickers despegados, poné cuántos: se empieza después.</small></label>
+    </fieldset>
+    <div class="etq-filtros">
+      <input id="etq-buscar" type="search" autocomplete="off" placeholder="Buscar" aria-label="Buscar">
+      <span id="etq-filtro-ubic"><select id="etq-ubic" aria-label="Ubicación"></select></span>
+      <button class="btn sm" type="button" id="etq-todos">Marcar todos</button>
+      <button class="btn sm" type="button" id="etq-ninguno">Desmarcar</button>
+    </div>
+    <ul id="etq-lista" class="etq-lista"></ul>
+    <div class="etq-pie"><div><strong id="etq-cuenta"></strong><p class="meta">Así queda:</p></div><div id="etq-muestra" class="etq-muestra a4"></div></div>
+  </div>
+  <footer class="dlg-f">
+    <span class="sp"></span>
+    <button type="button" class="btn" data-cerrar>Cerrar</button>
+    <button type="button" class="btn primary btn-grande" id="etq-imprimir" data-imprime>Imprimir</button>
+  </footer>
+</dialog>
+
 <dialog id="dlg-import" aria-labelledby="imp-titulo">
   <header class="dlg-h">
     <h2 id="imp-titulo">Importar productos desde Excel</h2>
@@ -806,6 +857,7 @@
 </dialog>
 
 <div id="impresion" class="solo-impresion" aria-hidden="true"></div>
+<style id="estilo-etiquetas"></style>
 
 <!-- Datos dañados: no se toca nada hasta que se restaure una copia -->
 <div id="danado" class="login bloqueo" hidden>
@@ -873,6 +925,7 @@
 <script src="vendor/xlsx.full.min.js"></script>
 <script>window.XLSX_LEER = window.XLSX;</script>
 <script src="vendor/xlsx-estilo.min.js"></script>
+<script src="js/codigo-barras.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
