@@ -289,19 +289,19 @@
       <header class="vh">
         <div><h1>Depósito</h1><p class="sub" id="dep-sub"></p></div>
         <div class="acciones">
-          <button class="btn" type="button" id="btn-etq-ubicaciones">Etiquetas de ubicación</button>
+          <button class="btn" type="button" id="btn-etq-ubicaciones">Etiquetas de estantes</button>
           <button class="btn primary" type="button" id="btn-etq-productos">Etiquetas de productos</button>
         </div>
       </header>
       <div class="card">
         <label class="f" for="dep-buscar">¿Dónde está?
           <span class="combo-caja"><input id="dep-buscar" class="dep-buscar" type="text" enterkeyhint="search" autocomplete="off" placeholder="Escaneá el código o escribí el nombre o la ubicación"><button type="button" class="combo-limpiar" id="dep-limpiar" aria-label="Borrar">×</button></span>
-          <small>Escaneá un producto para ver en qué lugar está, o la etiqueta de un estante para ver qué hay.</small>
+          <small>Escaneá un producto para ver en qué estante va (si es nuevo, lo cargás ahí mismo), o la etiqueta de un estante para ver qué hay.</small>
         </label>
         <div id="dep-resultado" class="dep-resultado" aria-live="polite"></div>
       </div>
       <div class="card">
-        <div class="card-h"><h2>Ubicaciones</h2><p class="meta">Tocá una para ver qué productos tiene.</p></div>
+        <div class="card-h"><div><h2>Estantes</h2><p class="meta">Cada estante con su categoría. Tocá uno para ver qué productos tiene.</p></div><button class="btn verde" type="button" id="btn-nuevo-estante">Nuevo estante</button></div>
         <div id="dep-ubicaciones" class="dep-ubicaciones"></div>
       </div>
     </section>
@@ -748,6 +748,23 @@
 </dialog>
 
 <!-- Importar productos -->
+<dialog id="dlg-estante" class="dlg-chico" aria-labelledby="est-titulo">
+  <form id="est-form" novalidate>
+    <header class="dlg-h"><h2 id="est-titulo">Nuevo estante</h2><p class="sub">Por ejemplo: estante A-1, categoría Sanitaria. Los productos nuevos que pongas acá toman esa categoría.</p></header>
+    <div class="dlg-b campos-col">
+      <label class="f" for="est-codigo">Estante<input id="est-codigo" type="text" autocomplete="off" placeholder="Ej.: A-1"></label>
+      <label class="f" for="est-categoria">Categoría<input id="est-categoria" type="text" list="est-cats" autocomplete="off" placeholder="Ej.: Sanitaria"><datalist id="est-cats"></datalist></label>
+      <p class="err" id="est-err" role="alert"></p>
+    </div>
+    <footer class="dlg-f">
+      <button type="button" class="btn danger" id="est-borrar" hidden>Borrar</button>
+      <span class="sp"></span>
+      <button type="button" class="btn" data-cerrar>Cancelar</button>
+      <button class="btn primary" type="submit">Guardar</button>
+    </footer>
+  </form>
+</dialog>
+
 <dialog id="etq-dlg" class="dlg-ancho" aria-labelledby="etq-titulo">
   <header class="dlg-h">
     <h2 id="etq-titulo">Imprimir etiquetas</h2>
