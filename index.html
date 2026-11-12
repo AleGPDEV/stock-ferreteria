@@ -556,7 +556,7 @@
           <p class="err" id="p-foto-err" role="alert"></p>
         </div>
       </div>
-      <label class="f" for="p-codigo">Código<input id="p-codigo" type="text" required autocomplete="off" placeholder="Ej.: TOR-0810 o código de barras"><small id="p-codprov" hidden></small></label>
+      <label class="f" for="p-codigo">Código<input id="p-codigo" type="text" required autocomplete="off" placeholder="Ej.: TOR-0810 o código de barras"></label>
       <label class="f" for="p-barras">Códigos de barras<input id="p-barras" type="text" autocomplete="off" spellcheck="false" placeholder="Hacé clic acá y escaneá el paquete"><small>Si el código de arriba es el del proveedor, acá va el del paquete. Puede haber más de uno, separados por espacio.</small></label>
       <label class="f f-wide" for="p-nombre">Nombre<input id="p-nombre" type="text" required placeholder="Ej.: Tornillo autoperforante 8 x 1&quot;"></label>
       <label class="f" for="p-categoria">Categoría<input id="p-categoria" type="text" list="lista-cat" placeholder="Ej.: Tornillería"></label>
@@ -572,6 +572,24 @@
       <label class="f" for="p-precio">Precio de venta<input id="p-precio" type="number" step="any" min="0.01" inputmode="decimal"><small class="muted" id="p-margen"></small><small class="muted" id="p-precio-nota" hidden>Solo el administrador puede cambiar el precio.</small></label>
       <label class="f" for="p-minimo">Stock mínimo<input id="p-minimo" type="number" step="any" min="0" inputmode="decimal"></label>
       <label class="f" for="p-stock" id="p-stock-wrap">Stock inicial<input id="p-stock" type="number" step="any" min="0" inputmode="decimal" placeholder="0"></label>
+      <fieldset class="f-wide codprov solo-admin">
+        <legend>Códigos de los proveedores</legend>
+        <p class="muted">Cómo llama cada proveedor a este producto en sus facturas. Así, al importar, la factura encuentra este producto.</p>
+        <ul class="codprov-l" id="p-codprov-l"></ul>
+        <div class="codprov-nuevo">
+          <label class="visually-hidden" for="p-codprov-prov">Proveedor</label><select id="p-codprov-prov"></select>
+          <label class="visually-hidden" for="p-codprov-cod">Código del proveedor</label><input id="p-codprov-cod" type="text" autocomplete="off" placeholder="Código del proveedor">
+          <button type="button" class="btn sm" id="p-codprov-agregar">Agregar</button>
+        </div>
+        <p class="err" id="p-codprov-err" role="alert"></p>
+      </fieldset>
+      <details class="f-wide unir solo-admin" id="p-unir" hidden>
+        <summary>¿Está cargado dos veces? Unir con otro producto</summary>
+        <p class="muted">Por ejemplo, el mismo artículo que se compró a dos proveedores y quedó con dos fichas. Buscá la otra ficha: queda esta, con el stock y el historial de las dos.</p>
+        <label class="visually-hidden" for="p-unir-buscar">Buscar el otro producto</label>
+        <input id="p-unir-buscar" type="search" autocomplete="off" placeholder="Nombre o código del otro producto">
+        <ul class="unir-res" id="p-unir-res"></ul>
+      </details>
       <p class="muted f-wide nota-edit" id="p-stock-nota" hidden>Para cambiar el stock usá la caja, una entrada o un ajuste por conteo. Así queda registrado en los movimientos.</p>
     </div>
     <p class="err dlg-err" id="prod-err" role="alert"></p>
@@ -813,6 +831,7 @@
     <fieldset id="imp-campos" class="imp-campos" hidden>
       <legend>Qué cambiar</legend>
       <label class="check" id="imp-entrada" hidden><input type="checkbox" data-campo="entrada" checked> <span><strong>Sumar al stock lo que llegó</strong> (columna «Llegó»)</span></label>
+      <label class="check" id="imp-deposito" hidden><input type="checkbox" data-campo="deposito"> <span><strong>Sumar igual lo que ya se recibió en el Depósito</strong> (solo si es otra mercadería, no la misma)</span></label>
       <label class="check" id="imp-repetida" hidden><input type="checkbox" data-campo="repetidas"> <span><strong>Sumar otra vez la mercadería de la factura que ya se cargó</strong> (solo si de verdad llegó de nuevo)</span></label>
       <p class="muted solo-existentes">En los productos que ya existen:</p>
       <label class="check solo-existentes"><input type="checkbox" data-campo="precio" checked> Precio de venta</label>

@@ -116,9 +116,14 @@ test('importar: agrega nuevos, actualiza existentes por código y saltea filas v
   ];
   const plan = app.planImportacion(d, filas);
   assert.equal(plan.error, undefined);
-  assert.equal(plan.nuevos.length, 2);
+  // «Repetido» trae el mismo código que el tornillo de otra fila pero otra descripción: no se saltea en silencio (QA #5)
+  assert.equal(plan.repetidasDistintas.length, 1);
+  const rep = plan.nuevos.find((x) => x.datos.repetidaDe);
+  assert.equal(rep.datos.nombre, 'Repetido');
+  rep.accion = 'saltear'; // en la vista previa se puede elegir no cargarla
+  assert.equal(plan.nuevos.length, 3);
   assert.equal(plan.actualizados.length, 1);
-  assert.equal(plan.salteadas, 2);
+  assert.equal(plan.salteadas, 1);
   assert.equal(d.productos.length, 2, 'el plan no toca los datos');
 
   app.aplicarImportacion(d, plan);
@@ -800,7 +805,7 @@ test('QA3 A1: el código de un proveedor no pisa el producto de otro proveedor',
     assert.equal(pintura.stock, 6);
     assert.equal(pintura.costo, 1450);
     const sur = d.proveedores.find((v) => v.nombre === 'Pinturería Sur');
-    assert.deepEqual(pintura.codigosProv, [{ proveedorId: sur.id, codigo: '1234' }]);
+    assert.deepEqual(pintura.codigosProv.map((x) => [x.proveedorId, x.codigo]), [[sur.id, '1234']]);
     const entrada = d.movimientos.find((m) => m.productoId === pintura.id && m.nota === 'Factura B 88');
     assert.equal(entrada.proveedorId, sur.id);
     // La factura siguiente del mismo proveedor va a la misma pintura, no crea otra
@@ -821,7 +826,7 @@ test('QA3 A1: con el mismo proveedor (o sin proveedor) el código sigue encontra
   app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
   const g = d.productos.find((p) => p.id === 'lh');
   assert.equal(g.stock, 14);
-  assert.deepEqual(g.codigosProv, [{ proveedorId: 'uru', codigo: 'LH-1234' }]);
+  assert.deepEqual(g.codigosProv.map((x) => [x.proveedorId, x.codigo]), [['uru', 'LH-1234']]);
   // Una lista de precios sin proveedor (Código + Precio) sigue funcionando
   const plan2 = app.planImportacion(d, [{ 'Código': '1234', Precio: 320 }]);
   assert.equal(plan2.actualizados[0].id, 't');
@@ -974,4 +979,109 @@ test('recibir en el depósito: código nuevo con nombre y estante, y la próxima
   assert.equal(app.recibirEnDeposito(d, 'a', 5), null);
   assert.equal(d.productos[0].stock, 15);
   assert.equal(d.productos[0].costo, 390, 'sumar en el depósito no cambia el costo');
+});
+
+// ---------- Revisión QA #5: importación y fichas repetidas ----------
+
+test('QA5: ¿se parecen dos descripciones?', () => {
+  assert.equal(app.seParecen('ESMALTE SINTETICO BLANCO 4L', 'Tornillo autoperforante'), false);
+  assert.equal(app.seParecen('TORN AUTOP 8X1', 'Tornillo autoperforante 8 x 1"'), true, 'abreviado');
+  assert.equal(app.seParecen('GUANTE DE NITRILO T9', 'Guante nitrilo'), true);
+  assert.equal(app.seParecen('8X40', 'Bulón'), true, 'sin palabras para comparar, no se puede decir');
+});
+
+test('QA5 A1: el Excel con dos facturas a nombre de un solo proveedor no pisa ni saltea', () => {
+  const d = dosProveedores();
+  // el tornillo ya tiene registrado su código 1234 de Distribuidora Norte
+  app.anotarCodigoProv(d.productos.find((p) => p.id === 't'), 'norte', '1234', 'TORNILLO AUTOPERFORANTE 8X1');
+  const filas = [
+    { 'Código': '1234', 'Código del proveedor': '1234', Producto: 'ESMALTE SINTETICO BLANCO 4L', Proveedor: 'Distribuidora Norte', Costo: 1450, 'Llegó': 6, Factura: 'B 88' },
+    { 'Código': '1234', 'Código del proveedor': '1234', Producto: 'TORNILLO AUTOPERFORANTE 8X1', Proveedor: 'Distribuidora Norte', Costo: 185, 'Llegó': 10, Factura: 'A 500' },
+  ];
+  const plan = app.planImportacion(d, filas);
+  assert.equal(plan.salteadas, 0, 'ninguna fila se pierde');
+  assert.equal(plan.dudosas.length, 1);
+  assert.equal(plan.dudosas[0].nombre, 'ESMALTE SINTETICO BLANCO 4L');
+  assert.equal(plan.actualizados.length, 1);
+  assert.equal(plan.actualizados[0].id, 't', 'el tornillo lo actualiza la fila del tornillo');
+  app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+  const t = d.productos.find((p) => p.id === 't');
+  assert.deepEqual([t.stock, t.costo], [25, 185], 'llegaron los 10 tornillos, con su costo');
+  const esmalte = d.productos.find((p) => p.nombre.startsWith('ESMALTE'));
+  assert.deepEqual([esmalte.stock, esmalte.costo], [6, 1450]);
+  assert.notEqual(esmalte.codigo, '1234');
+});
+
+test('QA5 A1: en la vista previa se puede decir «es el mismo» o «no cargar»', () => {
+  const d = dosProveedores();
+  const fila = [{ 'Código': '1234', Producto: 'TORN. AUTOPERF. PUNTA MECHA', Proveedor: 'Distribuidora Norte', 'Llegó': 5, Costo: 190 }];
+  let plan = app.planImportacion(d, [{ ...fila[0], Producto: 'Cinta de embalar' }]);
+  assert.equal(plan.dudosas.length, 1);
+  plan.nuevos[0].accion = 'mismo';
+  app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+  assert.equal(d.productos.find((p) => p.id === 't').stock, 20);
+  assert.equal(d.productos.length, 2, 'no se creó otro');
+  plan = app.planImportacion(d, [{ ...fila[0], Producto: 'Cinta de embalar' }]);
+  plan.nuevos[0].accion = 'saltear';
+  app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+  assert.equal(d.productos.length, 2);
+  assert.equal(d.productos.find((p) => p.id === 't').stock, 20);
+  // abreviado del mismo producto: no es dudosa
+  plan = app.planImportacion(d, fila);
+  assert.deepEqual([plan.dudosas.length, plan.actualizados.length], [0, 1]);
+});
+
+test('QA5 B1: una planilla con factura y sin proveedor tampoco pisa un producto que no se parece', () => {
+  const d = dosProveedores();
+  const plan = app.planImportacion(d, [{ 'Código': '1234', Producto: 'Esmalte sintético blanco 4L', Costo: 1450, 'Llegó': 6, Factura: 'B 88' }]);
+  assert.equal(plan.actualizados.length, 0);
+  assert.equal(plan.dudosas.length, 1);
+  app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+  const t = d.productos.find((p) => p.id === 't');
+  assert.deepEqual([t.stock, t.costo], [15, 180]);
+});
+
+test('QA5 M2: lo que ya se recibió en el Depósito no se suma otra vez con la factura', () => {
+  const d = dosProveedores();
+  app.registrar(d, { tipo: 'entrada', productoId: 't', cantidad: 10, nota: 'Llegó (Depósito)' });
+  const fila = [{ 'Código': '1234', Producto: 'Tornillo autoperforante', Proveedor: 'Distribuidora Norte', Costo: 190, 'Llegó': 10, Factura: 'A 500' }];
+  const plan = app.planImportacion(d, fila);
+  assert.equal(plan.enDeposito.length, 1);
+  assert.deepEqual([plan.enDeposito[0].cantidad, plan.enDeposito[0].llego], [10, 10]);
+  app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+  const t = d.productos.find((p) => p.id === 't');
+  assert.equal(t.stock, 25, '15 + 10 del Depósito, no 35');
+  assert.equal(t.costo, 190, 'el costo de la factura sí se actualiza');
+  // marcando la casilla a propósito, se suma
+  const plan2 = app.planImportacion(d, [{ ...fila[0], Factura: 'A 501' }]);
+  app.aplicarImportacion(d, plan2, { ...app.CAMPOS_IMPORTAR, deposito: true });
+  assert.equal(t.stock, 35);
+});
+
+test('QA5 M3: unir dos fichas del mismo producto y editar sus códigos de proveedor', () => {
+  const d = dosProveedores();
+  d.ventas.push({ id: 'v1', numero: 1, fecha: new Date().toISOString(), total: 300, medio: 'Efectivo', items: [{ productoId: 'lh', nombre: 'Guante', cantidad: 1, precio: 150 }] });
+  d.movimientos.push({ id: 'm1', fecha: new Date().toISOString(), tipo: 'entrada', productoId: 'lh', cantidad: 4 });
+  app.anotarCodigoProv(d.productos.find((p) => p.id === 'lh'), 'uru', 'LH-1234');
+  const r = app.unirProductos(d, 't', 'lh');
+  assert.equal(r.error, undefined);
+  const t = d.productos.find((p) => p.id === 't');
+  assert.equal(d.productos.length, 1);
+  assert.equal(t.stock, 19);
+  assert.ok(t.barras.includes('LH-1234'), 'el código propio del otro queda como código de barras');
+  assert.deepEqual(t.codigosProv.map((x) => x.proveedorId), ['uru']);
+  assert.equal(d.ventas[0].items[0].productoId, 't');
+  assert.equal(d.movimientos[0].productoId, 't');
+  assert.match(app.unirProductos(d, 't', 't').error, /mismo/);
+  app.quitarCodigoProv(t, 'uru');
+  assert.deepEqual(t.codigosProv, []);
+});
+
+test('QA5 M2: una fila dudosa que va como producto nuevo suma lo suyo aunque el otro se haya recibido en el Depósito', () => {
+  const d = dosProveedores();
+  app.registrar(d, { tipo: 'entrada', productoId: 't', cantidad: 10, nota: 'Llegó (Depósito)' });
+  const plan = app.planImportacion(d, [{ 'Código': '1234', Producto: 'Esmalte sintético blanco 4L', Proveedor: 'Distribuidora Norte', Costo: 1450, 'Llegó': 6 }]);
+  assert.deepEqual([plan.dudosas.length, plan.enDeposito.length], [1, 0]);
+  app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
+  assert.equal(d.productos.find((p) => p.nombre.startsWith('Esmalte')).stock, 6);
 });

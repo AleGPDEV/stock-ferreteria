@@ -844,3 +844,26 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 .dep-vincular summary { cursor: pointer; color: var(--accent); font-weight: 600; }
 .dep-vincular input { width: 100%; margin-top: 8px; }
 .dep-ubic em { font-style: normal; font-weight: 600; color: var(--accent); font-size: 14px; }
+
+/* Importar: filas dudosas con su elección */
+.imp-dudosas-l { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.imp-dudosas-l li { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-ctrl); padding: 8px 10px; }
+.imp-dudosas-l li > div { min-width: 0; flex: 1 1 220px; }
+.imp-dudosas-l select { padding-block: 6px; max-width: 100%; }
+.imp-deposito-av ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; }
+
+/* Ficha del producto: códigos de proveedor y unir */
+.codprov { border: 1px solid var(--line); border-radius: var(--r-ctrl); padding: 10px 12px 12px; margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.codprov legend { font-weight: 600; padding: 0 4px; }
+.codprov p { margin: 0; font-size: 14px; }
+.codprov-l { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.codprov-l li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 15px; }
+.codprov-l li .btn { margin-left: auto; }
+.codprov-nuevo { display: flex; gap: 8px; flex-wrap: wrap; }
+.codprov-nuevo select { flex: 1 1 160px; min-width: 0; }
+.codprov-nuevo input { flex: 1 1 140px; min-width: 0; }
+.unir summary { cursor: pointer; color: var(--accent); font-weight: 600; width: fit-content; }
+.unir[open] { display: flex; flex-direction: column; gap: 8px; }
+.unir p { margin: 0; font-size: 14px; }
+.unir-res { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.unir input { width: 100%; }
