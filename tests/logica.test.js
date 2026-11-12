@@ -1085,3 +1085,52 @@ test('QA5 M2: una fila dudosa que va como producto nuevo suma lo suyo aunque el 
   app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
   assert.equal(d.productos.find((p) => p.nombre.startsWith('Esmalte')).stock, 6);
 });
+
+// ---------- Revisión QA #5: Depósito ----------
+test('QA5 M1: «¿Cuántos llegaron?» con tope y confirmación; un código escaneado no entra como cantidad', () => {
+  assert.deepEqual(app.revisarCantidadDeposito(''), { cantidad: 0 }, 'vacío es válido: es opcional');
+  assert.deepEqual(app.revisarCantidadDeposito('24'), { cantidad: 24, grande: false });
+  assert.deepEqual(app.revisarCantidadDeposito('600'), { cantidad: 600, grande: true }, 'más de 500: se confirma');
+  assert.deepEqual(app.revisarCantidadDeposito('10000'), { cantidad: 10000, grande: true });
+  assert.match(app.revisarCantidadDeposito('10001').error, /más de 10\.000 de una vez no se acepta/);
+  assert.match(app.revisarCantidadDeposito('57790001000101').error, /no se acepta/, 'el código pegado a la cantidad');
+  assert.match(app.revisarCantidadDeposito('abc').error, /con números/);
+  assert.match(app.revisarCantidadDeposito('-3').error, /con números/);
+  // la lógica también se niega, aunque se llame directo
+  const d = base();
+  assert.match(app.recibirEnDeposito(d, 'a', 57790001000101), /no se acepta/);
+  assert.equal(d.productos[0].stock, 10);
+  assert.equal(app.recibirEnDeposito(d, 'a', 600), null);
+  assert.equal(d.productos[0].stock, 610);
+});
+
+test('QA5 M4: la etiqueta de un estante lleva un número corto (U1) aunque el nombre sea largo; las viejas «UBIC …» siguen andando', () => {
+  const d = base();
+  const largo = app.guardarEstante(d, { codigo: 'Herramientas eléctricas 12', categoria: 'Herramientas' }).estante;
+  const otro = app.guardarEstante(d, { codigo: 'A-1', categoria: 'Sanitaria' }).estante;
+  assert.deepEqual([largo.num, otro.num, d.numEstante], [1, 2, 2], 'número fijo, en orden');
+  const u = app.ubicacionesDe(d).find((x) => x.estanteId === largo.id);
+  assert.equal(u.corto, 'U1');
+  const html = app.htmlEtiquetas([{ ubicacion: u, copias: 1 }], 'rollo').html;
+  assert.match(html, /aria-label="Código de barras U1"/, 'el código de barras lleva U1, no el nombre');
+  assert.match(html, /Herramientas eléctricas 12/, 'el nombre va escrito');
+  // el código queda corto: muchas menos barras que con el nombre entero
+  const CB = require('../js/codigo-barras.js');
+  const corto = CB.anchos('U1').reduce((s, x) => s + x, 0);
+  const viejo = CB.anchos(app.PREFIJO_UBIC + u.clave).reduce((s, x) => s + x, 0);
+  assert.ok(corto <= 70, `U1 mide ${corto} módulos`);
+  assert.ok(viejo > corto * 4, `con el nombre medía ${viejo} módulos`);
+  // escanear el número nuevo o la etiqueta vieja lleva al mismo estante
+  assert.equal(app.dondeEsta(d, 'U1').ubicacion.estanteId, largo.id);
+  assert.equal(app.dondeEsta(d, 'u2').ubicacion.estanteId, otro.id);
+  assert.equal(app.dondeEsta(d, 'UBIC HERRAMIENTAS ELECTRICAS 12').ubicacion.estanteId, largo.id);
+  // borrar un estante no libera su número
+  app.eliminarEstante(d, otro.id);
+  assert.equal(app.guardarEstante(d, { codigo: 'B-1', categoria: '' }).estante.num, 3);
+  // estantes cargados antes (sin número) y ubicaciones que solo están en los productos: se numeran al imprimir
+  const v = base();
+  v.estantes = [{ id: 'e1', codigo: 'A-1', categoria: 'Sanitaria' }];
+  assert.equal(app.completarEstantes(v), true);
+  assert.deepEqual(v.estantes.map((e) => [e.codigo, e.num]), [['A-1', 1], ['C-02', 2]]);
+  assert.equal(app.completarEstantes(v), false, 'la segunda vez no cambia nada');
+});

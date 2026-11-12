@@ -107,7 +107,11 @@ tr.fuera td { opacity: .45; }
 .tabla-wrap { max-height: 62vh; }
 .chip.warn { background: var(--warn-soft); color: var(--warn); }
 .chip.ok { background: var(--verde-soft); color: var(--verde); }
-.aviso-codigo { margin-top: 4px; font-size: 13px; }
+.aviso-codigo { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.aviso-codigo .chip { font-size: 13px; }
+.f-prov { display: flex; flex-direction: column; gap: 10px; }
+#proveedores { display: flex; flex-direction: column; gap: 10px; }
+#descargar-por:empty { display: none; }
 </style>
 </head>
 <body>
@@ -132,7 +136,7 @@ tr.fuera td { opacity: .45; }
   <section class="card" id="paso2" hidden>
     <p class="paso"><span class="paso-n">2</span> Revisá cómo se cargan</p>
     <div class="opciones">
-      <label class="f" for="proveedor">Proveedor<input id="proveedor" type="text" autocomplete="off"><small id="proveedor-ayuda"></small><small class="err" id="proveedor-err" role="alert"></small></label>
+      <div class="f-prov"><div id="proveedores"></div><small class="err" id="proveedor-err" role="alert"></small></div>
       <label class="f" for="iva">IVA
         <select id="iva">
           <option value="auto">Automático</option>
@@ -161,6 +165,7 @@ tr.fuera td { opacity: .45; }
       <p class="paso"><span class="paso-n">3</span> Productos (<span id="cuenta">0</span>)</p>
       <button class="btn verde grande" type="button" id="descargar">Descargar Excel</button>
     </div>
+    <p class="err" id="descargar-por" role="alert"></p>
     <p class="ayuda">Podés corregir el nombre, la categoría, el costo y el precio. Destildá los que no quieras cargar.</p>
     <input id="buscar" type="search" placeholder="Buscar en la lista" aria-label="Buscar en la lista">
     <div class="tabla-wrap"><table>
@@ -444,7 +449,8 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     r.email = email[0] || '';
     r.dominio = email[1] || '';
     // razón social del emisor: primera fila de texto arriba a la izquierda que no sea un número ni un rótulo
-    const primeras = todo.filter((f) => f.pag === 0).slice(0, 12).flatMap((f) => f.celdas).filter((c) => c.x < 200 && /[A-Za-z]{3}/.test(c.t));
+    // (solo arriba de la tabla de productos: si no, sin nombre arriba se tomaba un título de columna como «Cantidad»)
+    const primeras = (iTabla >= 0 ? todo.slice(0, iTabla) : todo).filter((f) => f.pag === 0).slice(0, 12).flatMap((f) => f.celdas).filter((c) => c.x < 200 && /[A-Za-z]{3}/.test(c.t));
     r.emisor = primeras.length ? primeras[0].t.trim() : '';
     const tot = (re) => { const m = re.exec(plano); return m ? numUy(m[1]) : null; };
     r.total = tot(/TOTAL A PAGAR:?\s*([\d.,]+)/i) ?? tot(/Monto Total:?\s*([\d.,]+)/i) ?? tot(/\bTOTAL:?\s*\$?\s*([\d.,]+)/i);
@@ -541,7 +547,8 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   }
 
   /** Normas y grados: DIN933, ISO4017, PN10, RAL9010, IP65, RJ45, AWG12, IEC60309, NEMA5, SCH40, CAT6, SAE1020… */
-  const NORMAS = ['DIN', 'ISO', 'PN', 'RAL', 'IP', 'RJ', 'AWG', 'IEC', 'NEMA', 'SCH', 'CAT', 'ANSI', 'ASTM', 'SAE', 'UNE', 'UNIT', 'NBR', 'EN', 'BS', 'JIS', 'NPT', 'BSP', 'UL'];
+  // Sin «UL», «EN» ni «BS»: hay códigos de modelo así (UL-1240, EN-200, BS-115) y no son normas.
+  const NORMAS = ['DIN', 'ISO', 'PN', 'RAL', 'IP', 'RJ', 'AWG', 'IEC', 'NEMA', 'SCH', 'CAT', 'ANSI', 'ASTM', 'SAE', 'UNE', 'UNIT', 'NBR', 'JIS', 'NPT', 'BSP'];
   const RE_NORMA = new RegExp(`^(?:${NORMAS.join('|')})-?\\d`);
   function esNorma(w) { return RE_NORMA.test(String(w || '').toUpperCase()); }
 
@@ -613,13 +620,63 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     return '';
   }
 
+  /* ---------- Proveedor de cada factura ----------
+   * Cada factura es de un proveedor: se lo reconoce por el RUT del emisor; si no se pudo leer el RUT,
+   * por el nombre del emisor (si coincide con el de otra factura, es el mismo). Sin RUT ni nombre no se sabe de quién es. */
+  const rutDe = (r) => String((r && r.rucEmisor) || '').replace(/\D/g, '');
+  const emisorDe = (r) => normal((r && r.emisor) || '').replace(/\b(s\.?a\.?s?|s\.?r\.?l|ltda)\.?$/i, '').replace(/[^a-z0-9]/g, '');
+
+  /**
+   * Agrupa las facturas por proveedor. Devuelve { grupos: [{ grupo, rut, emisor, facturas: [{ f, numero }] }], porFactura: Map(f → grupo), error }.
+   * error: si hay varias facturas y de alguna no se puede saber de quién es (sin RUT ni nombre del emisor).
+   */
+  function gruposProveedor(facturas) {
+    const grupos = new Map();
+    const porFactura = new Map();
+    const nuevo = (g, f) => { if (!grupos.has(g)) grupos.set(g, { grupo: g, rut: rutDe(f.r), emisor: (f.r && f.r.emisor) || '', facturas: [] }); return grupos.get(g); };
+    const sinSaber = [];
+    for (const f of facturas) { // primero las que tienen RUT
+      const rut = rutDe(f.r);
+      if (rut) { nuevo('r:' + rut, f).facturas.push({ f, numero: numeroFactura(f.r) }); porFactura.set(f, 'r:' + rut); }
+    }
+    for (const f of facturas) {
+      if (porFactura.has(f)) continue;
+      const em = emisorDe(f.r);
+      const conRut = em && [...grupos.values()].find((g) => g.rut && emisorDe({ emisor: g.emisor }) === em);
+      const g = conRut ? conRut.grupo : em ? 'e:' + em : '';
+      if (!g) sinSaber.push(f);
+      nuevo(g, f).facturas.push({ f, numero: numeroFactura(f.r) });
+      porFactura.set(f, g);
+    }
+    let error = '';
+    if (sinSaber.length && facturas.length > 1) {
+      const cuales = sinSaber.map((f) => numeroFactura(f.r) || f.archivo || 'sin número').join(', ');
+      error = `No pude leer el RUT ni el nombre del proveedor de ${sinSaber.length === 1 ? 'la factura' : 'las facturas'} ${cuales}, así que no sé de quién ${sinSaber.length === 1 ? 'es' : 'son'}. ${sinSaber.length === 1 ? 'Quitala y cargala sola' : 'Quitalas y cargalas solas'}, en otra vuelta.`;
+    }
+    return { grupos: [...grupos.values()], porFactura, error };
+  }
+
   const AVISO_MISMO_CODIGO = 'Mismo código y descripción distinta: revisalos';
   const descripcionComparable = (t) => String(t || '').toUpperCase().replace(/\s+/g, '');
+
+  /** Renglones con el mismo código (del mismo proveedor) y descripciones distintas: { base → [productos] }. Solo los que tienen código. */
+  function conflictosCodigo(lista) {
+    const porBase = new Map();
+    for (const p of lista) {
+      if (!p.codigo || !p.base) continue;
+      if (!porBase.has(p.base)) porBase.set(p.base, []);
+      porBase.get(p.base).push(p);
+    }
+    return new Map([...porBase].filter(([, l]) => l.length > 1));
+  }
 
   /**
    * Junta los renglones de las facturas en productos.
    * facturas: [{ r }] (r = lo que devuelve LectorPdf.leerFactura, con r.numero corregido a mano si hizo falta).
    * opc.iva(f): % de IVA a sumar a esa factura (0 si ya viene incluido). opc.tipoCambio: pesos por dólar.
+   * opc.mismos: Set de «base» que la persona confirmó que son el mismo producto (se juntan aunque la descripción cambie).
+   * opc.sinCodigo: Set de «fila» a las que la persona les quitó el código (se cargan por la descripción).
+   * Cada producto lleva su grupo (proveedor): el mismo código de dos proveedores distintos son productos distintos.
    * Devuelve { productos, error }. Con facturas en dólares y sin tipo de cambio, error y sin productos.
    */
   function armarProductos(facturas, opc = {}) {
@@ -628,34 +685,38 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     if (facturas.some((f) => enDolares(f.r)) && !(tc > 0)) {
       return { productos: [], error: 'Hay facturas en dólares: escribí el tipo de cambio (cuántos pesos vale un dólar) para pasar los costos a pesos.' };
     }
+    const mismos = opc.mismos || new Set();
+    const sinCodigo = opc.sinCodigo || new Set();
+    const { porFactura } = gruposProveedor(facturas);
     const porClave = new Map();
-    let aviso = false;
     const ordenadas = facturas.slice().sort((a, b) => (a.r.fecha || '').localeCompare(b.r.fecha || ''));
     for (const f of ordenadas) {
       const iva = ivaDe(f) || 0;
       const cambio = enDolares(f.r) ? tc : 1;
       const nf = numeroFactura(f.r);
+      const grupo = porFactura.get(f) || '';
       for (const it of f.r.items) {
         const s = separarCodigo(it.descripcion, it.codigo);
-        let clave = claveProducto(it.descripcion, it.codigo);
-        // Red de seguridad: mismo código pero otra descripción (sin contar mayúsculas y espacios) → no se juntan
         const desc = descripcionComparable(s.nombre);
-        const primero = porClave.get(clave);
-        if (primero && primero.desc !== desc) {
-          primero.aviso = AVISO_MISMO_CODIGO;
-          clave = `${clave}#${desc}`;
-          if (!porClave.has(clave)) aviso = true;
-        }
+        const base = `${grupo}|${claveProducto(it.descripcion, it.codigo)}`;
+        const fila = `${base}#${desc}`;
+        let codigo = s.codigo;
+        let clave;
+        if (!codigo) clave = base; // sin código: la clave ya es la descripción completa
+        else if (sinCodigo.has(fila)) { codigo = ''; clave = `${grupo}|d:${normal(s.nombre).replace(/[^a-z0-9]/g, '')}`; }
+        // Red de seguridad: mismo código y otra descripción (sin contar mayúsculas y espacios) no se juntan, salvo que se confirme
+        else clave = mismos.has(base) ? base : fila;
         const costo = red2(it.importe / it.cantidad * (1 + iva / 100) * cambio);
         let p = porClave.get(clave);
-        if (!p) { p = { clave, codigo: s.codigo, nombre: nombreLindo(s.nombre), descripcion: s.nombre, desc, cantidad: 0, facturas: [] }; porClave.set(clave, p); }
-        if (aviso) { p.aviso = AVISO_MISMO_CODIGO; aviso = false; }
+        if (!p) { p = { clave, base, fila, grupo, codigo, nombre: nombreLindo(s.nombre), descripcion: s.nombre, desc, cantidad: 0, facturas: [] }; porClave.set(clave, p); }
         p.cantidad += it.cantidad;
         p.costo = costo; // la factura más nueva queda última
         if (nf && !p.facturas.includes(nf)) p.facturas.push(nf);
       }
     }
-    return { productos: [...porClave.values()], error: '' };
+    const productos = [...porClave.values()];
+    for (const l of conflictosCodigo(productos).values()) l.forEach((p) => { p.aviso = AVISO_MISMO_CODIGO; });
+    return { productos, error: '' };
   }
 
   /** Columnas del Excel que arma el Lector (el programa lo importa con «Importar desde Excel»). */
@@ -667,16 +728,24 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
    * «Código» queda como antes (compatibilidad); «Código del proveedor» va vacío si no hay código (se usó la descripción).
    */
   function filasExcel(lista, opc = {}) {
-    const proveedor = String(opc.proveedor || '').trim();
-    if (!proveedor) return { filas: [], error: 'Escribí el proveedor (el mismo nombre que en el programa).' };
+    // opc.proveedores: { grupo → nombre } (facturas de varios proveedores); opc.proveedor: uno solo para todas
+    const provDe = (p) => String((opc.proveedores && p.grupo != null && opc.proveedores[p.grupo] != null ? opc.proveedores[p.grupo] : opc.proveedor) || '').trim();
+    const falta = lista.find((p) => !provDe(p));
+    if (falta) {
+      const varios = opc.proveedores && Object.keys(opc.proveedores).length > 1;
+      return { filas: [], error: varios ? `Escribí el nombre de cada proveedor (falta el de la factura ${(falta.facturas || []).join(', ') || 'sin número'}).` : 'Escribí el proveedor (el mismo nombre que en el programa).' };
+    }
+    if (conflictosCodigo(lista).size) {
+      return { filas: [], error: 'Hay productos marcados «Mismo código y descripción distinta». En cada uno elegí «Quitarle el código» o «Son el mismo producto» antes de descargar.' };
+    }
     const filas = lista.map((p) => ({
       'Código': p.codigo || '', 'Código del proveedor': p.codigo || '', 'Producto': p.nombre, 'Categoría': p.categoria || '', 'Unidad': 'unidad',
-      'Proveedor': proveedor, 'Costo': p.costo, 'Precio': p.precio, 'Llegó': opc.llego ? p.cantidad : '', 'Factura': (p.facturas || []).join(', '),
+      'Proveedor': provDe(p), 'Costo': p.costo, 'Precio': p.precio, 'Llegó': opc.llego ? p.cantidad : '', 'Factura': (p.facturas || []).join(', '),
     }));
     return { filas, error: '' };
   }
 
-  const api = { filasExcel, COLUMNAS_EXCEL, esNorma, AVISO_MISMO_CODIGO, esMedida, separarCodigo, claveProducto, nombreLindo, numeroFactura, mismaFactura, problemaFactura, armarProductos, enDolares, esNotaCredito, MARCAS };
+  const api = { gruposProveedor, conflictosCodigo, filasExcel, COLUMNAS_EXCEL, esNorma, AVISO_MISMO_CODIGO, esMedida, separarCodigo, claveProducto, nombreLindo, numeroFactura, mismaFactura, problemaFactura, armarProductos, enDolares, esNotaCredito, MARCAS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.LectorProductos = api;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -704,7 +773,7 @@ const fechaUy = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
 
 /* ---------- Nombres, códigos y categorías ----------
  * Los códigos, nombres y cómo se juntan los renglones están en lector-productos.js (LectorProductos). */
-const { nombreLindo, numeroFactura, mismaFactura, problemaFactura, armarProductos, enDolares, filasExcel, COLUMNAS_EXCEL } = LectorProductos;
+const { nombreLindo, numeroFactura, mismaFactura, problemaFactura, armarProductos, enDolares, filasExcel, COLUMNAS_EXCEL, gruposProveedor, conflictosCodigo } = LectorProductos;
 const CATS = [
   ['Mascotas', /MASCOTA/], ['Limpieza', /PALA CON CEPILLO/],
   ['Cerrajería', /CANDADO|CERRADURA|CERROJO|PASADOR|BANDOLA|LLAVE DE PUERTA|CILINDRO/],
@@ -735,12 +804,27 @@ function redondear(x, paso) {
 let facturas = []; // { archivo, r }
 let productos = []; // filas fusionadas
 let editados = {}; // clave → { nombre, categoria, costo, precio, incluir }
+let provNombres = {}; // grupo (proveedor de las facturas) → nombre escrito
+const resol = { mismos: new Set(), sinCodigo: new Set() }; // «Son el mismo producto» y «Quitarle el código»
 
-function proveedorSugerido() {
-  const f = facturas.find((x) => x.r.dominio) || facturas[0];
+/** Nombre sugerido para el proveedor de un grupo de facturas: la web del mail o el nombre del emisor. */
+function proveedorSugerido(g) {
+  const fs = g.facturas.map((x) => x.f);
+  const f = fs.find((x) => x.r.dominio) || fs[0];
   if (!f) return '';
   if (f.r.dominio) return f.r.dominio.charAt(0).toUpperCase() + f.r.dominio.slice(1);
-  return nombreLindo(f.r.emisor.replace(/\b(S\.?A\.?S?|S\.?R\.?L|LTDA)\.?$/i, '').trim());
+  return nombreLindo(String(f.r.emisor || '').replace(/\b(S\.?A\.?S?|S\.?R\.?L|LTDA)\.?$/i, '').trim());
+}
+
+/** Un campo «Proveedor» por cada proveedor distinto (RUT) de las facturas cargadas. */
+function pintarProveedores() {
+  const { grupos, error } = gruposProveedor(facturas);
+  grupos.forEach((g) => { if (provNombres[g.grupo] == null) provNombres[g.grupo] = proveedorSugerido(g); });
+  const varios = grupos.length > 1;
+  $('#proveedores').innerHTML = grupos.map((g) => `<label class="f">${varios ? `Proveedor de la${g.facturas.length > 1 ? 's facturas' : ' factura'} ${esc(g.facturas.map((x) => x.numero || 'sin número').join(', '))}` : 'Proveedor'}
+    <input type="text" data-prov-grupo="${esc(g.grupo)}" value="${esc(provNombres[g.grupo])}" autocomplete="off">
+    <small>En la factura: ${esc(g.emisor || 'sin nombre')}${g.rut ? ' · RUT ' + esc(g.rut) : ''}. Usá el mismo nombre que en el programa.</small></label>`).join('');
+  $('#proveedor-err').textContent = error;
 }
 
 function ivaDe(f) {
@@ -752,7 +836,7 @@ function ivaDe(f) {
 }
 
 function armar() {
-  const r = armarProductos(facturas, { iva: ivaDe, tipoCambio: parseNum($('#cambio').value) });
+  const r = armarProductos(facturas, { iva: ivaDe, tipoCambio: parseNum($('#cambio').value), mismos: resol.mismos, sinCodigo: resol.sinCodigo });
   productos = r.productos;
   productos.forEach((p) => { p.categoria = categoria(p.descripcion); });
   $('#cambio-err').textContent = r.error;
@@ -781,6 +865,7 @@ function pintarFacturas() {
       <span class="sp"></span><button class="btn sm danger" type="button" data-quitar="${i}">Quitar</button></div>`;
   }).join('');
   const hay = facturas.length > 0;
+  pintarProveedores();
   $('#paso2').hidden = !hay;
   $('#paso3').hidden = !hay;
   $('#cambio-campo').hidden = !facturas.some((f) => enDolares(f.r));
@@ -794,12 +879,22 @@ function pintarFacturas() {
 function pintar() {
   const q = normal($('#buscar').value.trim());
   $('#cuenta').textContent = productos.filter(incluido).length;
-  $('#descargar').disabled = !productos.some(incluido) || !!$('#cambio-err').textContent;
+  // Avisos de «mismo código» entre los productos que se van a cargar (destildar uno también lo resuelve)
+  const enConflicto = new Set([...conflictosCodigo(productos.filter(incluido)).values()].flat());
+  const grupoErr = gruposProveedor(facturas).error;
+  const por = $('#cambio-err').textContent ? 'Falta el tipo de cambio de las facturas en dólares (paso 2).'
+    : grupoErr ? 'No sé de qué proveedor es cada factura: mirá el aviso del paso 2.'
+    : enConflicto.size ? 'Hay productos marcados «Mismo código y descripción distinta»: en cada uno elegí «Quitarle el código» o «Son el mismo producto».' : '';
+  $('#descargar-por').textContent = productos.length ? por : '';
+  $('#descargar').disabled = !productos.some(incluido) || !!por;
+  const varios = new Set(productos.map((p) => p.grupo)).size > 1;
   const lista = productos.filter((p) => !q || normal(`${p.codigo} ${valor(p, 'nombre')} ${valor(p, 'categoria')}`).includes(q));
   $('#lista').innerHTML = lista.map((p) => `
     <tr class="${incluido(p) ? '' : 'fuera'}" data-clave="${esc(p.clave)}">
       <td class="chk"><input type="checkbox" data-k="incluir" ${incluido(p) ? 'checked' : ''} aria-label="Incluir"></td>
-      <td><input type="text" data-k="nombre" value="${esc(valor(p, 'nombre'))}" aria-label="Nombre"><div class="meta"><span class="mono">${esc(p.codigo || 'sin código')}</span> · factura ${esc(p.facturas.join(', ') || 'sin número')}</div>${p.aviso ? `<div class="chip warn aviso-codigo">${esc(p.aviso)}</div>` : ''}</td>
+      <td><input type="text" data-k="nombre" value="${esc(valor(p, 'nombre'))}" aria-label="Nombre"><div class="meta"><span class="mono">${esc(p.codigo || 'sin código')}</span> · factura ${esc(p.facturas.join(', ') || 'sin número')}${varios ? ` · ${esc(provNombres[p.grupo] || 'proveedor sin nombre')}` : ''}</div>${enConflicto.has(p) ? `<div class="aviso-codigo"><span class="chip warn">${esc(p.aviso || 'Mismo código y descripción distinta: revisalos')}</span>
+        <button class="btn sm" type="button" data-quitar-codigo="${esc(p.fila)}">Quitarle el código</button>
+        <button class="btn sm" type="button" data-mismo="${esc(p.base)}">Son el mismo producto</button></div>` : ''}</td>
       <td><input class="cat" type="text" list="lista-cat" data-k="categoria" value="${esc(valor(p, 'categoria'))}" aria-label="Categoría"></td>
       <td class="num">${numero.format(p.cantidad)}</td>
       <td class="num"><input class="num" type="text" inputmode="decimal" data-k="costo" value="${String(costoDe(p)).replace('.', ',')}" aria-label="Costo"></td>
@@ -827,24 +922,24 @@ async function cargarArchivos(lista) {
     }
   }
   $('#err').textContent = errores.join(' ');
-  if (!$('#proveedor').value) $('#proveedor').value = proveedorSugerido();
-  const f0 = facturas[0];
-  $('#proveedor-ayuda').textContent = f0 ? `En la factura: ${f0.r.emisor}${f0.r.rucEmisor ? ' · RUT ' + f0.r.rucEmisor : ''}. Usá el mismo nombre que en el programa.` : '';
   pintarFacturas();
   armar();
 }
 
 function descargar() {
   const llego = document.querySelector('input[name=modo]:checked').value === 'llego';
-  const prov = $('#proveedor').value.trim();
+  const grupos = gruposProveedor(facturas);
+  if (grupos.error) { $('#proveedor-err').textContent = grupos.error; return; }
+  const proveedores = Object.fromEntries(grupos.grupos.map((g) => [g.grupo, provNombres[g.grupo] || '']));
+  const prov = grupos.grupos.length === 1 ? proveedores[grupos.grupos[0].grupo].trim() : 'varios_proveedores';
   const sel = productos.filter(incluido);
   if (!sel.length || $('#cambio-err').textContent) return;
   const { filas, error } = filasExcel(sel.map((p) => ({
-    codigo: p.codigo, nombre: valor(p, 'nombre'), categoria: valor(p, 'categoria'), costo: costoDe(p), precio: precioDe(p), cantidad: p.cantidad, facturas: p.facturas,
-  })), { proveedor: prov, llego });
+    codigo: p.codigo, nombre: valor(p, 'nombre'), categoria: valor(p, 'categoria'), costo: costoDe(p), precio: precioDe(p), cantidad: p.cantidad, facturas: p.facturas, grupo: p.grupo, base: p.base,
+  })), { proveedores, llego });
   // El programa busca cada producto por «Código del proveedor» + «Proveedor»: sin proveedor no se puede
   $('#proveedor-err').textContent = error;
-  if (error) { $('#proveedor').focus(); return; }
+  if (error) { const vacio = [...document.querySelectorAll('[data-prov-grupo]')].find((x) => !x.value.trim()); if (vacio) vacio.focus(); return; }
   const cab = COLUMNAS_EXCEL;
   const hoja = XLSX.utils.json_to_sheet(filas, { header: cab });
   // Los códigos van como texto, para no perder ceros («0099»)
@@ -884,7 +979,19 @@ $('#facturas').addEventListener('change', (e) => {
   pintarFacturas();
   armar();
 });
-$('#proveedor').addEventListener('input', () => { if ($('#proveedor').value.trim()) $('#proveedor-err').textContent = ''; });
+$('#proveedores').addEventListener('input', (e) => {
+  const inp = e.target.closest('[data-prov-grupo]');
+  if (!inp) return;
+  provNombres[inp.dataset.provGrupo] = inp.value;
+  if (!gruposProveedor(facturas).error) $('#proveedor-err').textContent = '';
+  pintar();
+});
+$('#lista').addEventListener('click', (e) => {
+  const sin = e.target.closest('[data-quitar-codigo]');
+  if (sin) { resol.sinCodigo.add(sin.dataset.quitarCodigo); armar(); toast('Listo: ese producto se carga sin código (por el nombre).'); return; }
+  const mis = e.target.closest('[data-mismo]');
+  if (mis) { resol.mismos.add(mis.dataset.mismo); armar(); toast('Listo: se juntaron en un solo producto.'); }
+});
 $('#cambio').addEventListener('input', () => { Object.values(editados).forEach((x) => { delete x.costo; delete x.precio; }); armar(); });
 $('#iva').addEventListener('change', () => { Object.values(editados).forEach((x) => { delete x.costo; delete x.precio; }); armar(); });
 $('#margen').addEventListener('input', () => { Object.values(editados).forEach((x) => { delete x.precio; }); pintar(); });

@@ -4296,12 +4296,12 @@ function ubicacionesDe(d) {
   // Primero los estantes cargados (con su categoría), aunque todavía no tengan productos
   for (const e of estantesDe(d)) {
     const k = claveUbic(e.codigo);
-    if (k && !mapa.has(k)) mapa.set(k, { ubicacion: e.codigo, clave: k, categoria: e.categoria || '', estanteId: e.id, productos: [] });
+    if (k && !mapa.has(k)) mapa.set(k, { ubicacion: e.codigo, clave: k, categoria: e.categoria || '', estanteId: e.id, corto: idEstante(e), productos: [] });
   }
   for (const p of d.productos) {
     const k = claveUbic(p.ubicacion);
     if (!k) continue;
-    if (!mapa.has(k)) mapa.set(k, { ubicacion: String(p.ubicacion).trim(), clave: k, categoria: '', estanteId: '', productos: [] });
+    if (!mapa.has(k)) mapa.set(k, { ubicacion: String(p.ubicacion).trim(), clave: k, categoria: '', estanteId: '', corto: '', productos: [] });
     mapa.get(k).productos.push(p);
   }
   const lista = [...mapa.values()];
@@ -4312,6 +4312,25 @@ function ubicacionesDe(d) {
 /* Estantes: las ubicaciones se cargan de antemano, cada una con su categoría («A-1 · Sanitaria»).
  * El producto guarda en p.ubicacion el nombre del estante. Se guardan en db.estantes (configuración). */
 const estantesDe = (d) => (Array.isArray(d.estantes) ? d.estantes : []);
+/* Cada estante tiene un número fijo y corto (U1, U2…): es lo que lleva el código de barras de su etiqueta.
+ * Así la etiqueta se lee aunque el nombre sea largo («Herramientas eléctricas 12»). No se vuelve a usar. */
+const idEstante = (e) => (e && Number(e.num) > 0 ? `U${e.num}` : '');
+const RE_ID_ESTANTE = /^U(\d{1,6})$/i;
+/** Les da número a los estantes que no tienen (los cargados antes de esto). Devuelve true si cambió algo. */
+function numerarEstantes(d) {
+  d.estantes = estantesDe(d);
+  let max = Math.max(Number(d.numEstante) || 0, ...d.estantes.map((e) => Number(e.num) || 0));
+  let cambio = false;
+  for (const e of d.estantes) if (!(Number(e.num) > 0)) { e.num = ++max; cambio = true; }
+  if ((Number(d.numEstante) || 0) !== max) { d.numEstante = max; cambio = true; }
+  return cambio;
+}
+/** Las ubicaciones que solo están escritas en los productos (sin estante cargado) pasan a ser estantes, para tener su número. */
+function completarEstantes(d) {
+  let cambio = false;
+  for (const u of ubicacionesDe(d)) if (!u.estanteId) { estantesDe(d).length || (d.estantes = []); d.estantes.push({ id: uid(), codigo: u.ubicacion, categoria: '' }); cambio = true; }
+  return numerarEstantes(d) || cambio;
+}
 /** Crea o cambia un estante. Si cambia el nombre, los productos de ese estante pasan al nombre nuevo. Devuelve { estante } o { error }. */
 function guardarEstante(d, datos, id) {
   const codigo = String(datos.codigo || '').replace(/\s+/g, ' ').trim();
@@ -4321,7 +4340,7 @@ function guardarEstante(d, datos, id) {
   const repetido = estantesDe(d).find((e) => e.id !== id && claveUbic(e.codigo) === claveUbic(codigo));
   if (repetido) return { error: `Ya hay un estante ${repetido.codigo}${repetido.categoria ? ' (' + repetido.categoria + ')' : ''}.` };
   d.estantes = estantesDe(d);
-  if (!id) { const e = { id: uid(), codigo, categoria }; d.estantes.push(e); return { estante: e }; }
+  if (!id) { const e = { id: uid(), codigo, categoria }; d.estantes.push(e); numerarEstantes(d); return { estante: e }; }
   const e = d.estantes.find((x) => x.id === id);
   if (!e) return { error: 'Ese estante ya no existe.' };
   const antes = claveUbic(e.codigo);
@@ -4361,9 +4380,20 @@ function altaEnDeposito(d, datos, usuario, rol) {
   return { producto: p };
 }
 /** «¿Cuántos llegaron?» en el depósito: es opcional; si se escribe, entra al stock como llegada de mercadería. */
+const TOPE_DEPOSITO = 10000; // más que esto de una vez no se acepta (un código escaneado en la cantidad, por ejemplo)
+const CONFIRMAR_DEPOSITO = 500; // más que esto se pide confirmar
+/** Revisa lo escrito en «¿Cuántos llegaron?». Vacío → { cantidad: 0 } (es opcional). { error } o { cantidad, grande }. */
+function revisarCantidadDeposito(texto) {
+  if (texto == null || String(texto).trim() === '') return { cantidad: 0 };
+  const c = typeof texto === 'number' ? texto : parseNum(String(texto));
+  if (!(c > 0)) return { error: 'Escribí cuántos llegaron, con números.' };
+  if (c > TOPE_DEPOSITO) return { error: `${n(c)} es demasiado: más de ${n(TOPE_DEPOSITO)} de una vez no se acepta. Revisá la cantidad.` };
+  return { cantidad: c, grande: c > CONFIRMAR_DEPOSITO };
+}
 function recibirEnDeposito(d, productoId, cantidad) {
   const c = Number(cantidad);
   if (!(c > 0)) return 'Escribí cuántos llegaron.';
+  if (c > TOPE_DEPOSITO) return `Más de ${n(TOPE_DEPOSITO)} de una vez no se acepta. Revisá la cantidad.`;
   return registrar(d, { tipo: 'entrada', productoId, cantidad: c, nota: 'Llegó (Depósito)' });
 }
 
@@ -4389,7 +4419,11 @@ function dondeEsta(d, texto) {
     const parecidas = s ? ubics.filter((x) => codigoSinSignos(x.clave) === s) : [];
     return parecidas.length === 1 ? parecidas[0] : null;
   };
-  if (k.startsWith(PREFIJO_UBIC)) { // etiqueta de ubicación
+  // Etiqueta de estante: el número corto (U12); las impresas antes llevan «UBIC nombre» y siguen andando
+  const mU = RE_ID_ESTANTE.exec(t);
+  const porNumero = mU && ubics.find((x) => x.corto && x.corto.toUpperCase() === `U${Number(mU[1])}`);
+  if (porNumero) return { tipo: 'ubicacion', ubicacion: porNumero };
+  if (k.startsWith(PREFIJO_UBIC)) {
     const u = buscarUbic(k.slice(PREFIJO_UBIC.length).trim());
     return u ? { tipo: 'ubicacion', ubicacion: u } : { tipo: 'nada' };
   }
@@ -4426,8 +4460,10 @@ function htmlEtiqueta(item, formato) {
   const u = item.ubicacion;
   const nombres = u.productos.slice(0, formato === 'rollo' ? 0 : 3).map((p) => esc(p.nombre));
   const resto = u.productos.length - nombres.length;
-  return `<div class="et et-lugar"><div class="et-titulo">${esc(u.categoria || 'Ubicación')}</div><div class="et-lugar-nom">${esc(u.ubicacion)}</div>
-    <div class="et-cb">${barras128().svg(PREFIJO_UBIC + u.clave, { alto })}</div>
+  // El código de barras lleva el número corto del estante (U12): con el nombre entero las barras quedan muy finas
+  const cod = u.corto || PREFIJO_UBIC + u.clave;
+  return `<div class="et et-lugar"><div class="et-titulo">${esc(u.categoria || 'Ubicación')}</div><div class="et-lugar-nom${u.ubicacion.length > 10 ? ' largo' : ''}">${esc(u.ubicacion)}</div>
+    <div class="et-cb">${barras128().svg(cod, { alto })}</div>${u.corto ? `<div class="et-cod et-id">${esc(u.corto)}</div>` : ''}
     ${formato === 'rollo' ? '' : `<div class="et-lista">${nombres.join(' · ')}${resto > 0 ? `${nombres.length ? ' y ' : ''}${resto} ${resto === 1 ? 'producto' : 'productos'}${nombres.length ? ' más' : ''}` : ''}</div>`}</div>`;
 }
 
@@ -4548,7 +4584,7 @@ function renderDeposito() {
   const ubics = ubicacionesDe(db);
   const sinUbic = db.productos.filter((p) => !claveUbic(p.ubicacion)).length;
   $('#dep-sub').textContent = `${plural(ubics.length, 'estante', 'estantes')} · ${plural(sinUbic, 'producto sin estante', 'productos sin estante')}`;
-  $('#dep-ubicaciones').innerHTML = ubics.map((u) => `<button type="button" class="dep-ubic" data-dep-ubic="${esc(u.clave)}"><strong>${esc(u.ubicacion)}</strong>${u.categoria ? `<em>${esc(u.categoria)}</em>` : ''}<span>${plural(u.productos.length, 'producto', 'productos')}</span></button>`).join('')
+  $('#dep-ubicaciones').innerHTML = ubics.map((u) => `<button type="button" class="dep-ubic" data-dep-ubic="${esc(u.clave)}"><strong>${esc(u.ubicacion)}</strong>${u.categoria ? `<em>${esc(u.categoria)}</em>` : ''}<span>${plural(u.productos.length, 'producto', 'productos')}${u.corto ? ` · <span class="mono">${esc(u.corto)}</span>` : ''}</span></button>`).join('')
     || '<p class="vacio">Todavía no hay estantes. Tocá «Nuevo estante» y poné, por ejemplo, A-1 · Sanitaria.</p>';
   $('#dep-resultado').innerHTML = htmlDonde(dondeEsta(db, depTexto));
   // El lector de códigos escribe donde está el cursor: se deja en el buscador (salvo que se esté escribiendo en otro lado)
@@ -4589,6 +4625,8 @@ function renderEtiquetas() {
 }
 
 function abrirEtiquetas(tipo, marcar = []) {
+  // Las etiquetas de estante llevan el número corto: las ubicaciones sin estante pasan a ser estantes y se numeran
+  if (tipo === 'ubicacion' && completarEstantes(db)) guardar();
   etq.tipo = tipo;
   etq.copias = new Map(marcar.map((id) => [id, 1]));
   $('#etq-titulo').textContent = tipo === 'ubicacion' ? 'Imprimir etiquetas de estantes' : 'Imprimir etiquetas de productos';
@@ -4610,6 +4648,32 @@ function imprimirEtiquetas() {
   imprimir(r.html);
 }
 
+const rafagaDep = { el: null, antes: '', texto: '', ult: 0 };
+function vigilarEscanerDeposito(e) {
+  const el = e.target;
+  if (!el || !el.closest || !el.closest('#v-deposito') || el.id === 'dep-buscar' || !el.matches('input, textarea')) return;
+  const ahora = (typeof performance !== 'undefined' ? performance : Date).now();
+  if (e.key && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    if (rafagaDep.el !== el || ahora - rafagaDep.ult > 60) { rafagaDep.el = el; rafagaDep.antes = el.value; rafagaDep.texto = ''; }
+    rafagaDep.texto += e.key;
+    rafagaDep.ult = ahora;
+    return;
+  }
+  // Teclas muy seguidas y Enter: es el lector. Desde 3 letras, para las etiquetas de estante (U12).
+  if (e.key === 'Enter' && rafagaDep.el === el && /^[0-9A-Za-z.\-']{3,}$/.test(rafagaDep.texto) && /\d/.test(rafagaDep.texto) && ahora - rafagaDep.ult < 100) {
+    e.preventDefault();
+    e.stopPropagation();
+    const codigo = rafagaDep.texto.trim();
+    el.value = rafagaDep.antes;
+    rafagaDep.el = null;
+    const campo = el.id === 'dep-cant' || el.id === 'dep-n-cant' ? '«¿Cuántos llegaron?»' : 'otro campo';
+    $('#dep-buscar').value = codigo;
+    mostrarDonde(codigo, true);
+    if (!$('#dep-nuevo')) { $('#dep-buscar').focus(); $('#dep-buscar').select(); }
+    toast(`Se escaneó ${codigo} con el cursor en ${campo}: busqué ese código y la cantidad quedó como estaba.`);
+  }
+}
+
 function iniciarDeposito() {
   // Al terminar de imprimir (o cancelar) se vuelve a la hoja del ticket
   window.addEventListener('afterprint', () => { $('#impresion').classList.remove('etiquetas'); $('#estilo-etiquetas').textContent = ''; });
@@ -4626,14 +4690,7 @@ function iniciarDeposito() {
   const usuario = () => (sesion ? sesion.nombre : '');
   $('#dep-resultado').addEventListener('click', (e) => {
     const rec = e.target.closest('[data-dep-recibir]');
-    if (rec) {
-      const p = producto(rec.dataset.depRecibir);
-      const err = recibirEnDeposito(db, p.id, parseNum($('#dep-cant').value));
-      if (err) { $('#dep-err').textContent = err; $('#dep-cant').focus(); return; }
-      guardar();
-      verProductoDep(p, `Listo: sumé ${n(parseNum($('#dep-cant').value))} al stock de ${p.nombre}.`);
-      return;
-    }
+    if (rec) { sumarLlegadaDep(producto(rec.dataset.depRecibir)); return; }
     const ubi = e.target.closest('[data-dep-ubicar]');
     if (ubi) {
       const p = producto(ubi.dataset.depUbicar);
@@ -4670,15 +4727,35 @@ function iniciarDeposito() {
   $('#dep-resultado').addEventListener('submit', (e) => {
     if (e.target.id !== 'dep-nuevo') return;
     e.preventDefault();
-    const f = e.target;
-    const r = altaEnDeposito(db, { codigo: f.dataset.codigo, nombre: $('#dep-n-nombre').value, ubicacion: $('#dep-n-estante').value }, usuario(), sesion ? sesion.rol : '');
+    cargarNuevoDep(e.target);
+  });
+  async function cargarNuevoDep(f) {
+    // La cantidad se revisa antes de crear el producto: un número enorme no se acepta y uno grande se confirma
+    const rv = revisarCantidadDeposito($('#dep-n-cant').value);
+    if (rv.error) { $('#dep-n-err').textContent = rv.error; $('#dep-n-cant').focus(); return; }
+    const nombre = $('#dep-n-nombre').value;
+    if (rv.grande && !(await confirmar(`¿Llegaron ${n(rv.cantidad)} de «${nombre.trim()}»? Es una cantidad grande.`, 'Sí, llegaron'))) { $('#dep-n-cant').focus(); return; }
+    const r = altaEnDeposito(db, { codigo: f.dataset.codigo, nombre, ubicacion: $('#dep-n-estante').value }, usuario(), sesion ? sesion.rol : '');
     if (r.error) { $('#dep-n-err').textContent = r.error; return; }
-    const cant = parseNum($('#dep-n-cant').value);
+    const cant = rv.cantidad;
     if (cant > 0) recibirEnDeposito(db, r.producto.id, cant);
     depUltimoEstante = claveUbic(r.producto.ubicacion);
     guardar();
     verProductoDep(r.producto, `Listo: ${r.producto.nombre} quedó cargado en ${r.producto.ubicacion}${cant > 0 ? ` con ${n(cant)} en stock` : ''}.`);
-  });
+  }
+  async function sumarLlegadaDep(p) {
+    const rv = revisarCantidadDeposito($('#dep-cant').value);
+    const err = rv.error || (rv.cantidad > 0 ? '' : 'Escribí cuántos llegaron.');
+    if (err) { $('#dep-err').textContent = err; $('#dep-cant').focus(); return; }
+    if (rv.grande && !(await confirmar(`¿Llegaron ${n(rv.cantidad)} de ${p.nombre}? Es una cantidad grande.`, 'Sí, sumar'))) { $('#dep-cant').focus(); return; }
+    const e2 = recibirEnDeposito(db, p.id, rv.cantidad);
+    if (e2) { $('#dep-err').textContent = e2; return; }
+    guardar();
+    verProductoDep(p, `Listo: sumé ${n(rv.cantidad)} al stock de ${p.nombre}.`);
+  }
+  // El lector de códigos escribe donde está el cursor: si es en «¿Cuántos llegaron?» u otro campo del Depósito,
+  // se busca ese código y el campo queda como estaba (como vigilarEscaner en la caja)
+  document.addEventListener('keydown', vigilarEscanerDeposito, true);
   // Estantes
   $('#btn-nuevo-estante').addEventListener('click', () => abrirEstante(''));
   $('#est-form').addEventListener('submit', (e) => {
@@ -4743,7 +4820,7 @@ function iniciarDeposito() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito };
+  module.exports = { anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

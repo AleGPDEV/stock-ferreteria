@@ -867,3 +867,8 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 .unir p { margin: 0; font-size: 14px; }
 .unir-res { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .unir input { width: 100%; }
+/* Depósito: estante con nombre largo (dos renglones, letra más chica) y su número corto bajo las barras */
+.et-lugar-nom.largo { white-space: normal; font-size: 13pt; line-height: 1.1; max-height: 2.25em; text-overflow: clip; }
+.rollo .et-lugar-nom.largo { font-size: 9pt; }
+.et-id { text-align: center; line-height: 1; }
+.rollo .et-id { font-size: 6.5pt; }
