@@ -769,7 +769,7 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 .dep-prod-nom { font-size: 22px; font-weight: 700; line-height: 1.25; }
 .dep-ubi { display: flex; flex-direction: column; gap: 2px; padding: 14px 18px; border-radius: var(--r); background: var(--accent-soft); color: var(--accent); }
 .dep-ubi.sin { background: var(--surface-2); color: var(--muted); }
-.dep-ubi-lbl { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.dep-ubi-lbl { font-family: var(--f-num); font-size: 17px; font-weight: 600; }
 .dep-ubi-txt { font-size: 34px; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
 .dep-ubi.sin .dep-ubi-txt { font-size: 22px; }
 .dep-datos { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 18px; }
