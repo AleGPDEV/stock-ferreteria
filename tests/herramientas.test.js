@@ -296,3 +296,86 @@ test('QA3 A1: el Excel del Lector entra en la importación sin pisar el producto
   assert.ok(!plan.actualizados.some((a) => a.id === 'n1'));
   assert.equal(plan.nuevos.length, 0, 'no crea duplicados');
 });
+
+// ---------- Revisión QA #5: Lector ----------
+/** Cabecera de una factura de prueba de un proveedor: nombre, RUT, serie y número. */
+const cabProv = (nombre, rut, serie, numero) => [[30, 800, nombre], [240, 800, 'RUT EMISOR'], [240, 785, rut], [240, 770, 'SERIE'], [240, 758, serie], [290, 770, 'NÚMERO'], [290, 758, numero],
+  [400, 770, 'FECHA'], [400, 758, '10/11/2026'],
+  [37, 600, 'Cantidad'], [90, 600, 'Uni'], [122, 600, 'Descripción'], [325, 600, 'P. Unitario $'], [468, 600, 'Importe $'], [554, 600, '*']];
+
+test('QA5 A1: facturas de dos proveedores cargadas juntas: cada fila con el proveedor de su factura', async () => {
+  const b88 = await L.leerPdf(factura(cabProv('PINTURERIA SUR S.A.', '211111110011', 'B', '88'), [[2, '1234 ESMALTE SINTETICO NEGRO 1L', 900]]));
+  const a500 = await L.leerPdf(factura(cabProv('DISTRIBUIDORA NORTE SRL', '212222220012', 'A', '500'), [[10, '1234 TORNILLO MADERA 6X1', 300]]));
+  assert.deepEqual([b88.rucEmisor, a500.rucEmisor], ['211111110011', '212222220012']);
+  const facturas = [{ r: b88, archivo: 'b88.pdf' }, { r: a500, archivo: 'a500.pdf' }];
+  const g = LP.gruposProveedor(facturas);
+  assert.equal(g.error, '');
+  assert.deepEqual(g.grupos.map((x) => [x.grupo, x.facturas.map((y) => y.numero)]), [['r:211111110011', ['B 88']], ['r:212222220012', ['A 500']]], 'un proveedor por RUT');
+  const { productos } = LP.armarProductos(facturas);
+  assert.equal(productos.length, 2, 'el «1234» de cada proveedor es un producto distinto');
+  assert.ok(productos.every((p) => !p.aviso), 'no es «mismo código»: son de proveedores distintos');
+  const proveedores = { 'r:211111110011': 'Pinturería Sur', 'r:212222220012': 'Distribuidora Norte' };
+  const { filas, error } = LP.filasExcel(productos, { proveedores, llego: true });
+  assert.equal(error, '');
+  assert.deepEqual(filas.map((f) => [f['Producto'], f['Código del proveedor'], f['Proveedor'], f['Factura']]), [
+    ['Esmalte sintetico negro 1l', '1234', 'Pinturería Sur', 'B 88'],
+    ['Tornillo madera 6x1', '1234', 'Distribuidora Norte', 'A 500'],
+  ]);
+  // falta el nombre de uno de los proveedores: no se arma el Excel
+  const sin = LP.filasExcel(productos, { proveedores: { ...proveedores, 'r:212222220012': ' ' } });
+  assert.match(sin.error, /falta el de la factura A 500/);
+});
+
+test('QA5 A1: sin RUT se agrupa por el nombre del emisor; si no se sabe de quién es una factura, no se descarga', () => {
+  const r = (emisor, rut, numero) => ({ emisor, rucEmisor: rut, serie: 'A', numero, items: [{ cantidad: 1, descripcion: 'CANDADO 40MM', importe: 100 }] });
+  // sin RUT pero con el mismo nombre que otra con RUT: es el mismo proveedor
+  let g = LP.gruposProveedor([{ r: r('PINTURERIA SUR S.A.', '211111110011', '1') }, { r: r('Pinturería Sur SA', '', '2') }]);
+  assert.equal(g.grupos.length, 1);
+  assert.equal(g.error, '');
+  // una sola factura sin RUT ni nombre: se sabe que es de quien se escriba
+  assert.equal(LP.gruposProveedor([{ r: r('', '', '3') }]).error, '');
+  // varias y una sin RUT ni nombre: no se sabe
+  g = LP.gruposProveedor([{ r: r('PINTURERIA SUR S.A.', '211111110011', '1') }, { r: r('', '', '9') }]);
+  assert.match(g.error, /no sé de quién es/);
+  assert.match(g.error, /A 9/);
+});
+
+test('QA5 A1: con «Mismo código y descripción distinta» no se descarga hasta elegir: quitarle el código o son el mismo', () => {
+  const r = { serie: 'A', numero: '7', items: [
+    { cantidad: 1, descripcion: 'LLAVE FRANCESA 8 MK-0099', importe: 100 },
+    { cantidad: 2, descripcion: 'LLAVE FRANCESA 8" MK-0099', importe: 200 },
+  ] };
+  const armar = (opc) => LP.armarProductos([{ r }], opc).productos;
+  let ps = armar();
+  assert.equal(ps.length, 2);
+  assert.ok(ps.every((p) => p.aviso));
+  assert.match(LP.filasExcel(ps, { proveedor: 'X' }).error, /Quitarle el código.*Son el mismo producto/);
+  // opción 1: quitarle el código a uno
+  ps = armar({ sinCodigo: new Set([ps[1].fila]) });
+  assert.deepEqual(ps.map((p) => [p.codigo, p.cantidad, !!p.aviso]), [['MK-0099', 1, false], ['', 2, false]]);
+  assert.equal(LP.filasExcel(ps, { proveedor: 'X' }).error, '');
+  // opción 2: confirmar que son el mismo producto
+  ps = armar({ mismos: new Set([ps[0].base]) });
+  assert.deepEqual(ps.map((p) => [p.codigo, p.cantidad, p.costo, !!p.aviso]), [['MK-0099', 3, 100, false]]);
+  assert.equal(LP.filasExcel(ps, { proveedor: 'X' }).filas.length, 1);
+});
+
+test('QA5 B2: UL-1240, EN-200 y BS-115 vuelven a ser código; las normas reales siguen sin serlo', () => {
+  assert.equal(LP.separarCodigo('LAMPARA LED 9W UL-1240').codigo, 'UL-1240');
+  assert.equal(LP.separarCodigo('LLAVE TERMICA 2X20A EN-200').codigo, 'EN-200');
+  assert.equal(LP.separarCodigo('BOMBA SUMERGIBLE BS-115').codigo, 'BS-115');
+  for (const w of ['UL-1240', 'EN-200', 'BS-115']) assert.equal(LP.esNorma(w), false, w);
+  for (const w of ['DIN933', 'ISO4017', 'RAL9010', 'IP65', 'PN10', 'RJ45', 'AWG12', 'IEC60309', 'NEMA5', 'SCH40', 'CAT6']) assert.equal(LP.esMedida(w), true, w);
+});
+
+test('QA5 A1: una factura en PDF sin nombre ni RUT del emisor, junto con otra: no se sabe de quién es', async () => {
+  const conProv = await L.leerPdf(factura(cabProv('PINTURERIA SUR S.A.', '211111110011', 'B', '88'), [[2, 'CANDADO 40MM', 400]]));
+  // sin nombre arriba: la tabla empieza enseguida (antes se tomaba «Cantidad» como el nombre del emisor)
+  const sinProv = await L.leerPdf(factura([[240, 770, 'Nº'], [240, 758, 'C-12'],
+    [37, 600, 'Cantidad'], [90, 600, 'Uni'], [122, 600, 'Descripción'], [325, 600, 'P. Unitario $'], [468, 600, 'Importe $'], [554, 600, '*']], [[1, 'PINZA', 100]]));
+  assert.equal(sinProv.emisor, '');
+  assert.equal(sinProv.rucEmisor, '');
+  const g = LP.gruposProveedor([{ r: conProv }, { r: sinProv }]);
+  assert.match(g.error, /factura C 12.*no sé de quién es/);
+  assert.equal(LP.gruposProveedor([{ r: sinProv }]).error, '', 'sola, es del proveedor que se escriba');
+});

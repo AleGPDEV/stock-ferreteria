@@ -241,7 +241,8 @@
     r.email = email[0] || '';
     r.dominio = email[1] || '';
     // razón social del emisor: primera fila de texto arriba a la izquierda que no sea un número ni un rótulo
-    const primeras = todo.filter((f) => f.pag === 0).slice(0, 12).flatMap((f) => f.celdas).filter((c) => c.x < 200 && /[A-Za-z]{3}/.test(c.t));
+    // (solo arriba de la tabla de productos: si no, sin nombre arriba se tomaba un título de columna como «Cantidad»)
+    const primeras = (iTabla >= 0 ? todo.slice(0, iTabla) : todo).filter((f) => f.pag === 0).slice(0, 12).flatMap((f) => f.celdas).filter((c) => c.x < 200 && /[A-Za-z]{3}/.test(c.t));
     r.emisor = primeras.length ? primeras[0].t.trim() : '';
     const tot = (re) => { const m = re.exec(plano); return m ? numUy(m[1]) : null; };
     r.total = tot(/TOTAL A PAGAR:?\s*([\d.,]+)/i) ?? tot(/Monto Total:?\s*([\d.,]+)/i) ?? tot(/\bTOTAL:?\s*\$?\s*([\d.,]+)/i);

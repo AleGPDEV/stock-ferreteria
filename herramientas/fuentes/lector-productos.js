@@ -25,7 +25,8 @@
   }
 
   /** Normas y grados: DIN933, ISO4017, PN10, RAL9010, IP65, RJ45, AWG12, IEC60309, NEMA5, SCH40, CAT6, SAE1020… */
-  const NORMAS = ['DIN', 'ISO', 'PN', 'RAL', 'IP', 'RJ', 'AWG', 'IEC', 'NEMA', 'SCH', 'CAT', 'ANSI', 'ASTM', 'SAE', 'UNE', 'UNIT', 'NBR', 'EN', 'BS', 'JIS', 'NPT', 'BSP', 'UL'];
+  // Sin «UL», «EN» ni «BS»: hay códigos de modelo así (UL-1240, EN-200, BS-115) y no son normas.
+  const NORMAS = ['DIN', 'ISO', 'PN', 'RAL', 'IP', 'RJ', 'AWG', 'IEC', 'NEMA', 'SCH', 'CAT', 'ANSI', 'ASTM', 'SAE', 'UNE', 'UNIT', 'NBR', 'JIS', 'NPT', 'BSP'];
   const RE_NORMA = new RegExp(`^(?:${NORMAS.join('|')})-?\\d`);
   function esNorma(w) { return RE_NORMA.test(String(w || '').toUpperCase()); }
 
@@ -97,13 +98,63 @@
     return '';
   }
 
+  /* ---------- Proveedor de cada factura ----------
+   * Cada factura es de un proveedor: se lo reconoce por el RUT del emisor; si no se pudo leer el RUT,
+   * por el nombre del emisor (si coincide con el de otra factura, es el mismo). Sin RUT ni nombre no se sabe de quién es. */
+  const rutDe = (r) => String((r && r.rucEmisor) || '').replace(/\D/g, '');
+  const emisorDe = (r) => normal((r && r.emisor) || '').replace(/\b(s\.?a\.?s?|s\.?r\.?l|ltda)\.?$/i, '').replace(/[^a-z0-9]/g, '');
+
+  /**
+   * Agrupa las facturas por proveedor. Devuelve { grupos: [{ grupo, rut, emisor, facturas: [{ f, numero }] }], porFactura: Map(f → grupo), error }.
+   * error: si hay varias facturas y de alguna no se puede saber de quién es (sin RUT ni nombre del emisor).
+   */
+  function gruposProveedor(facturas) {
+    const grupos = new Map();
+    const porFactura = new Map();
+    const nuevo = (g, f) => { if (!grupos.has(g)) grupos.set(g, { grupo: g, rut: rutDe(f.r), emisor: (f.r && f.r.emisor) || '', facturas: [] }); return grupos.get(g); };
+    const sinSaber = [];
+    for (const f of facturas) { // primero las que tienen RUT
+      const rut = rutDe(f.r);
+      if (rut) { nuevo('r:' + rut, f).facturas.push({ f, numero: numeroFactura(f.r) }); porFactura.set(f, 'r:' + rut); }
+    }
+    for (const f of facturas) {
+      if (porFactura.has(f)) continue;
+      const em = emisorDe(f.r);
+      const conRut = em && [...grupos.values()].find((g) => g.rut && emisorDe({ emisor: g.emisor }) === em);
+      const g = conRut ? conRut.grupo : em ? 'e:' + em : '';
+      if (!g) sinSaber.push(f);
+      nuevo(g, f).facturas.push({ f, numero: numeroFactura(f.r) });
+      porFactura.set(f, g);
+    }
+    let error = '';
+    if (sinSaber.length && facturas.length > 1) {
+      const cuales = sinSaber.map((f) => numeroFactura(f.r) || f.archivo || 'sin número').join(', ');
+      error = `No pude leer el RUT ni el nombre del proveedor de ${sinSaber.length === 1 ? 'la factura' : 'las facturas'} ${cuales}, así que no sé de quién ${sinSaber.length === 1 ? 'es' : 'son'}. ${sinSaber.length === 1 ? 'Quitala y cargala sola' : 'Quitalas y cargalas solas'}, en otra vuelta.`;
+    }
+    return { grupos: [...grupos.values()], porFactura, error };
+  }
+
   const AVISO_MISMO_CODIGO = 'Mismo código y descripción distinta: revisalos';
   const descripcionComparable = (t) => String(t || '').toUpperCase().replace(/\s+/g, '');
+
+  /** Renglones con el mismo código (del mismo proveedor) y descripciones distintas: { base → [productos] }. Solo los que tienen código. */
+  function conflictosCodigo(lista) {
+    const porBase = new Map();
+    for (const p of lista) {
+      if (!p.codigo || !p.base) continue;
+      if (!porBase.has(p.base)) porBase.set(p.base, []);
+      porBase.get(p.base).push(p);
+    }
+    return new Map([...porBase].filter(([, l]) => l.length > 1));
+  }
 
   /**
    * Junta los renglones de las facturas en productos.
    * facturas: [{ r }] (r = lo que devuelve LectorPdf.leerFactura, con r.numero corregido a mano si hizo falta).
    * opc.iva(f): % de IVA a sumar a esa factura (0 si ya viene incluido). opc.tipoCambio: pesos por dólar.
+   * opc.mismos: Set de «base» que la persona confirmó que son el mismo producto (se juntan aunque la descripción cambie).
+   * opc.sinCodigo: Set de «fila» a las que la persona les quitó el código (se cargan por la descripción).
+   * Cada producto lleva su grupo (proveedor): el mismo código de dos proveedores distintos son productos distintos.
    * Devuelve { productos, error }. Con facturas en dólares y sin tipo de cambio, error y sin productos.
    */
   function armarProductos(facturas, opc = {}) {
@@ -112,34 +163,38 @@
     if (facturas.some((f) => enDolares(f.r)) && !(tc > 0)) {
       return { productos: [], error: 'Hay facturas en dólares: escribí el tipo de cambio (cuántos pesos vale un dólar) para pasar los costos a pesos.' };
     }
+    const mismos = opc.mismos || new Set();
+    const sinCodigo = opc.sinCodigo || new Set();
+    const { porFactura } = gruposProveedor(facturas);
     const porClave = new Map();
-    let aviso = false;
     const ordenadas = facturas.slice().sort((a, b) => (a.r.fecha || '').localeCompare(b.r.fecha || ''));
     for (const f of ordenadas) {
       const iva = ivaDe(f) || 0;
       const cambio = enDolares(f.r) ? tc : 1;
       const nf = numeroFactura(f.r);
+      const grupo = porFactura.get(f) || '';
       for (const it of f.r.items) {
         const s = separarCodigo(it.descripcion, it.codigo);
-        let clave = claveProducto(it.descripcion, it.codigo);
-        // Red de seguridad: mismo código pero otra descripción (sin contar mayúsculas y espacios) → no se juntan
         const desc = descripcionComparable(s.nombre);
-        const primero = porClave.get(clave);
-        if (primero && primero.desc !== desc) {
-          primero.aviso = AVISO_MISMO_CODIGO;
-          clave = `${clave}#${desc}`;
-          if (!porClave.has(clave)) aviso = true;
-        }
+        const base = `${grupo}|${claveProducto(it.descripcion, it.codigo)}`;
+        const fila = `${base}#${desc}`;
+        let codigo = s.codigo;
+        let clave;
+        if (!codigo) clave = base; // sin código: la clave ya es la descripción completa
+        else if (sinCodigo.has(fila)) { codigo = ''; clave = `${grupo}|d:${normal(s.nombre).replace(/[^a-z0-9]/g, '')}`; }
+        // Red de seguridad: mismo código y otra descripción (sin contar mayúsculas y espacios) no se juntan, salvo que se confirme
+        else clave = mismos.has(base) ? base : fila;
         const costo = red2(it.importe / it.cantidad * (1 + iva / 100) * cambio);
         let p = porClave.get(clave);
-        if (!p) { p = { clave, codigo: s.codigo, nombre: nombreLindo(s.nombre), descripcion: s.nombre, desc, cantidad: 0, facturas: [] }; porClave.set(clave, p); }
-        if (aviso) { p.aviso = AVISO_MISMO_CODIGO; aviso = false; }
+        if (!p) { p = { clave, base, fila, grupo, codigo, nombre: nombreLindo(s.nombre), descripcion: s.nombre, desc, cantidad: 0, facturas: [] }; porClave.set(clave, p); }
         p.cantidad += it.cantidad;
         p.costo = costo; // la factura más nueva queda última
         if (nf && !p.facturas.includes(nf)) p.facturas.push(nf);
       }
     }
-    return { productos: [...porClave.values()], error: '' };
+    const productos = [...porClave.values()];
+    for (const l of conflictosCodigo(productos).values()) l.forEach((p) => { p.aviso = AVISO_MISMO_CODIGO; });
+    return { productos, error: '' };
   }
 
   /** Columnas del Excel que arma el Lector (el programa lo importa con «Importar desde Excel»). */
@@ -151,16 +206,24 @@
    * «Código» queda como antes (compatibilidad); «Código del proveedor» va vacío si no hay código (se usó la descripción).
    */
   function filasExcel(lista, opc = {}) {
-    const proveedor = String(opc.proveedor || '').trim();
-    if (!proveedor) return { filas: [], error: 'Escribí el proveedor (el mismo nombre que en el programa).' };
+    // opc.proveedores: { grupo → nombre } (facturas de varios proveedores); opc.proveedor: uno solo para todas
+    const provDe = (p) => String((opc.proveedores && p.grupo != null && opc.proveedores[p.grupo] != null ? opc.proveedores[p.grupo] : opc.proveedor) || '').trim();
+    const falta = lista.find((p) => !provDe(p));
+    if (falta) {
+      const varios = opc.proveedores && Object.keys(opc.proveedores).length > 1;
+      return { filas: [], error: varios ? `Escribí el nombre de cada proveedor (falta el de la factura ${(falta.facturas || []).join(', ') || 'sin número'}).` : 'Escribí el proveedor (el mismo nombre que en el programa).' };
+    }
+    if (conflictosCodigo(lista).size) {
+      return { filas: [], error: 'Hay productos marcados «Mismo código y descripción distinta». En cada uno elegí «Quitarle el código» o «Son el mismo producto» antes de descargar.' };
+    }
     const filas = lista.map((p) => ({
       'Código': p.codigo || '', 'Código del proveedor': p.codigo || '', 'Producto': p.nombre, 'Categoría': p.categoria || '', 'Unidad': 'unidad',
-      'Proveedor': proveedor, 'Costo': p.costo, 'Precio': p.precio, 'Llegó': opc.llego ? p.cantidad : '', 'Factura': (p.facturas || []).join(', '),
+      'Proveedor': provDe(p), 'Costo': p.costo, 'Precio': p.precio, 'Llegó': opc.llego ? p.cantidad : '', 'Factura': (p.facturas || []).join(', '),
     }));
     return { filas, error: '' };
   }
 
-  const api = { filasExcel, COLUMNAS_EXCEL, esNorma, AVISO_MISMO_CODIGO, esMedida, separarCodigo, claveProducto, nombreLindo, numeroFactura, mismaFactura, problemaFactura, armarProductos, enDolares, esNotaCredito, MARCAS };
+  const api = { gruposProveedor, conflictosCodigo, filasExcel, COLUMNAS_EXCEL, esNorma, AVISO_MISMO_CODIGO, esMedida, separarCodigo, claveProducto, nombreLindo, numeroFactura, mismaFactura, problemaFactura, armarProductos, enDolares, esNotaCredito, MARCAS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.LectorProductos = api;
 })(typeof window !== 'undefined' ? window : globalThis);
