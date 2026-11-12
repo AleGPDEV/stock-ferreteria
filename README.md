@@ -111,6 +111,7 @@ Lo cargado queda guardado en esa computadora aunque se cierre. Para **contar el 
 Un lector USB funciona como un teclado: no hay que configurar nada en el programa.
 
 1. Enchufalo y probalo en el Bloc de notas: tiene que escribir los números y saltar de línea. Si no salta de línea, activá el sufijo **Enter (CR)** con el código de configuración del manual del lector.
+   Escaneá también una etiqueta con guion (por ejemplo `PIN-ROD22`). Si sale `PIN'ROD22`, el lector está con **teclado en inglés**: configuralo en **español (Latinoamérica o España, el mismo que Windows)** con el código del manual. Igual el programa encuentra el producto aunque los signos lleguen cambiados, siempre que haya uno solo que coincida en letras y números.
 2. En la **Caja**, escaneás y el producto se agrega al ticket.
 3. En **Depósito**, escaneás un producto o la etiqueta de un estante y ves dónde está o qué hay.
 

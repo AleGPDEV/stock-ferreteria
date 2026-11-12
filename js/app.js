@@ -338,10 +338,19 @@ function anotarCodigoProv(p, proveedorId, codigo) {
   p.codigosProv.push({ proveedorId, codigo: c });
 }
 const normCodigo = (c) => String(c || '').trim().toUpperCase();
+/** Solo letras y números: «PIN-ROD22» y «PIN'ROD22» quedan iguales. */
+const codigoSinSignos = (c) => normCodigo(c).replace(/[^A-Z0-9Ñ]/g, '');
 function buscarPorCodigo(d, texto) {
   const c = normCodigo(texto);
   if (!c) return null;
-  return d.productos.find((p) => codigosDe(p).some((x) => normCodigo(x) === c)) || null;
+  const exacto = d.productos.find((p) => codigosDe(p).some((x) => normCodigo(x) === c));
+  if (exacto) return exacto;
+  // Un lector configurado con teclado en inglés en un Windows en español cambia los signos
+  // («PIN-ROD22» llega como «PIN'ROD22»). Se compara sin signos, solo si hay un único producto así.
+  const s = codigoSinSignos(c);
+  if (s.length < 3) return null;
+  const parecidos = d.productos.filter((p) => codigosDe(p).some((x) => codigoSinSignos(x) === s));
+  return parecidos.length === 1 ? parecidos[0] : null;
 }
 /** ¿Algún otro producto ya usa ese código (como código propio o de barras)? Devuelve ese producto o null. */
 function codigoUsado(d, texto, exceptoId) {
@@ -4131,13 +4140,21 @@ function dondeEsta(d, texto) {
   if (!t) return { tipo: 'vacio' };
   const k = claveUbic(t);
   const ubics = ubicacionesDe(d);
+  // Ubicación igual, o igual sin signos (el lector puede cambiar «A-01» por «A'01»), si es una sola
+  const buscarUbic = (clave) => {
+    const u = ubics.find((x) => x.clave === clave);
+    if (u) return u;
+    const s = codigoSinSignos(clave);
+    const parecidas = s ? ubics.filter((x) => codigoSinSignos(x.clave) === s) : [];
+    return parecidas.length === 1 ? parecidas[0] : null;
+  };
   if (k.startsWith(PREFIJO_UBIC)) { // etiqueta de ubicación
-    const u = ubics.find((x) => x.clave === k.slice(PREFIJO_UBIC.length).trim());
+    const u = buscarUbic(k.slice(PREFIJO_UBIC.length).trim());
     return u ? { tipo: 'ubicacion', ubicacion: u } : { tipo: 'nada' };
   }
   const p = buscarPorCodigo(d, t) || d.productos.find((q) => codigosProvDe(q).some((x) => normCodigo(x.codigo) === normCodigo(t)));
   if (p) return { tipo: 'producto', producto: p };
-  const u = ubics.find((x) => x.clave === k);
+  const u = buscarUbic(k);
   if (u) return { tipo: 'ubicacion', ubicacion: u };
   const q = normal(t);
   const productos = d.productos.filter((x) => normal(`${textoCodigos(x)} ${x.nombre} ${x.categoria} ${x.ubicacion}`).includes(q))

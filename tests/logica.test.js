@@ -904,3 +904,21 @@ test('etiquetas: código de barras del producto o del programa, copias y hojas A
   assert.match(e.html, /Martillo 16 oz/);
   assert.equal(app.htmlEtiquetas([{ producto: d.productos[0], copias: 0 }]).etiquetas, 0);
 });
+
+test('lector con otro teclado: «PIN\'ROD22» encuentra PIN-ROD22, si no hay dudas', () => {
+  const d = base();
+  d.productos.push(
+    { id: 'r', codigo: 'PIN-ROD22', nombre: 'Rodillo lana 22 cm', categoria: '', unidad: 'unidad', proveedorId: '', ubicacion: 'A-01', costo: 1, precio: 2, minimo: 0, stock: 3 },
+    { id: 'x1', codigo: 'AB-12', nombre: 'Uno', categoria: '', unidad: 'unidad', proveedorId: '', ubicacion: '', costo: 1, precio: 2, minimo: 0, stock: 0 },
+    { id: 'x2', codigo: 'AB12', nombre: 'Otro', categoria: '', unidad: 'unidad', proveedorId: '', ubicacion: '', costo: 1, precio: 2, minimo: 0, stock: 0 },
+  );
+  assert.equal(app.buscarPorCodigo(d, "PIN'ROD22").id, 'r', 'el guion llegó como apóstrofo');
+  assert.equal(app.buscarPorCodigo(d, "mar'16").id, 'a');
+  assert.equal(app.dondeEsta(d, "PIN'ROD22").producto.id, 'r');
+  assert.equal(app.buscarPorCodigo(d, 'AB-12').id, 'x1', 'si está exacto, va el exacto');
+  assert.equal(app.buscarPorCodigo(d, "AB'12"), null, 'dos productos posibles: no adivina');
+  assert.equal(app.buscarPorCodigo(d, "A'"), null, 'códigos muy cortos: no adivina');
+  // la etiqueta de ubicación también
+  assert.equal(app.dondeEsta(d, "UBIC A'01").ubicacion.clave, 'A-01');
+  assert.equal(app.dondeEsta(d, "UBIC C'02").ubicacion.clave, 'C-02');
+});
