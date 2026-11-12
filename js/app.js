@@ -1013,7 +1013,8 @@ function renderAlertaStock() {
 
   const firma = sin.map((p) => p.id).join(',') + '|' + bajo.map((p) => p.id).join(',');
   const banner = $('#banner-stock');
-  banner.hidden = !total || firma === alertaOcultaFirma || vistaActual() === 'productos' && $('#prod-estado').value === 'reponer';
+  banner.hidden = !total || firma === alertaOcultaFirma || !['productos', 'panel', 'movimientos'].includes(vistaActual())
+    || vistaActual() === 'productos' && $('#prod-estado').value === 'reponer';
   if (banner.hidden) return;
   banner.classList.toggle('urgente', sin.length > 0);
   const partes = [];
@@ -1565,7 +1566,7 @@ function iniciarCaja() {
     it.cantidad = red(q);
     renderTicket();
   });
-  $('#ticket-vaciar').addEventListener('click', () => { ticket = []; $('#caja-recibido').value = ''; $('#caja-desc').value = ''; renderTicket(); });
+  $('#ticket-vaciar').addEventListener('click', () => { ticket = []; $('#caja-recibido').value = ''; $('#caja-desc').value = ''; $('#cliente-det').open = false; renderTicket(); });
   $('#caja-desc').addEventListener('input', renderTicket);
   $('#ventas-fecha').value = isoLocal();
   $('#ventas-fecha').addEventListener('input', renderVentasHoy);
@@ -1621,6 +1622,7 @@ function iniciarCaja() {
     ticket = [];
     $('#caja-recibido').value = '';
     $('#caja-cliente').value = '';
+    $('#cliente-det').open = false;
     $('#caja-desc').value = '';
     $('#ventas-fecha').value = isoLocal();
     $('#caja-err').textContent = '';
@@ -1680,9 +1682,9 @@ function renderProductos() {
         <td class="num solo-admin">${$u(p.costo)}</td>
         <td class="num">${$u(p.precio)}${precioBajoCosto(p) && esAdmin() ? `<div><span class="chip danger" title="El precio de venta no supera el costo (${$u(p.costo)}).">${p.precio < p.costo ? 'Bajo el costo' : 'Igual al costo'}</span></div>` : ''}</td>
         <td class="acc"><div class="acc-botones">
-          <button class="btn sm verde-suave" type="button" data-accion="entrada" data-id="${p.id}">+ Sumar stock</button>
-          <button class="btn sm danger" type="button" data-accion="salida" data-id="${p.id}">− Restar</button>
-          <button class="btn sm ghost" type="button" data-accion="editar" data-id="${p.id}">Editar</button>
+          <button class="btn sm verde-suave" type="button" data-accion="entrada" data-id="${p.id}" title="Sumar stock a ${esc(p.nombre)}" aria-label="Sumar stock a ${esc(p.nombre)}">+ Sumar</button>
+          <button class="btn sm" type="button" data-accion="salida" data-id="${p.id}" title="Restar stock de ${esc(p.nombre)}" aria-label="Restar stock de ${esc(p.nombre)}">− Restar</button>
+          <button class="btn sm ghost" type="button" data-accion="editar" data-id="${p.id}" aria-label="Editar ${esc(p.nombre)}">Editar</button>
         </div></td>
       </tr>`).join('') + (lista.length > visibles.length ? `<tr><td colspan="7" class="vacio">Se muestran ${visibles.length} de ${lista.length} productos. Usá el buscador para encontrar el resto.</td></tr>` : '')
     : `<tr><td colspan="7" class="vacio">${db.productos.length ? 'Ningún producto coincide con los filtros.' : 'Todavía no cargaste productos. Usá «Nuevo producto» para agregar el primero.'}</td></tr>`;
@@ -1832,7 +1834,7 @@ function abrirProducto(id) {
 
 function actualizarMargen() {
   const c = Number($('#p-costo').value), pr = Number($('#p-precio').value);
-  $('#p-margen').textContent = c > 0 && pr > 0 ? `Margen: ${n(((pr - c) / c) * 100)} % sobre costo` : '';
+  $('#p-margen').textContent = c > 0 && pr > 0 ? `Margen: ${n(Math.round(((pr - c) / c) * 1000) / 10)} % sobre el costo` : '';
 }
 
 function iniciarProductos() {
@@ -3711,7 +3713,7 @@ function abrirUsuario(id) {
 function renderRecuperacion() {
   const r = db.recuperacion;
   $('#rec-estado').innerHTML = r && r.hash
-    ? `<span class="chip ok">Creada el ${fechaHora(r.creada)}</span>`
+    ? `<span class="chip ok">${r.creada && !isNaN(Date.parse(r.creada)) ? `Creada el ${fechaHora(r.creada)}` : 'Creada'}</span>`
     : '<span class="chip warn">Todavía no se creó</span>';
   $('#btn-rec-crear').textContent = r && r.hash ? 'Crear una nueva' : 'Crear clave de recuperación';
 }

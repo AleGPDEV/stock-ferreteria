@@ -150,6 +150,7 @@ Prueban la lógica de stock, cobro, descuentos, anulación, actualización de pr
 index.html                Pantallas y formularios
 css/styles.css            Estilos (tema claro y oscuro automático)
 js/app.js                 Lógica: stock, caja, reportes, exportación y respaldo
+css/fuentes/              Letras incluidas (Barlow, Barlow Semi Condensed, IBM Plex Mono; licencia OFL): se ven igual sin internet
 vendor/xlsx.full.min.js   SheetJS 0.20.3: lee las planillas que se importan (programa, herramientas y pruebas)
 vendor/xlsx-estilo.min.js SheetJS con estilos (xlsx-js-style): solo para escribir los Excel del programa con colores
 electron/main.js          Ventana de escritorio, respaldos diarios y carpeta extra

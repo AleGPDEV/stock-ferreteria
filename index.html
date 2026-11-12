@@ -5,8 +5,6 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -83,7 +81,7 @@
     <!-- CAJA -->
     <section id="v-caja" class="vista" hidden>
       <header class="vh">
-        <div><h1>Vender</h1><p class="sub">Al cobrar, los productos se descuentan solos del stock.</p></div>
+        <div><h1 class="visually-hidden">Vender</h1></div>
       </header>
 
       <div id="caja-cerrada" class="card caja-cerrada" hidden>
@@ -135,10 +133,8 @@
           <div id="caja-resultados" class="resultados"></div>
         </div>
         <aside class="card ticket" aria-label="Ticket">
-          <header class="card-h"><p class="paso"><span class="paso-n">2</span> Revisá lo que lleva el cliente</p><button class="btn sm danger" type="button" id="ticket-vaciar">Borrar todo</button></header>
-          <p class="muted ticket-num">Venta <span class="mono" id="ticket-num"></span></p>
+          <header class="card-h"><div><p class="paso"><span class="paso-n">2</span> Revisá lo que lleva el cliente</p><p class="muted ticket-num">Venta <span id="ticket-num"></span></p></div><button class="btn sm danger" type="button" id="ticket-vaciar">Borrar todo</button></header>
           <div id="ticket-items"></div>
-          <label class="desc-f" for="caja-desc"><span>Descuento (opcional)</span><span class="desc-in"><input id="caja-desc" type="number" min="0" max="100" step="any" inputmode="decimal" placeholder="0"> %</span></label>
           <p class="muted desc-det" id="ticket-desc-det" hidden></p>
           <div class="ticket-total"><span>Total</span><strong id="ticket-total">$ 0</strong></div>
           <fieldset class="medios">
@@ -156,9 +152,15 @@
             </label>
             <div class="vuelto"><span>Vuelto</span><strong id="caja-vuelto">—</strong></div>
           </div>
-          <label class="f" for="caja-cliente">Cliente (opcional)
-            <input id="caja-cliente" type="text" placeholder="Nombre o RUT">
-          </label>
+          <details class="cliente-det" id="cliente-det">
+            <summary>Descuento o cliente</summary>
+            <div class="mas-campos">
+              <label class="desc-f" for="caja-desc"><span>Descuento</span><span class="desc-in"><input id="caja-desc" type="number" min="0" max="100" step="any" inputmode="decimal" placeholder="0"> %</span></label>
+              <label class="f" for="caja-cliente"><span class="visually-hidden">Cliente</span>
+                <input id="caja-cliente" type="text" placeholder="Nombre o RUT del cliente (opcional)">
+              </label>
+            </div>
+          </details>
           <p class="err" id="caja-err" role="alert"></p>
           <button class="btn verde btn-cobrar" type="button" id="btn-cobrar">Cobrar</button>
         </aside>
