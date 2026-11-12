@@ -831,3 +831,16 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
   #impresion.etiquetas .a4 .et { width: 70mm; height: 37mm; }
   #impresion.etiquetas .rollo .et { width: 50mm; height: 25mm; }
 }
+/* Depósito: estantes con categoría, recibir y producto nuevo */
+.dep-ubi-cat { font-size: 17px; font-weight: 600; }
+.dep-fila { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.dep-fila input, .dep-fila select { flex: 1; min-width: 140px; }
+.dep-cant input { max-width: 160px; }
+.dep-acciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px 20px; padding-top: 12px; border-top: 1px solid var(--line); }
+.dep-acciones .err, .dep-nuevo .err { grid-column: 1 / -1; margin: 0; }
+.dep-acciones .err:empty, .dep-nuevo .err:empty { display: none; }
+.dep-nuevo { display: flex; flex-direction: column; gap: 12px; max-width: 640px; }
+.dep-nuevo-cab { margin: 0; font-size: 16px; }
+.dep-vincular summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.dep-vincular input { width: 100%; margin-top: 8px; }
+.dep-ubic em { font-style: normal; font-weight: 600; color: var(--accent); font-size: 14px; }

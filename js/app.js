@@ -4115,15 +4115,78 @@ const ordenNatural = (a, b) => a.localeCompare(b, 'es', { numeric: true, sensiti
 /** Ubicaciones cargadas, con sus productos: [{ ubicacion, clave, productos }], ordenadas (A-2 antes que A-10). */
 function ubicacionesDe(d) {
   const mapa = new Map();
+  // Primero los estantes cargados (con su categoría), aunque todavía no tengan productos
+  for (const e of estantesDe(d)) {
+    const k = claveUbic(e.codigo);
+    if (k && !mapa.has(k)) mapa.set(k, { ubicacion: e.codigo, clave: k, categoria: e.categoria || '', estanteId: e.id, productos: [] });
+  }
   for (const p of d.productos) {
     const k = claveUbic(p.ubicacion);
     if (!k) continue;
-    if (!mapa.has(k)) mapa.set(k, { ubicacion: String(p.ubicacion).trim(), clave: k, productos: [] });
+    if (!mapa.has(k)) mapa.set(k, { ubicacion: String(p.ubicacion).trim(), clave: k, categoria: '', estanteId: '', productos: [] });
     mapa.get(k).productos.push(p);
   }
   const lista = [...mapa.values()];
   lista.forEach((u) => u.productos.sort((a, b) => ordenNatural(a.nombre, b.nombre)));
   return lista.sort((a, b) => ordenNatural(a.ubicacion, b.ubicacion));
+}
+
+/* Estantes: las ubicaciones se cargan de antemano, cada una con su categoría («A-1 · Sanitaria»).
+ * El producto guarda en p.ubicacion el nombre del estante. Se guardan en db.estantes (configuración). */
+const estantesDe = (d) => (Array.isArray(d.estantes) ? d.estantes : []);
+/** Crea o cambia un estante. Si cambia el nombre, los productos de ese estante pasan al nombre nuevo. Devuelve { estante } o { error }. */
+function guardarEstante(d, datos, id) {
+  const codigo = String(datos.codigo || '').replace(/\s+/g, ' ').trim();
+  const categoria = String(datos.categoria || '').replace(/\s+/g, ' ').trim();
+  if (!codigo) return { error: 'Escribí el nombre del estante, por ejemplo A-1.' };
+  if (!claveUbic(codigo)) return { error: 'Usá letras y números para el nombre del estante, por ejemplo A-1.' };
+  const repetido = estantesDe(d).find((e) => e.id !== id && claveUbic(e.codigo) === claveUbic(codigo));
+  if (repetido) return { error: `Ya hay un estante ${repetido.codigo}${repetido.categoria ? ' (' + repetido.categoria + ')' : ''}.` };
+  d.estantes = estantesDe(d);
+  if (!id) { const e = { id: uid(), codigo, categoria }; d.estantes.push(e); return { estante: e }; }
+  const e = d.estantes.find((x) => x.id === id);
+  if (!e) return { error: 'Ese estante ya no existe.' };
+  const antes = claveUbic(e.codigo);
+  if (antes !== claveUbic(codigo)) d.productos.forEach((p) => { if (claveUbic(p.ubicacion) === antes) p.ubicacion = codigo; });
+  e.codigo = codigo;
+  e.categoria = categoria;
+  return { estante: e };
+}
+/** Borra un estante de la lista. Los productos no cambian: siguen diciendo que están ahí. */
+function eliminarEstante(d, id) {
+  d.estantes = estantesDe(d).filter((e) => e.id !== id);
+}
+/** Pone un producto en un estante (o ubicación). Devuelve un texto de error o null. */
+function ubicarProducto(d, productoId, ubicacion) {
+  const p = d.productos.find((x) => x.id === productoId);
+  if (!p) return 'Ese producto ya no existe.';
+  const u = ubicacionesDe(d).find((x) => x.clave === claveUbic(ubicacion));
+  if (!u) return 'Elegí el estante.';
+  p.ubicacion = u.ubicacion;
+  return null;
+}
+/** Un código que no es de ningún producto, al recibir mercadería: nombre y estante; la categoría es la del estante.
+ * Queda marcado para revisar (falta el precio). Devuelve { producto } o { error }. */
+function altaEnDeposito(d, datos, usuario, rol) {
+  const codigo = normCodigo(datos.codigo);
+  const nombre = String(datos.nombre || '').replace(/\s+/g, ' ').trim();
+  if (!codigo) return { error: 'Falta el código.' };
+  if (!nombre) return { error: 'Escribí el nombre del producto.' };
+  const u = ubicacionesDe(d).find((x) => x.clave === claveUbic(datos.ubicacion));
+  if (!u) return { error: 'Elegí el estante donde va.' };
+  const otro = codigoUsado(d, codigo);
+  if (otro) return { error: `El código ${codigo} ya es de «${otro.nombre}».` };
+  const p = { id: uid(), codigo, barras: [], nombre, categoria: u.categoria || '', unidad: 'unidad', proveedorId: '', ubicacion: u.ubicacion, costo: 0, precio: 0, minimo: 0, stock: 0 };
+  d.productos.push(p);
+  marcarProductoNuevo(d, p, usuario, rol, 'cargado en el depósito');
+  p.revisar = true; // falta el precio: lo completa el administrador en Productos
+  return { producto: p };
+}
+/** «¿Cuántos llegaron?» en el depósito: es opcional; si se escribe, entra al stock como llegada de mercadería. */
+function recibirEnDeposito(d, productoId, cantidad) {
+  const c = Number(cantidad);
+  if (!(c > 0)) return 'Escribí cuántos llegaron.';
+  return registrar(d, { tipo: 'entrada', productoId, cantidad: c, nota: 'Llegó (Depósito)' });
 }
 
 /** Código que va en el código de barras de la etiqueta de un producto: su código de barras, si tiene, o el código del programa. */
@@ -4160,7 +4223,10 @@ function dondeEsta(d, texto) {
   const productos = d.productos.filter((x) => normal(`${textoCodigos(x)} ${x.nombre} ${x.categoria} ${x.ubicacion}`).includes(q))
     .sort((a, b) => ordenNatural(a.nombre, b.nombre));
   if (productos.length === 1) return { tipo: 'producto', producto: productos[0] };
-  return productos.length ? { tipo: 'lista', productos } : { tipo: 'nada' };
+  if (productos.length) return { tipo: 'lista', productos };
+  // Parece un código escaneado (sin espacios, con números) que no es de ningún producto: se puede cargar
+  if (/^\S{6,}$/.test(t) && /\d/.test(t)) return { tipo: 'nuevo', codigo: normCodigo(t) };
+  return { tipo: 'nada' };
 }
 
 /* Medidas de las etiquetas. A4: hoja de 24 stickers (3 × 8) de 70 × 37 mm. Rollo: impresora de etiquetas de 50 × 25 mm. */
@@ -4182,7 +4248,7 @@ function htmlEtiqueta(item, formato) {
   const u = item.ubicacion;
   const nombres = u.productos.slice(0, formato === 'rollo' ? 0 : 3).map((p) => esc(p.nombre));
   const resto = u.productos.length - nombres.length;
-  return `<div class="et et-lugar"><div class="et-titulo">Ubicación</div><div class="et-lugar-nom">${esc(u.ubicacion)}</div>
+  return `<div class="et et-lugar"><div class="et-titulo">${esc(u.categoria || 'Ubicación')}</div><div class="et-lugar-nom">${esc(u.ubicacion)}</div>
     <div class="et-cb">${barras128().svg(PREFIJO_UBIC + u.clave, { alto })}</div>
     ${formato === 'rollo' ? '' : `<div class="et-lista">${nombres.join(' · ')}${resto > 0 ? `${nombres.length ? ' y ' : ''}${resto} ${resto === 1 ? 'producto' : 'productos'}${nombres.length ? ' más' : ''}` : ''}</div>`}</div>`;
 }
@@ -4212,43 +4278,100 @@ function htmlEtiquetas(items, formato = 'a4', saltear = 0) {
 let depTexto = ''; // lo último que se buscó, para volver a mostrarlo al entrar
 const etq = { tipo: 'producto', copias: new Map() }; // ventana de etiquetas: id del producto o clave de la ubicación → copias
 
+let depUltimoEstante = ''; // el último estante elegido queda puesto para el siguiente producto (se carga estante por estante)
+
+/** Opciones de estantes agrupadas por categoría. */
+function opcionesEstante(sel, vacio = 'Elegí el estante') {
+  const ubics = ubicacionesDe(db);
+  if (!ubics.length) return '<option value="">Primero cargá los estantes (botón «Nuevo estante»)</option>';
+  const grupos = new Map();
+  ubics.forEach((u) => { const c = u.categoria || 'Sin categoría'; if (!grupos.has(c)) grupos.set(c, []); grupos.get(c).push(u); });
+  const orden = [...grupos.keys()].sort((x, y) => (x === 'Sin categoría') - (y === 'Sin categoría') || ordenNatural(x, y));
+  return `<option value="">${esc(vacio)}</option>` + orden.map((c) => `<optgroup label="${esc(c)}">${grupos.get(c).map((u) => `<option value="${esc(u.clave)}" ${u.clave === sel ? 'selected' : ''}>${esc(u.ubicacion)}${u.categoria ? ' · ' + esc(u.categoria) : ''}</option>`).join('')}</optgroup>`).join('');
+}
+const categoriaDeUbic = (ubic) => (ubicacionesDe(db).find((u) => u.clave === claveUbic(ubic)) || {}).categoria || '';
+
 function htmlDonde(r) {
   const fila = (p) => `<li><button type="button" class="dep-item" data-dep-prod="${p.id}">${miniatura(p)}<span class="dep-item-txt"><strong>${esc(p.nombre)}</strong><span class="meta"><span class="mono">${esc(p.codigo)}</span> · stock ${n(p.stock)} ${esc(p.unidad)}</span></span><span class="dep-item-ubi">${p.ubicacion ? esc(p.ubicacion) : '<span class="meta">sin ubicación</span>'}</span></button></li>`;
-  if (r.tipo === 'vacio') return '<p class="vacio">Escaneá un producto o una etiqueta de ubicación, o escribí un nombre.</p>';
+  const cantidad = (id, idBoton) => `<label class="f dep-cant" for="${id}">¿Cuántos llegaron? <small>Opcional: dejalo vacío si solo lo estás ubicando.</small>
+      <span class="dep-fila"><input id="${id}" type="number" min="0" step="any" inputmode="decimal" autocomplete="off">${idBoton ? `<button class="btn verde" type="button" data-dep-recibir="${idBoton}">Sumar al stock</button>` : ''}</span></label>`;
+  if (r.tipo === 'vacio') return '<p class="vacio">Escaneá un producto o la etiqueta de un estante, o escribí un nombre.</p>';
   if (r.tipo === 'nada') return '<p class="vacio">No encontré nada con eso. Probá con otra palabra.</p>';
+  if (r.tipo === 'nuevo') {
+    return `<form class="dep-nuevo" id="dep-nuevo" data-codigo="${esc(r.codigo)}" novalidate>
+      <p class="dep-nuevo-cab"><span class="chip warn">Producto nuevo</span> El código <span class="mono">${esc(r.codigo)}</span> no está cargado. Poné el nombre y elegí el estante: la próxima vez que llegue, ya vas a saber dónde va.</p>
+      <label class="f" for="dep-n-nombre">Nombre del producto<input id="dep-n-nombre" type="text" autocomplete="off" placeholder="Ej.: Codo PVC 110 mm"></label>
+      <label class="f" for="dep-n-estante">¿En qué estante va?<select id="dep-n-estante">${opcionesEstante(depUltimoEstante)}</select><small>La categoría del producto es la del estante. El precio se completa después en Productos.</small></label>
+      ${cantidad('dep-n-cant')}
+      <p class="err" id="dep-n-err" role="alert"></p>
+      <div class="dep-fila"><button class="btn primary btn-grande" type="submit">Guardar producto</button></div>
+      <details class="dep-vincular"><summary>¿Ya está cargado en el programa sin este código? Buscalo acá</summary>
+        <input id="dep-v-buscar" type="text" autocomplete="off" placeholder="Nombre o código del producto"><ul id="dep-v-lista" class="dep-lista"></ul></details>
+    </form>`;
+  }
   if (r.tipo === 'producto') {
     const p = r.producto;
     const e = estado(p);
+    const cat = p.ubicacion ? categoriaDeUbic(p.ubicacion) : '';
     return `<div class="dep-prod">
-      <div class="dep-prod-cab">${miniatura(p, 'grande')}<div><div class="dep-prod-nom">${esc(p.nombre)}</div>
+      <div class="dep-prod-cab">${miniatura(p, 'grande')}<div><div class="dep-prod-nom">${esc(p.nombre)}${p.revisar ? ' <span class="chip info">Nuevo · falta el precio</span>' : ''}</div>
         <div class="meta"><span class="mono">${esc(textoCodigos(p))}</span>${p.categoria ? ' · ' + esc(p.categoria) : ''}</div></div></div>
-      <div class="dep-ubi${p.ubicacion ? '' : ' sin'}"><span class="dep-ubi-lbl">Está en</span><span class="dep-ubi-txt">${p.ubicacion ? esc(p.ubicacion) : 'Sin ubicación cargada'}</span></div>
+      <div class="dep-ubi${p.ubicacion ? '' : ' sin'}"><span class="dep-ubi-lbl">${p.ubicacion ? 'Va en' : 'Todavía no tiene estante'}</span><span class="dep-ubi-txt">${p.ubicacion ? esc(p.ubicacion) : 'Elegí dónde va'}</span>${cat ? `<span class="dep-ubi-cat">${esc(cat)}</span>` : ''}</div>
       <div class="dep-datos"><span>Hay <strong>${n(p.stock)} ${esc(p.unidad)}</strong></span>
         ${e === 'sin' ? '<span class="chip danger">Sin stock</span>' : e === 'bajo' ? '<span class="chip warn">Bajo el mínimo</span>' : ''}
         <button class="btn sm" type="button" data-etq-uno="${p.id}">Imprimir su etiqueta</button></div>
+      <div class="dep-acciones">
+        ${cantidad('dep-cant', p.id)}
+        <label class="f" for="dep-estante">${p.ubicacion ? 'Cambiar de estante' : '¿En qué estante va?'}
+          <span class="dep-fila"><select id="dep-estante">${opcionesEstante(p.ubicacion ? claveUbic(p.ubicacion) : depUltimoEstante)}</select><button class="btn primary" type="button" data-dep-ubicar="${p.id}">Guardar estante</button></span></label>
+        <p class="err" id="dep-err" role="alert"></p>
+      </div>
     </div>`;
   }
   if (r.tipo === 'ubicacion') {
     const u = r.ubicacion;
-    return `<div class="dep-lugar-cab"><div><span class="dep-ubi-lbl">Ubicación</span><div class="dep-ubi-txt">${esc(u.ubicacion)}</div><div class="meta">${plural(u.productos.length, 'producto', 'productos')}</div></div>
-      <button class="btn sm" type="button" data-etq-ubic="${esc(u.clave)}">Imprimir etiquetas de este lugar</button></div>
-      <ul class="dep-lista">${u.productos.map(fila).join('')}</ul>`;
+    return `<div class="dep-lugar-cab"><div><span class="dep-ubi-lbl">${esc(u.categoria || 'Estante')}</span><div class="dep-ubi-txt">${esc(u.ubicacion)}</div><div class="meta">${plural(u.productos.length, 'producto', 'productos')}</div></div>
+      <div class="dep-fila"><button class="btn sm" type="button" data-estante-editar="${esc(u.clave)}">${u.estanteId ? 'Cambiar estante' : 'Ponerle categoría'}</button>
+      <button class="btn sm" type="button" data-etq-ubic="${esc(u.clave)}">Imprimir etiquetas de este lugar</button></div></div>
+      <ul class="dep-lista">${u.productos.map(fila).join('') || '<li class="vacio">Todavía no tiene productos. Escaneá uno y elegí este estante.</li>'}</ul>`;
   }
   return `<p class="meta">${plural(r.productos.length, 'producto encontrado', 'productos encontrados')}. Tocá uno para ver dónde está.</p>
     <ul class="dep-lista">${r.productos.slice(0, 40).map(fila).join('')}</ul>${r.productos.length > 40 ? '<p class="meta">Hay más: escribí algo más preciso.</p>' : ''}`;
 }
 
-function mostrarDonde(texto) {
+function mostrarDonde(texto, enter = false) {
   depTexto = texto;
-  $('#dep-resultado').innerHTML = htmlDonde(dondeEsta(db, texto));
+  const r = dondeEsta(db, texto);
+  // Mientras se escribe a mano no se ofrece cargar un producto nuevo: solo al escanear o tocar Enter
+  $('#dep-resultado').innerHTML = htmlDonde(r.tipo === 'nuevo' && !enter ? { tipo: 'nada' } : r);
+  if (r.tipo === 'nuevo' && enter) setTimeout(() => $('#dep-n-nombre').focus(), 0);
+}
+function verProductoDep(p, aviso) {
+  depTexto = p.codigo;
+  $('#dep-resultado').innerHTML = htmlDonde({ tipo: 'producto', producto: p });
+  if (aviso) toast(aviso);
+  render();
+  const b = $('#dep-buscar'); b.focus(); b.select(); // listo para escanear el próximo
+}
+function abrirEstante(clave, codigoNuevo = '') {
+  const u = clave ? ubicacionesDe(db).find((x) => x.clave === clave) : null;
+  const e = u && u.estanteId ? estantesDe(db).find((x) => x.id === u.estanteId) : null;
+  $('#est-form').dataset.id = e ? e.id : '';
+  $('#est-titulo').textContent = e ? `Estante ${e.codigo}` : 'Nuevo estante';
+  $('#est-codigo').value = e ? e.codigo : (u ? u.ubicacion : codigoNuevo);
+  $('#est-categoria').value = e ? e.categoria : '';
+  $('#est-cats').innerHTML = [...new Set(db.productos.map((p) => p.categoria).concat(estantesDe(db).map((x) => x.categoria)).filter(Boolean))].sort(ordenNatural).map((c) => `<option value="${esc(c)}">`).join('');
+  $('#est-borrar').hidden = !(e && esAdmin());
+  $('#est-err').textContent = '';
+  $('#dlg-estante').showModal();
 }
 
 function renderDeposito() {
   const ubics = ubicacionesDe(db);
   const sinUbic = db.productos.filter((p) => !claveUbic(p.ubicacion)).length;
-  $('#dep-sub').textContent = `${plural(ubics.length, 'ubicación', 'ubicaciones')} · ${plural(sinUbic, 'producto sin ubicación', 'productos sin ubicación')}`;
-  $('#dep-ubicaciones').innerHTML = ubics.map((u) => `<button type="button" class="dep-ubic" data-dep-ubic="${esc(u.clave)}"><strong>${esc(u.ubicacion)}</strong><span>${plural(u.productos.length, 'producto', 'productos')}</span></button>`).join('')
-    || '<p class="vacio">Todavía no hay ubicaciones. Se cargan en cada producto (Productos → Editar → Ubicación).</p>';
+  $('#dep-sub').textContent = `${plural(ubics.length, 'estante', 'estantes')} · ${plural(sinUbic, 'producto sin estante', 'productos sin estante')}`;
+  $('#dep-ubicaciones').innerHTML = ubics.map((u) => `<button type="button" class="dep-ubic" data-dep-ubic="${esc(u.clave)}"><strong>${esc(u.ubicacion)}</strong>${u.categoria ? `<em>${esc(u.categoria)}</em>` : ''}<span>${plural(u.productos.length, 'producto', 'productos')}</span></button>`).join('')
+    || '<p class="vacio">Todavía no hay estantes. Tocá «Nuevo estante» y poné, por ejemplo, A-1 · Sanitaria.</p>';
   $('#dep-resultado').innerHTML = htmlDonde(dondeEsta(db, depTexto));
   // El lector de códigos escribe donde está el cursor: se deja en el buscador (salvo que se esté escribiendo en otro lado)
   const activo = document.activeElement;
@@ -4257,7 +4380,7 @@ function renderDeposito() {
 
 /* Ventana «Imprimir etiquetas» */
 function itemsEtiquetas() {
-  if (etq.tipo === 'ubicacion') return ubicacionesDe(db).map((u) => ({ id: u.clave, ubicacion: u, nombre: u.ubicacion, detalle: plural(u.productos.length, 'producto', 'productos') }));
+  if (etq.tipo === 'ubicacion') return ubicacionesDe(db).map((u) => ({ id: u.clave, ubicacion: u, nombre: u.ubicacion, detalle: [u.categoria, plural(u.productos.length, 'producto', 'productos')].filter(Boolean).join(' · ') }));
   return db.productos.slice().sort((a, b) => ordenNatural(a.ubicacion || '~', b.ubicacion || '~') || ordenNatural(a.nombre, b.nombre))
     .map((p) => ({ id: p.id, producto: p, nombre: p.nombre, detalle: [codigoEtiqueta(p) || 'sin código para imprimir', p.ubicacion || 'sin ubicación'].join(' · '), ubic: claveUbic(p.ubicacion) }));
 }
@@ -4290,7 +4413,7 @@ function renderEtiquetas() {
 function abrirEtiquetas(tipo, marcar = []) {
   etq.tipo = tipo;
   etq.copias = new Map(marcar.map((id) => [id, 1]));
-  $('#etq-titulo').textContent = tipo === 'ubicacion' ? 'Imprimir etiquetas de ubicación' : 'Imprimir etiquetas de productos';
+  $('#etq-titulo').textContent = tipo === 'ubicacion' ? 'Imprimir etiquetas de estantes' : 'Imprimir etiquetas de productos';
   $('#etq-buscar').value = '';
   $('#etq-ubic').innerHTML = '<option value="">Todas las ubicaciones</option>' + ubicacionesDe(db).map((u) => `<option value="${esc(u.clave)}">${esc(u.ubicacion)}</option>`).join('');
   renderEtiquetas();
@@ -4319,8 +4442,88 @@ function iniciarDeposito() {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     clearTimeout(espera);
-    mostrarDonde(buscar.value);
+    mostrarDonde(buscar.value, true);
     buscar.select(); // así el próximo escaneo reemplaza lo anterior
+  });
+  const usuario = () => (sesion ? sesion.nombre : '');
+  $('#dep-resultado').addEventListener('click', (e) => {
+    const rec = e.target.closest('[data-dep-recibir]');
+    if (rec) {
+      const p = producto(rec.dataset.depRecibir);
+      const err = recibirEnDeposito(db, p.id, parseNum($('#dep-cant').value));
+      if (err) { $('#dep-err').textContent = err; $('#dep-cant').focus(); return; }
+      guardar();
+      verProductoDep(p, `Listo: sumé ${n(parseNum($('#dep-cant').value))} al stock de ${p.nombre}.`);
+      return;
+    }
+    const ubi = e.target.closest('[data-dep-ubicar]');
+    if (ubi) {
+      const p = producto(ubi.dataset.depUbicar);
+      const err = ubicarProducto(db, p.id, $('#dep-estante').value);
+      if (err) { $('#dep-err').textContent = err; return; }
+      depUltimoEstante = claveUbic(p.ubicacion);
+      guardar();
+      verProductoDep(p, `Listo: ${p.nombre} va en ${p.ubicacion}.`);
+      return;
+    }
+    const vin = e.target.closest('[data-dep-vincular]');
+    if (vin) {
+      const p = producto(vin.dataset.depVincular);
+      const codigo = $('#dep-nuevo').dataset.codigo;
+      const err = asignarBarras(db, p, codigo);
+      if (err) { $('#dep-n-err').textContent = err; return; }
+      guardar();
+      verProductoDep(p, `Listo: el código ${codigo} quedó en ${p.nombre}.`);
+      return;
+    }
+    const est = e.target.closest('[data-estante-editar]');
+    if (est) abrirEstante(est.dataset.estanteEditar);
+  });
+  $('#dep-resultado').addEventListener('input', (e) => {
+    if (e.target.id !== 'dep-v-buscar') return;
+    const q = normal(e.target.value.trim());
+    const lista = q.length < 2 ? [] : db.productos.filter((p) => normal(`${textoCodigos(p)} ${p.nombre}`).includes(q)).slice(0, 12);
+    $('#dep-v-lista').innerHTML = lista.map((p) => `<li><button type="button" class="dep-item" data-dep-vincular="${p.id}"><span class="dep-item-txt"><strong>${esc(p.nombre)}</strong><span class="meta"><span class="mono">${esc(p.codigo)}</span>${p.ubicacion ? ' · ' + esc(p.ubicacion) : ''}</span></span><span class="dep-item-ubi">Es este</span></button></li>`).join('')
+      || (q.length >= 2 ? '<li class="vacio">No encontré ninguno.</li>' : '');
+  });
+  $('#dep-resultado').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.id === 'dep-cant') { e.preventDefault(); const b = $('[data-dep-recibir]'); if (b) b.click(); }
+  });
+  $('#dep-resultado').addEventListener('submit', (e) => {
+    if (e.target.id !== 'dep-nuevo') return;
+    e.preventDefault();
+    const f = e.target;
+    const r = altaEnDeposito(db, { codigo: f.dataset.codigo, nombre: $('#dep-n-nombre').value, ubicacion: $('#dep-n-estante').value }, usuario(), sesion ? sesion.rol : '');
+    if (r.error) { $('#dep-n-err').textContent = r.error; return; }
+    const cant = parseNum($('#dep-n-cant').value);
+    if (cant > 0) recibirEnDeposito(db, r.producto.id, cant);
+    depUltimoEstante = claveUbic(r.producto.ubicacion);
+    guardar();
+    verProductoDep(r.producto, `Listo: ${r.producto.nombre} quedó cargado en ${r.producto.ubicacion}${cant > 0 ? ` con ${n(cant)} en stock` : ''}.`);
+  });
+  // Estantes
+  $('#btn-nuevo-estante').addEventListener('click', () => abrirEstante(''));
+  $('#est-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const id = $('#est-form').dataset.id || undefined;
+    const r = guardarEstante(db, { codigo: $('#est-codigo').value, categoria: $('#est-categoria').value }, id);
+    if (r.error) { $('#est-err').textContent = r.error; return; }
+    guardar();
+    $('#dlg-estante').close();
+    render();
+    $('#dep-resultado').innerHTML = htmlDonde({ tipo: 'ubicacion', ubicacion: ubicacionesDe(db).find((u) => u.estanteId === r.estante.id) });
+    toast(`Listo: estante ${r.estante.codigo}${r.estante.categoria ? ' · ' + r.estante.categoria : ''}.`);
+  });
+  $('#est-borrar').addEventListener('click', async () => {
+    const id = $('#est-form').dataset.id;
+    const e = estantesDe(db).find((x) => x.id === id);
+    if (!e || !esAdmin()) return;
+    if (!(await confirmar(`¿Borrar el estante ${e.codigo} de la lista? Los productos no cambian: siguen diciendo que están en ${e.codigo}.`, 'Borrar estante', true))) return;
+    eliminarEstante(db, id);
+    guardar();
+    $('#dlg-estante').close();
+    render();
+    toast(`Se borró el estante ${e.codigo}.`);
   });
   $('#dep-limpiar').addEventListener('click', () => { buscar.value = ''; mostrarDonde(''); buscar.focus(); });
   $('#v-deposito').addEventListener('click', (e) => {
@@ -4362,7 +4565,7 @@ function iniciarDeposito() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { anotarCodigoProv, codigosProvDe, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC };
+  module.exports = { anotarCodigoProv, codigosProvDe, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

@@ -922,3 +922,56 @@ test('lector con otro teclado: «PIN\'ROD22» encuentra PIN-ROD22, si no hay dud
   assert.equal(app.dondeEsta(d, "UBIC A'01").ubicacion.clave, 'A-01');
   assert.equal(app.dondeEsta(d, "UBIC C'02").ubicacion.clave, 'C-02');
 });
+
+test('estantes con categoría: crear, no repetir, cambiar el nombre mueve los productos', () => {
+  const d = base();
+  assert.match(app.guardarEstante(d, { codigo: '  ', categoria: 'Sanitaria' }).error, /nombre del estante/);
+  const a1 = app.guardarEstante(d, { codigo: 'A-1', categoria: ' Sanitaria ' }).estante;
+  assert.deepEqual([a1.codigo, a1.categoria], ['A-1', 'Sanitaria']);
+  assert.match(app.guardarEstante(d, { codigo: 'a-1 ', categoria: 'Otra' }).error, /Ya hay un estante A-1 \(Sanitaria\)/);
+  // aparece en las ubicaciones aunque no tenga productos, con su categoría
+  const u = app.ubicacionesDe(d).find((x) => x.clave === 'A-1');
+  assert.deepEqual([u.categoria, u.productos.length, u.estanteId], ['Sanitaria', 0, a1.id]);
+  // poner un producto y cambiar el nombre del estante
+  assert.equal(app.ubicarProducto(d, 'a', 'a-1'), null);
+  assert.equal(d.productos[0].ubicacion, 'A-1');
+  assert.equal(app.ubicarProducto(d, 'a', 'Z-9'), 'Elegí el estante.');
+  app.guardarEstante(d, { codigo: 'A-01', categoria: 'Sanitaria' }, a1.id);
+  assert.equal(d.productos[0].ubicacion, 'A-01', 'el producto sigue en su estante con el nombre nuevo');
+  // la etiqueta del estante lleva la categoría
+  const et = app.htmlEtiquetas([{ ubicacion: app.ubicacionesDe(d).find((x) => x.clave === 'A-01'), copias: 1 }]);
+  assert.match(et.html, /et-titulo">Sanitaria</);
+  // borrar el estante no toca los productos
+  app.eliminarEstante(d, a1.id);
+  assert.equal(app.estantesDe(d).length, 0);
+  assert.equal(d.productos[0].ubicacion, 'A-01');
+});
+
+test('recibir en el depósito: código nuevo con nombre y estante, y la próxima vez dice dónde va', () => {
+  const d = base();
+  app.guardarEstante(d, { codigo: 'A-1', categoria: 'Sanitaria' });
+  // escanear un código que no está: se ofrece cargarlo
+  assert.deepEqual(app.dondeEsta(d, '7730901480023'), { tipo: 'nuevo', codigo: '7730901480023' });
+  assert.equal(app.dondeEsta(d, '22cm').tipo, 'nada', 'algo corto escrito a mano no es un código nuevo');
+  assert.match(app.altaEnDeposito(d, { codigo: '7730901480023', nombre: ' ', ubicacion: 'A-1' }, 'Ana', 'empleado').error, /nombre/);
+  assert.match(app.altaEnDeposito(d, { codigo: '7730901480023', nombre: 'Codo PVC 110', ubicacion: '' }, 'Ana', 'empleado').error, /estante/);
+  assert.match(app.altaEnDeposito(d, { codigo: 'mar-16', nombre: 'X', ubicacion: 'A-1' }, 'Ana', 'empleado').error, /ya es de «Martillo 16 oz»/);
+  const { producto: p } = app.altaEnDeposito(d, { codigo: '7730901480023', nombre: 'Codo  PVC 110', ubicacion: 'a-1' }, 'Ana', 'empleado');
+  assert.deepEqual([p.codigo, p.nombre, p.ubicacion, p.categoria, p.precio, p.stock, p.revisar, p.creadoPor], ['7730901480023', 'Codo PVC 110', 'A-1', 'Sanitaria', 0, 0, true, 'Ana'],
+    'la categoría es la del estante; queda para revisar (falta el precio); sin stock si no se dijo cuántos');
+  // el administrador también lo ve para revisar (falta el precio)
+  assert.equal(app.altaEnDeposito(d, { codigo: '7790000000001', nombre: 'Otro', ubicacion: 'A-1' }, 'Admin', 'admin').producto.revisar, true);
+  // la próxima vez que llega: lo encuentra y dice el estante
+  const r = app.dondeEsta(d, '7730901480023');
+  assert.equal(r.producto.id, p.id);
+  assert.equal(r.producto.ubicacion, 'A-1');
+  // cuántos llegaron es opcional; si se pone, entra como llegada (queda en el historial)
+  assert.equal(app.recibirEnDeposito(d, p.id, ''), 'Escribí cuántos llegaron.');
+  assert.equal(app.recibirEnDeposito(d, p.id, 12), null);
+  assert.equal(p.stock, 12);
+  const m = d.movimientos.at(-1);
+  assert.deepEqual([m.tipo, m.cantidad, m.nota], ['entrada', 12, 'Llegó (Depósito)']);
+  assert.equal(app.recibirEnDeposito(d, 'a', 5), null);
+  assert.equal(d.productos[0].stock, 15);
+  assert.equal(d.productos[0].costo, 390, 'sumar en el depósito no cambia el costo');
+});
