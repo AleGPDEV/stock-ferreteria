@@ -986,7 +986,13 @@ function aplicarImportacion(d, plan, campos) {
     if (c.stock && pos(x.stock) != null && red(x.stock) !== p.stock) registrar(d, { tipo: 'ajuste', productoId: p.id, cantidad: x.stock, nota: 'Corrección por importación' });
     sumarLlegada(p, x);
   }
-  return { nuevos: plan.nuevos.length, actualizados: plan.actualizados.length, llegadas };
+  // Estantes nuevos que vienen en la planilla (por ejemplo, creados en el Cargador sin el programa abierto): quedan con su categoría
+  let estantes = 0;
+  const creados = plan.nuevos.filter((x) => !(x.datos.dudosaDe && x.accion === 'mismo') && x.accion !== 'saltear').map((x) => x.datos);
+  for (const x of creados.concat(c.otros ? plan.actualizados.concat(unidos).map((a) => a.datos) : [])) {
+    if (x && x.ubicacion && asegurarEstante(d, x.ubicacion, x.categoria)) estantes++;
+  }
+  return { nuevos: plan.nuevos.length, actualizados: plan.actualizados.length, llegadas, estantes };
 }
 
 /* ---------- Datos de ejemplo ---------- */
@@ -3657,7 +3663,7 @@ function iniciarImportacion() {
     guardar();
     $('#dlg-import').close();
     render();
-    toast(`Importación lista: ${r.nuevos} productos nuevos y ${r.actualizados} actualizados${r.llegadas ? `; mercadería sumada a ${r.llegadas}` : ''}.`);
+    toast(`Importación lista: ${r.nuevos} productos nuevos y ${r.actualizados} actualizados${r.llegadas ? `; mercadería sumada a ${r.llegadas}` : ''}${r.estantes ? `; ${plural(r.estantes, 'estante nuevo', 'estantes nuevos')} en Depósito` : ''}.`);
   });
 }
 
@@ -4351,6 +4357,24 @@ function guardarEstante(d, datos, id) {
   e.categoria = categoria;
   return { estante: e };
 }
+/** Si el estante no existe, lo crea con esa categoría (al importar lo que se cargó con el Cargador). Devuelve true si lo creó. */
+function asegurarEstante(d, ubicacion, categoria) {
+  const k = claveUbic(ubicacion);
+  if (!k || estantesDe(d).some((e) => claveUbic(e.codigo) === k)) return false;
+  return !guardarEstante(d, { codigo: ubicacion, categoria }).error;
+}
+/** Para el Cargador de productos (abierto desde el menú Herramientas): los estantes con su categoría. */
+function estantesParaHerramienta() {
+  return ubicacionesDe(db).map((u) => ({ codigo: u.ubicacion, categoria: u.categoria || '' }));
+}
+/** El Cargador crea un estante: queda guardado en el programa igual que si se creara en Depósito. */
+function nuevoEstanteDesdeHerramienta(x) {
+  const r = guardarEstante(db, x || {});
+  if (r.error) return { error: r.error };
+  guardar();
+  if (sesion) render();
+  return { estante: { codigo: r.estante.codigo, categoria: r.estante.categoria || '' } };
+}
 /** Borra un estante de la lista. Los productos no cambian: siguen diciendo que están ahí. */
 function eliminarEstante(d, id) {
   d.estantes = estantesDe(d).filter((e) => e.id !== id);
@@ -4849,7 +4873,7 @@ function iniciarDeposito() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
+  module.exports = { asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

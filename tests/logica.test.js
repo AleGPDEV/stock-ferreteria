@@ -1155,3 +1155,18 @@ test('etiquetas: se reconoce qué productos no traen código de barras de fábri
   assert.equal(app.tieneCodigoFabrica({ codigo: '7730901480023' }), true);
   assert.equal(app.tieneCodigoFabrica({ codigo: '1234' }), false, 'un número corto es un código interno');
 });
+
+test('importar lo del Cargador crea los estantes nuevos con su categoría', () => {
+  const d = app.baseVacia();
+  app.guardarEstante(d, { codigo: 'A-1', categoria: 'Comida' });
+  const filas = [
+    { 'Código': '', Producto: 'Guantes de látex', 'Categoría': 'Indumentaria', 'Ubicación': 'A-2', Precio: 300, Stock: 4 },
+    { 'Código': '', Producto: 'Galletas', 'Categoría': 'Comida', 'Ubicación': 'a-1', Precio: 50, Stock: 2 },
+  ];
+  const r = app.aplicarImportacion(d, app.planImportacion(d, filas));
+  assert.equal(r.estantes, 1, 'solo A-2 es nuevo (a-1 es el mismo que A-1)');
+  assert.deepEqual(app.estantesDe(d).map((e) => [e.codigo, e.categoria]), [['A-1', 'Comida'], ['A-2', 'Indumentaria']]);
+  assert.ok(app.estantesDe(d).every((e) => e.num > 0), 'con su número para la etiqueta');
+  assert.equal(app.asegurarEstante(d, 'A-2', 'Otra'), false, 'uno que ya existe no cambia');
+  assert.equal(app.estantesDe(d)[1].categoria, 'Indumentaria');
+});

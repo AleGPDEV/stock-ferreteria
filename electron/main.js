@@ -352,6 +352,7 @@ ipcMain.handle('almacen:respaldarAhora', async () => hacerRespaldo(true));
 
 /* ---------- Herramientas aparte (Cargador de productos y Lector de facturas) ----------
  * Se abren en su propia ventana, sin acceso a los datos del programa: solo arman un Excel.
+ * Única excepción: los estantes (leerlos y crear uno), para que el Cargador use los mismos que el programa.
  * Si una falla, la caja sigue funcionando. */
 const HERRAMIENTAS = {
   cargador: { archivo: 'Cargador-de-productos.html', titulo: 'Cargador de productos' },
@@ -368,7 +369,7 @@ function abrirHerramienta(nombre) {
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     backgroundColor: '#e2e7ed',
     autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, devTools: !app.isPackaged },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, devTools: !app.isPackaged, preload: path.join(__dirname, 'herramientas-preload.js') },
   });
   w.setMenuBarVisibility(false);
   w.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
@@ -377,6 +378,18 @@ function abrirHerramienta(nombre) {
   abiertas[nombre] = w;
 }
 ipcMain.on('herramienta:abrir', (e, nombre) => abrirHerramienta(String(nombre)));
+// Los estantes los tiene la ventana del programa (ahí están los datos): se le piden a ella.
+const esHerramienta = (e) => Object.values(abiertas).some((w) => w && !w.isDestroyed() && w.webContents === e.sender);
+async function preguntarAlPrograma(codigo) {
+  if (!ventana || ventana.isDestroyed()) return { error: 'El programa no está abierto.' };
+  try { return await ventana.webContents.executeJavaScript(codigo); } catch (err) { return { error: 'El programa no respondió.' }; }
+}
+ipcMain.handle('herramienta:estantes', (e) => (esHerramienta(e) ? preguntarAlPrograma('estantesParaHerramienta()') : null));
+ipcMain.handle('herramienta:nuevoEstante', (e, x) => {
+  if (!esHerramienta(e)) return { error: 'No permitido.' };
+  const datos = { codigo: String((x && x.codigo) || '').slice(0, 60), categoria: String((x && x.categoria) || '').slice(0, 60) };
+  return preguntarAlPrograma(`nuevoEstanteDesdeHerramienta(${JSON.stringify(datos)})`);
+});
 
 /* Tamaño de la pantalla (Ver → Agrandar / Achicar), recordado en esta PC */
 function cambiarZoom(paso) {

@@ -86,6 +86,10 @@ label.btn input { display: none; }
 .v-lista:empty { display: none; }
 .v-lista .btn { width: 100%; display: flex; justify-content: space-between; gap: 10px; text-align: left; font-weight: 400; }
 .v-lista .meta { color: var(--muted); font-size: 13px; }
+.f input[readonly] { background: var(--surface-2); color: var(--muted); }
+.nuevo-estante { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--r); background: var(--verde-soft); }
+.nuevo-estante[hidden] { display: none; }
+.ne-tit { margin: 0; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -114,8 +118,18 @@ label.btn input { display: none; }
         <label class="f f-wide" for="c-nombre">Nombre del producto<input id="c-nombre" type="text" autocomplete="off" placeholder="Ej.: Tornillo autoperforante 8 x 1&quot;"></label>
         <label class="f" for="c-precio">Precio de venta ($)<input id="c-precio" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej.: 290"></label>
         <label class="f" for="c-cantidad">Cantidad que hay<input id="c-cantidad" type="text" inputmode="decimal" autocomplete="off" placeholder="1"></label>
-        <label class="f" for="c-categoria">Categoría<input id="c-categoria" type="text" list="lista-cat" autocomplete="off" placeholder="Ej.: Tornillería"><small>Queda puesta para el siguiente.</small></label>
-        <label class="f" for="c-ubicacion">Ubicación<input id="c-ubicacion" type="text" autocomplete="off" placeholder="Ej.: Estante A-01"><small>Queda puesta para el siguiente.</small></label>
+        <label class="f" for="c-estante">Estante<select id="c-estante"></select><small id="c-estante-ayuda">Queda puesto para el siguiente.</small></label>
+        <label class="f" for="c-categoria">Categoría<input id="c-categoria" type="text" list="lista-cat" autocomplete="off" placeholder="Ej.: Tornillería"><small id="c-cat-ayuda"></small></label>
+        <div class="nuevo-estante f-wide" id="nuevo-estante" hidden>
+          <p class="ne-tit">Estante nuevo</p>
+          <div class="campos">
+            <label class="f" for="ne-codigo">Nombre del estante<input id="ne-codigo" type="text" autocomplete="off" placeholder="Ej.: A-3"></label>
+            <label class="f" for="ne-categoria">Categoría del estante<input id="ne-categoria" type="text" list="lista-cat" autocomplete="off" placeholder="Ej.: Sanitaria"></label>
+          </div>
+          <p class="err" id="ne-err" role="alert"></p>
+          <div class="botonera"><button class="btn verde" type="button" id="ne-crear">Crear estante</button><button class="btn" type="button" id="ne-cancelar">Cancelar</button></div>
+          <p class="ayuda" id="ne-ayuda"></p>
+        </div>
       </div>
       <details class="mas" id="mas">
         <summary>Más datos (opcional): código, costo, unidad, proveedor, mínimo</summary>
@@ -202,6 +216,102 @@ function guardar() {
   try { localStorage.setItem(CLAVE, JSON.stringify(datos)); } catch (e) { toast('No se pudo guardar en esta computadora. Descargá el Excel ahora.'); }
 }
 
+// ---------- Estantes ----------
+/* Los estantes son los del programa, cada uno con su categoría. Abierto desde el menú Herramientas del programa,
+ * se leen y se crean ahí mismo (window.programa). Abierto con doble clic en otra PC, se usan los últimos conocidos,
+ * los del Excel del inventario y los que se crean acá: esos llegan al programa al importar el Excel (Ubicación y Categoría). */
+const NUEVO = '__nuevo__';
+// La misma clave que usa el programa (claveUbic): «a-1» y «A-1» son el mismo estante
+const claveEst = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+const conPrograma = () => !!(window.programa && window.programa.estantes);
+const estantes = () => (Array.isArray(datos.estantes) ? datos.estantes : []);
+function sumarEstantes(lista, pisar = false) {
+  const mapa = new Map(estantes().map((e) => [claveEst(e.codigo), e]));
+  for (const e of lista || []) {
+    const k = claveEst(e && e.codigo);
+    if (!k) continue;
+    const ya = mapa.get(k);
+    if (!ya) mapa.set(k, { codigo: String(e.codigo).trim(), categoria: String(e.categoria || '').trim(), propio: !!e.propio });
+    else if (pisar || (!ya.categoria && e.categoria)) { ya.categoria = String(e.categoria || '').trim(); ya.codigo = String(e.codigo).trim(); if (pisar) ya.propio = false; }
+  }
+  datos.estantes = [...mapa.values()].sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true }));
+}
+const estanteDe = (codigo) => estantes().find((e) => claveEst(e.codigo) === claveEst(codigo));
+async function traerEstantesDelPrograma() {
+  if (!conPrograma()) return;
+  try {
+    const lista = await window.programa.estantes();
+    if (Array.isArray(lista)) { sumarEstantes(lista, true); guardar(); opcionesEstante($('#c-estante').value); }
+  } catch (e) { /* el programa no respondió: quedan los últimos conocidos */ }
+}
+function opcionesEstante(sel) {
+  const grupos = new Map();
+  estantes().forEach((e) => { const c = e.categoria || 'Sin categoría'; if (!grupos.has(c)) grupos.set(c, []); grupos.get(c).push(e); });
+  const orden = [...grupos.keys()].sort((a, b) => (a === 'Sin categoría') - (b === 'Sin categoría') || a.localeCompare(b, 'es'));
+  const elegido = sel && sel !== NUEVO ? (estanteDe(sel) || {}).codigo || '' : '';
+  $('#c-estante').innerHTML = `<option value="">${estantes().length ? 'Sin estante' : 'Sin estante (todavía no hay estantes)'}</option>`
+    + orden.map((c) => `<optgroup label="${esc(c)}">${grupos.get(c).map((e) => `<option value="${esc(e.codigo)}" ${e.codigo === elegido ? 'selected' : ''}>${esc(e.codigo)}${e.categoria ? ' · ' + esc(e.categoria) : ''}</option>`).join('')}</optgroup>`).join('')
+    + `<option value="${NUEVO}">+ Crear un estante nuevo…</option>`;
+}
+/** Al elegir el estante, la categoría es la del estante (no se escribe a mano). */
+function alElegirEstante(categoriaProducto = null) {
+  const v = $('#c-estante').value;
+  const cat = $('#c-categoria');
+  if (v === NUEVO) { abrirNuevoEstante(); return; }
+  estanteAnterior = v;
+  $('#nuevo-estante').hidden = true;
+  const e = v ? estanteDe(v) : null;
+  if (e && e.categoria) {
+    cat.value = e.categoria; cat.readOnly = true;
+    $('#c-cat-ayuda').textContent = `La del estante ${e.codigo}.`;
+  } else {
+    cat.readOnly = false;
+    if (categoriaProducto != null) cat.value = categoriaProducto;
+    $('#c-cat-ayuda').textContent = e ? 'Este estante no tiene categoría: escribila si querés.' : 'Sin estante: escribila si querés.';
+  }
+}
+let estanteAnterior = '';
+function abrirNuevoEstante() {
+  $('#nuevo-estante').hidden = false;
+  $('#c-categoria').value = ''; $('#c-categoria').readOnly = true;
+  $('#c-cat-ayuda').textContent = 'La del estante nuevo.';
+  $('#ne-codigo').value = ''; $('#ne-categoria').value = ''; $('#ne-err').textContent = '';
+  $('#ne-ayuda').textContent = conPrograma()
+    ? 'Se guarda en el programa: aparece en Depósito y en la lista de estantes.'
+    : 'El programa no está abierto: se guarda acá y se crea en el programa (con su categoría) al importar el Excel.';
+  $('#ne-codigo').focus();
+}
+function cancelarNuevoEstante() {
+  opcionesEstante(estanteAnterior);
+  alElegirEstante();
+  $('#c-estante').focus();
+}
+async function crearEstante() {
+  const codigo = $('#ne-codigo').value.replace(/\s+/g, ' ').trim();
+  const categoria = $('#ne-categoria').value.replace(/\s+/g, ' ').trim();
+  const err = (t) => { $('#ne-err').textContent = t; };
+  if (!claveEst(codigo)) { err('Escribí el nombre del estante, por ejemplo A-3.'); $('#ne-codigo').focus(); return; }
+  if (!categoria) { err('Escribí la categoría del estante.'); $('#ne-categoria').focus(); return; }
+  let nuevo = { codigo, categoria };
+  if (conPrograma()) {
+    let r;
+    try { r = await window.programa.nuevoEstante(codigo, categoria); } catch (e) { r = { error: 'El programa no respondió.' }; }
+    if (!r || r.error) { err(r && r.error ? r.error : 'No se pudo crear el estante.'); return; }
+    nuevo = r.estante;
+    sumarEstantes([nuevo], true);
+  } else {
+    const ya = estanteDe(codigo);
+    if (ya) { err(`Ya hay un estante ${ya.codigo}${ya.categoria ? ' (' + ya.categoria + ')' : ''}.`); return; }
+    sumarEstantes([{ ...nuevo, propio: true }]);
+  }
+  guardar();
+  opcionesEstante(nuevo.codigo);
+  alElegirEstante();
+  pintar();
+  toast(`Estante ${nuevo.codigo} · ${nuevo.categoria} creado${conPrograma() ? ' en el programa' : ''}.`);
+  $('#c-precio').value ? $('#c-cantidad').focus() : $('#c-precio').focus();
+}
+
 // ---------- Avisos ----------
 let tToast = 0;
 function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(tToast); tToast = setTimeout(() => { el.hidden = true; }, 3500); }
@@ -278,8 +388,12 @@ function abrirForm(x, id = null) {
   $('#c-cantidad').value = x.cantidad === '' || x.cantidad == null ? '' : String(x.cantidad).replace('.', ',');
   $('#c-minimo').value = x.minimo === '' || x.minimo == null || x.minimo === 0 ? '' : String(x.minimo).replace('.', ',');
   // Categoría, ubicación, unidad y proveedor: los del producto o los últimos usados
-  $('#c-categoria').value = x.categoria || (id ? '' : r.categoria || '');
-  $('#c-ubicacion').value = x.ubicacion || (id ? '' : r.ubicacion || '');
+  // El estante: el del producto o el último usado (si no está en la lista, se agrega)
+  const ubic = x.ubicacion || (id ? '' : r.ubicacion || '');
+  if (ubic && !estanteDe(ubic)) sumarEstantes([{ codigo: ubic, categoria: x.categoria || '' }]);
+  opcionesEstante(ubic);
+  $('#c-categoria').value = '';
+  alElegirEstante(x.categoria || (id ? '' : r.categoria || ''));
   $('#c-unidad').value = x.unidad || (id ? 'unidad' : r.unidad || 'unidad');
   $('#c-proveedor').value = x.proveedor || (id ? '' : r.proveedor || '');
   $('#form-err').textContent = '';
@@ -329,12 +443,13 @@ function guardarForm() {
   const cantidad = cantidadTxt === '' ? 1 : parseNum(cantidadTxt);
   if (!nombre) { err('Escribí el nombre del producto.'); $('#c-nombre').focus(); return; }
   if (cantidad == null || cantidad < 0 || cantidad > 99999) { err('Revisá la cantidad.'); $('#c-cantidad').focus(); return; }
+  if ($('#c-estante').value === NUEVO) { err('Terminá de crear el estante (o tocá Cancelar en el estante nuevo).'); $('#ne-codigo').focus(); return; }
   if (precio != null && precio < 0) { err('El precio no puede ser negativo.'); $('#c-precio').focus(); return; }
   if (codigo && datos.items.some((x) => x.id !== editando && x.codigo && x.codigo.toUpperCase() === codigo)) { err(`Ese producto ya está en la lista: escaneá de nuevo para sumarle 1, o tocá Editar.`); return; }
   const item = {
     codigo, nombre, precio, cantidad,
     costo: parseNum($('#c-costo').value), minimo: parseNum($('#c-minimo').value),
-    categoria: $('#c-categoria').value.trim(), ubicacion: $('#c-ubicacion').value.trim(),
+    categoria: $('#c-categoria').value.trim(), ubicacion: $('#c-estante').value === NUEVO ? '' : $('#c-estante').value,
     unidad: $('#c-unidad').value, proveedor: $('#c-proveedor').value.trim(),
     existente: $('#form').dataset.existente === '1', cambio: Date.now(),
     barras: formBarras.filter((b) => b && b !== codigo),
@@ -376,7 +491,7 @@ function pintar() {
       <td class="acc"><button class="btn sm ghost" type="button" data-editar="${x.id}">Editar</button><button class="btn sm danger" type="button" data-borrar="${x.id}">Quitar</button></td>
     </tr>`).join('')
     : `<tr><td colspan="4" class="vacio">${items.length ? 'Nada coincide con la búsqueda.' : 'Todavía no cargaste nada. Escaneá el primer producto.'}</td></tr>`;
-  const cats = [...new Set(items.map((x) => x.categoria).concat(productosCatalogo().map((p) => p.categoria)).filter(Boolean))].sort();
+  const cats = [...new Set(items.map((x) => x.categoria).concat(productosCatalogo().map((p) => p.categoria), estantes().map((e) => e.categoria)).filter(Boolean))].sort();
   $('#lista-cat').innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join('');
   const provs = [...new Set(items.map((x) => x.proveedor).concat(productosCatalogo().map((p) => p.proveedor)).filter(Boolean))].sort();
   $('#lista-prov').innerHTML = provs.map((c) => `<option value="${esc(c)}">`).join('');
@@ -426,6 +541,8 @@ function cargarCatalogo(file) {
       if (!lista.length) { toast('Esa planilla no tiene productos con Código y Producto.'); return; }
       datos.catalogo = lista;
       catalogo = mapaCatalogo(lista);
+      // Los estantes que usan los productos del programa (con su categoría), para elegirlos de la lista
+      sumarEstantes(lista.filter((p) => p.ubicacion).map((p) => ({ codigo: p.ubicacion, categoria: p.categoria })));
       guardar();
       pintar();
       toast(`Se cargaron ${lista.length} productos del programa.`);
@@ -449,11 +566,22 @@ $('#v-buscar').addEventListener('input', buscarVincular);
 $('#v-buscar').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = document.querySelectorAll('#v-lista [data-vincular]'); if (b.length === 1) b[0].click(); else $('#c-nombre').focus(); } });
 $('#v-lista').addEventListener('click', (e) => { const b = e.target.closest('[data-vincular]'); if (b) vincular(b.dataset.vincular); });
 $('#sin-codigo').addEventListener('click', () => { estado('Producto sin código: el programa le pone uno propio (P-0001…) al importar. Después, en Depósito → Etiquetas de productos → «Solo los que no traen código de fábrica», se imprimen todas sus etiquetas juntas.', 'info'); abrirForm({ codigo: '' }); });
-$('#form').addEventListener('submit', (e) => { e.preventDefault(); guardarForm(); });
+$('#form').addEventListener('submit', (e) => { e.preventDefault(); if (!$('#nuevo-estante').hidden && document.activeElement && document.activeElement.closest('#nuevo-estante')) { crearEstante(); return; } guardarForm(); });
+$('#c-estante').addEventListener('focus', () => { if ($('#c-estante').value !== NUEVO) estanteAnterior = $('#c-estante').value; });
+$('#c-estante').addEventListener('change', () => alElegirEstante(''));
+$('#ne-crear').addEventListener('click', crearEstante);
+$('#ne-cancelar').addEventListener('click', cancelarNuevoEstante);
+// Abierto desde el programa: los estantes se traen al empezar y cada vez que se vuelve a esta ventana
+window.addEventListener('focus', traerEstantesDelPrograma);
 $('#cancelar').addEventListener('click', () => { estado(''); cerrarForm(); });
 // Enter en el nombre pasa al precio; en el resto guarda
 $('#c-nombre').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#c-precio').focus(); } });
-$('#form').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); estado(''); cerrarForm(); } });
+$('#form').addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  e.preventDefault();
+  if (!$('#nuevo-estante').hidden) { cancelarNuevoEstante(); return; } // Esc en el estante nuevo cancela solo eso
+  estado(''); cerrarForm();
+});
 
 /* El lector escribe muy rápido y termina con Enter. Si escanea con el cursor en un campo del formulario,
  * no se mezcla con lo escrito: el campo vuelve a como estaba y se toma como un escaneo. */
@@ -519,6 +647,8 @@ $('#nueva').addEventListener('click', async () => {
 window.addEventListener('beforeunload', () => guardar());
 
 pintar();
+opcionesEstante('');
+traerEstantesDelPrograma();
 $('#escanear').focus();
 </script>
 </body>
