@@ -296,7 +296,8 @@
       </header>
       <div class="card">
         <label class="f" for="dep-buscar">¿Dónde está?
-          <span class="combo-caja"><input id="dep-buscar" class="dep-buscar" type="text" enterkeyhint="search" autocomplete="off" placeholder="Escaneá el código o escribí el nombre o la ubicación"><button type="button" class="combo-limpiar" id="dep-limpiar" aria-label="Borrar">×</button></span>
+          <span class="combo-caja"><input id="dep-buscar" class="dep-buscar" type="text" enterkeyhint="search" autocomplete="off" placeholder="Escaneá el código o escribí el nombre o la ubicación" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="dep-sugerencias"><button type="button" class="combo-limpiar" id="dep-limpiar" aria-label="Borrar">×</button>
+            <ul id="dep-sugerencias" class="combo-lista dep-sugerencias" role="listbox" aria-label="Sugerencias" hidden></ul></span>
           <small>Escaneá un producto para ver en qué estante va (si es nuevo, lo cargás ahí mismo), o la etiqueta de un estante para ver qué hay. Si viene suelto, sin código, tocá «Producto sin código».</small>
         </label>
         <div id="dep-resultado" class="dep-resultado" aria-live="polite"></div>

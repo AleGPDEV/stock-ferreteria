@@ -4524,6 +4524,30 @@ function dondeEsta(d, texto) {
   return { tipo: 'nada' };
 }
 
+/**
+ * Sugerencias mientras se escribe en «¿Dónde está?» (como un buscador): estantes y productos que tienen todas las palabras,
+ * primero los que empiezan con lo escrito. Devuelve hasta `max` de [{ tipo: 'ubicacion', ubicacion } | { tipo: 'producto', producto }].
+ */
+function sugerenciasDeposito(d, texto, max = 8) {
+  const q = normal(String(texto || '').trim());
+  if (!q) return [];
+  const pal = q.split(/\s+/);
+  const puntaje = (nombre, resto) => {
+    const nom = normal(nombre), todo = `${nom} ${normal(resto)}`;
+    if (!pal.every((w) => todo.includes(w))) return -1;
+    if (nom.startsWith(q)) return 3;                                   // el nombre empieza con lo escrito
+    if (pal.every((w) => nom.split(/[\s\-\/.,()]+/).some((x) => x.startsWith(w)))) return 2; // cada palabra empieza una del nombre
+    if (pal.every((w) => nom.includes(w))) return 1;                   // está en el nombre
+    return 0;                                                          // está en el código, la categoría o el estante
+  };
+  const est = ubicacionesDe(d).map((u) => ({ tipo: 'ubicacion', ubicacion: u, p: puntaje(u.ubicacion, `${u.categoria} ${u.corto}`), nombre: u.ubicacion }));
+  const prods = d.productos.map((x) => ({ tipo: 'producto', producto: x, p: puntaje(x.nombre, `${textoCodigos(x)} ${x.categoria || ''} ${x.ubicacion || ''}`), nombre: x.nombre }));
+  const orden = (a, b) => b.p - a.p || ordenNatural(a.nombre, b.nombre);
+  // Los estantes van primero solo si su nombre coincide de verdad (no por la categoría de un producto)
+  const estantes = est.filter((x) => x.p >= 2).sort(orden).slice(0, 3);
+  return estantes.concat(prods.filter((x) => x.p >= 0).sort(orden)).slice(0, max).map(({ p, nombre, ...x }) => x);
+}
+
 /* Medidas de las etiquetas. A4: hoja de 24 stickers (3 × 8) de 70 × 37 mm. Rollo: impresora de etiquetas de 50 × 25 mm. */
 const FORMATOS_ETIQUETA = {
   hoja: { nombre: 'Hoja A4 común: el tamaño se ajusta a cuántas van por hoja', porHoja: 0, pagina: '@page { size: A4; margin: 0; }' },
@@ -4823,15 +4847,71 @@ function iniciarDeposito() {
   // Al terminar de imprimir (o cancelar) se vuelve a la hoja del ticket
   window.addEventListener('afterprint', () => { $('#impresion').classList.remove('etiquetas'); $('#estilo-etiquetas').textContent = ''; });
   const buscar = $('#dep-buscar');
-  let espera;
-  buscar.addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(() => mostrarDonde(buscar.value), 250); });
+  const lista = $('#dep-sugerencias');
+  let sugeridas = [], marcada = -1;
+  const cerrarSugerencias = () => { lista.hidden = true; lista.innerHTML = ''; sugeridas = []; marcada = -1; buscar.setAttribute('aria-expanded', 'false'); buscar.removeAttribute('aria-activedescendant'); };
+  // Resalta en negrita lo que coincide con lo escrito
+  const resaltar = (texto, pal) => {
+    const t = String(texto || ''), base = normal(t);
+    const marcas = new Array(t.length).fill(false);
+    pal.forEach((w) => { let i = base.indexOf(w); while (w && i >= 0) { for (let k = i; k < i + w.length; k++) marcas[k] = true; i = base.indexOf(w, i + w.length); } });
+    let html = '', dentro = false;
+    for (let i = 0; i < t.length; i++) { if (marcas[i] !== dentro) { html += marcas[i] ? '<mark>' : '</mark>'; dentro = marcas[i]; } html += esc(t[i]); }
+    return html + (dentro ? '</mark>' : '');
+  };
+  const pintarSugerencias = () => {
+    const pal = normal(buscar.value.trim()).split(/\s+/).filter(Boolean);
+    lista.innerHTML = sugeridas.map((s, i) => {
+      const sel = i === marcada ? 'true' : 'false';
+      if (s.tipo === 'ubicacion') {
+        const u = s.ubicacion;
+        return `<li id="dep-sug-${i}" class="combo-op dep-sug" role="option" aria-selected="${sel}" data-sug="${i}"><span><span class="chip">Estante</span> ${resaltar(u.ubicacion, pal)}${u.categoria ? ` <span class="meta">· ${esc(u.categoria)}</span>` : ''}</span><small>${plural(u.productos.length, 'producto', 'productos')}</small></li>`;
+      }
+      const p = s.producto;
+      return `<li id="dep-sug-${i}" class="combo-op dep-sug" role="option" aria-selected="${sel}" data-sug="${i}"><span class="dep-sug-txt"><span>${resaltar(p.nombre, pal)}</span><span class="meta mono">${esc(p.codigo)}</span></span><small>${p.categoria ? resaltar(p.categoria, pal) + ' · ' : ''}${p.ubicacion ? esc(p.ubicacion) : 'sin estante'} · ${n(p.stock)} ${esc(p.unidad)}</small></li>`;
+    }).join('');
+    lista.hidden = !sugeridas.length;
+    buscar.setAttribute('aria-expanded', String(!!sugeridas.length));
+    if (marcada >= 0) { buscar.setAttribute('aria-activedescendant', `dep-sug-${marcada}`); const li = $(`#dep-sug-${marcada}`); if (li) li.scrollIntoView({ block: 'nearest' }); }
+    else buscar.removeAttribute('aria-activedescendant');
+  };
+  const elegirSugerencia = (i) => {
+    const s = sugeridas[i];
+    if (!s) return;
+    cerrarSugerencias();
+    if (s.tipo === 'producto') { buscar.value = s.producto.nombre; depTexto = s.producto.codigo; }
+    else { buscar.value = s.ubicacion.ubicacion; depTexto = s.ubicacion.ubicacion; }
+    $('#dep-resultado').innerHTML = htmlDonde(s);
+    buscar.select();
+  };
+  let ultimaTecla = 0, rapido = false;
+  buscar.addEventListener('input', () => {
+    // El lector escribe muy rápido (menos de 40 ms entre letras): no se muestran sugerencias en medio de un escaneo
+    sugeridas = buscar.value.trim() && !rapido ? sugerenciasDeposito(db, buscar.value) : [];
+    marcada = -1;
+    pintarSugerencias();
+    if (!buscar.value.trim()) mostrarDonde('');
+  });
   buscar.addEventListener('keydown', (e) => {
+    if (e.key && e.key.length === 1) { const ahora = performance.now(); rapido = ahora - ultimaTecla < 40; ultimaTecla = ahora; }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && sugeridas.length) {
+      e.preventDefault();
+      marcada = e.key === 'ArrowDown' ? (marcada + 1) % sugeridas.length : (marcada <= 0 ? sugeridas.length - 1 : marcada - 1);
+      pintarSugerencias();
+      return;
+    }
+    if (e.key === 'Escape' && !lista.hidden) { e.preventDefault(); e.stopPropagation(); cerrarSugerencias(); return; }
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    clearTimeout(espera);
+    if (marcada >= 0 && sugeridas[marcada]) { elegirSugerencia(marcada); return; }
+    cerrarSugerencias();
     mostrarDonde(buscar.value, true);
     buscar.select(); // así el próximo escaneo reemplaza lo anterior
   });
+  // mousedown y no click: así el cuadro no pierde el foco antes de elegir
+  lista.addEventListener('mousedown', (e) => { const li = e.target.closest('[data-sug]'); if (!li) return; e.preventDefault(); elegirSugerencia(Number(li.dataset.sug)); });
+  lista.addEventListener('mousemove', (e) => { const li = e.target.closest('[data-sug]'); if (li && Number(li.dataset.sug) !== marcada) { marcada = Number(li.dataset.sug); pintarSugerencias(); } });
+  buscar.addEventListener('blur', () => setTimeout(cerrarSugerencias, 120));
   const usuario = () => (sesion ? sesion.nombre : '');
   $('#dep-resultado').addEventListener('click', (e) => {
     const rec = e.target.closest('[data-dep-recibir]');
@@ -4974,7 +5054,7 @@ function iniciarDeposito() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { porHojaEtiquetas, medidaEtiquetaHoja, asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
+  module.exports = { sugerenciasDeposito, porHojaEtiquetas, medidaEtiquetaHoja, asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

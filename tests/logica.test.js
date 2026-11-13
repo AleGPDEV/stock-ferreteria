@@ -1210,3 +1210,15 @@ test('importar: el stock se puede dejar sin cambiar producto por producto', () =
   const p = (c) => d.productos.find((x) => x.codigo === c);
   assert.deepEqual([p('A1').stock, p('A1').precio, p('B1').stock, p('B1').precio], [20, 85, 3, 55], 'el precio se actualiza igual; el stock de la desmarcada no');
 });
+
+test('depósito: sugerencias mientras se escribe, primero lo que empieza con lo escrito', () => {
+  const d = app.semilla();
+  app.guardarEstante(d, { codigo: 'A-1', categoria: 'Comida' });
+  const nombres = (t) => app.sugerenciasDeposito(d, t).map((s) => (s.tipo === 'producto' ? s.producto.nombre : 'Estante ' + s.ubicacion.ubicacion));
+  assert.equal(nombres('tor')[0], 'Tornillo autoperforante 8 x 1" (caja x100)');
+  assert.deepEqual(nombres('pint lat'), ['Pintura látex interior blanco 4 L'], 'varias palabras, en cualquier orden y sin tildes');
+  assert.equal(nombres('A-1')[0], 'Estante A-1', 'los estantes también');
+  assert.ok(nombres('7790001000101').length >= 1, 'por código');
+  assert.deepEqual(nombres('zzz'), []);
+  assert.ok(app.sugerenciasDeposito(d, 'a').length <= 8);
+});

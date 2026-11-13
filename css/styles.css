@@ -438,6 +438,13 @@ dialog::backdrop { background: var(--backdrop); }
 .combo-op small { font-size: 13.5px; font-weight: 400; color: var(--muted); white-space: nowrap; }
 .combo-op[aria-selected="true"] { background: var(--accent-soft); }
 .combo-vacio { padding: 11px 12px; color: var(--muted); font-size: 15px; }
+/* Sugerencias de «¿Dónde está?» en Depósito */
+.dep-sugerencias { max-height: 420px; }
+.dep-sug mark { background: none; color: inherit; font-weight: 800; }
+.dep-sug-txt { display: flex; flex-direction: column; min-width: 0; }
+.dep-sug-txt > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.dep-sug .meta { font-size: 13px; color: var(--muted); font-weight: 400; }
+.dep-sug .chip { font-size: 11.5px; margin-right: 4px; }
 
 /* Pantallas sobre el programa (datos dañados) */
 .bloqueo { z-index: 45; }
