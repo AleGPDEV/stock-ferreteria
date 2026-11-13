@@ -289,6 +289,7 @@
       <header class="vh">
         <div><h1>Depósito</h1><p class="sub" id="dep-sub"></p></div>
         <div class="acciones">
+          <button class="btn verde" type="button" id="btn-dep-sincodigo">Producto sin código</button>
           <button class="btn" type="button" id="btn-etq-ubicaciones">Etiquetas de estantes</button>
           <button class="btn primary" type="button" id="btn-etq-productos">Etiquetas de productos</button>
         </div>
@@ -296,7 +297,7 @@
       <div class="card">
         <label class="f" for="dep-buscar">¿Dónde está?
           <span class="combo-caja"><input id="dep-buscar" class="dep-buscar" type="text" enterkeyhint="search" autocomplete="off" placeholder="Escaneá el código o escribí el nombre o la ubicación"><button type="button" class="combo-limpiar" id="dep-limpiar" aria-label="Borrar">×</button></span>
-          <small>Escaneá un producto para ver en qué estante va (si es nuevo, lo cargás ahí mismo), o la etiqueta de un estante para ver qué hay.</small>
+          <small>Escaneá un producto para ver en qué estante va (si es nuevo, lo cargás ahí mismo), o la etiqueta de un estante para ver qué hay. Si viene suelto, sin código, tocá «Producto sin código».</small>
         </label>
         <div id="dep-resultado" class="dep-resultado" aria-live="polite"></div>
       </div>

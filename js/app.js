@@ -1525,12 +1525,14 @@ function imprimir(html) {
 }
 
 /* Producto que no está cargado: se agrega con nombre y precio sin salir de la venta */
-function codigoLibre() {
-  const usados = new Set(db.productos.flatMap(codigosDe));
+/** El primer código propio libre (P-0001, P-0002…), para productos que no traen código de barras. */
+function codigoLibreDe(d) {
+  const usados = new Set(d.productos.flatMap(codigosDe).map(normCodigo));
   let i = 0, c;
   do { i++; c = 'P-' + String(i).padStart(4, '0'); } while (usados.has(c));
   return c;
 }
+const codigoLibre = () => codigoLibreDe(db);
 
 function abrirAltaRapida(texto) {
   const esCodigo = !!texto && !/\s/.test(texto) && /\d/.test(texto);
@@ -4365,8 +4367,9 @@ function ubicarProducto(d, productoId, ubicacion) {
 /** Un código que no es de ningún producto, al recibir mercadería: nombre y estante; la categoría es la del estante.
  * Queda marcado para revisar (falta el precio). Devuelve { producto } o { error }. */
 function altaEnDeposito(d, datos, usuario, rol) {
-  const codigo = normCodigo(datos.codigo);
   const nombre = String(datos.nombre || '').replace(/\s+/g, ' ').trim();
+  // Producto suelto, sin código de barras: el programa le da uno propio (P-0001…) para imprimir su etiqueta
+  const codigo = datos.sinCodigo ? codigoLibreDe(d) : normCodigo(datos.codigo);
   if (!codigo) return { error: 'Falta el código.' };
   if (!nombre) return { error: 'Escribí el nombre del producto.' };
   const u = ubicacionesDe(d).find((x) => x.clave === claveUbic(datos.ubicacion));
@@ -4510,17 +4513,20 @@ function htmlDonde(r) {
   const cantidad = (id, idBoton) => `<label class="f dep-cant" for="${id}">¿Cuántos llegaron? <small>Opcional: dejalo vacío si solo lo estás ubicando.</small>
       <span class="dep-fila"><input id="${id}" type="number" min="0" step="any" inputmode="decimal" autocomplete="off">${idBoton ? `<button class="btn verde" type="button" data-dep-recibir="${idBoton}">Sumar al stock</button>` : ''}</span></label>`;
   if (r.tipo === 'vacio') return '<p class="vacio">Escaneá un producto o la etiqueta de un estante, o escribí un nombre.</p>';
-  if (r.tipo === 'nada') return '<p class="vacio">No encontré nada con eso. Probá con otra palabra.</p>';
-  if (r.tipo === 'nuevo') {
-    return `<form class="dep-nuevo" id="dep-nuevo" data-codigo="${esc(r.codigo)}" novalidate>
-      <p class="dep-nuevo-cab"><span class="chip warn">Producto nuevo</span> El código <span class="mono">${esc(r.codigo)}</span> no está cargado. Poné el nombre y elegí el estante: la próxima vez que llegue, ya vas a saber dónde va.</p>
-      <label class="f" for="dep-n-nombre">Nombre del producto<input id="dep-n-nombre" type="text" autocomplete="off" placeholder="Ej.: Codo PVC 110 mm"></label>
+  if (r.tipo === 'nada') return `<p class="vacio">No encontré nada con eso. Probá con otra palabra${r.texto ? `, o <button type="button" class="link-btn" data-dep-sincodigo="${esc(r.texto)}">cargalo como producto sin código</button>` : ''}.</p>`;
+  if (r.tipo === 'sincodigo' || r.tipo === 'nuevo') {
+    const sin = r.tipo === 'sincodigo';
+    return `<form class="dep-nuevo" id="dep-nuevo" data-codigo="${sin ? '' : esc(r.codigo)}" ${sin ? 'data-sincodigo="1"' : ''} novalidate>
+      ${sin
+        ? `<p class="dep-nuevo-cab"><span class="chip warn">Producto sin código</span> Para lo que viene suelto, sin código de barras. El programa le da un código propio (<span class="mono">${esc(codigoLibreDe(db))}</span>) y después imprimís su etiqueta para pegarla en el producto o en el estante.</p>`
+        : `<p class="dep-nuevo-cab"><span class="chip warn">Producto nuevo</span> El código <span class="mono">${esc(r.codigo)}</span> no está cargado. Poné el nombre y elegí el estante: la próxima vez que llegue, ya vas a saber dónde va.</p>`}
+      <label class="f" for="dep-n-nombre">Nombre del producto<input id="dep-n-nombre" type="text" autocomplete="off" placeholder="Ej.: Codo PVC 110 mm" value="${sin ? esc(r.nombre || '') : ''}"></label>
       <label class="f" for="dep-n-estante">¿En qué estante va?<select id="dep-n-estante">${opcionesEstante(depUltimoEstante)}</select><small>La categoría del producto es la del estante. El precio se completa después en Productos.</small></label>
       ${cantidad('dep-n-cant')}
       <p class="err" id="dep-n-err" role="alert"></p>
-      <div class="dep-fila"><button class="btn primary btn-grande" type="submit">Guardar producto</button></div>
-      <details class="dep-vincular"><summary>¿Ya está cargado en el programa sin este código? Buscalo acá</summary>
-        <input id="dep-v-buscar" type="text" autocomplete="off" placeholder="Nombre o código del producto"><ul id="dep-v-lista" class="dep-lista"></ul></details>
+      <div class="dep-fila"><button class="btn primary btn-grande" type="submit">${sin ? 'Guardar e imprimir etiqueta' : 'Guardar producto'}</button></div>
+      ${sin ? '' : `<details class="dep-vincular"><summary>¿Ya está cargado en el programa sin este código? Buscalo acá</summary>
+        <input id="dep-v-buscar" type="text" autocomplete="off" placeholder="Nombre o código del producto"><ul id="dep-v-lista" class="dep-lista"></ul></details>`}
     </form>`;
   }
   if (r.tipo === 'producto') {
@@ -4557,8 +4563,15 @@ function mostrarDonde(texto, enter = false) {
   depTexto = texto;
   const r = dondeEsta(db, texto);
   // Mientras se escribe a mano no se ofrece cargar un producto nuevo: solo al escanear o tocar Enter
-  $('#dep-resultado').innerHTML = htmlDonde(r.tipo === 'nuevo' && !enter ? { tipo: 'nada' } : r);
+  const t = String(texto || '').trim();
+  $('#dep-resultado').innerHTML = htmlDonde(r.tipo === 'nuevo' && !enter ? { tipo: 'nada', texto: t } : r.tipo === 'nada' ? { ...r, texto: t } : r);
   if (r.tipo === 'nuevo' && enter) setTimeout(() => $('#dep-n-nombre').focus(), 0);
+}
+/** Formulario para cargar un producto suelto que no trae código de barras. */
+function abrirSinCodigoDep(nombre = '') {
+  $('#dep-resultado').innerHTML = htmlDonde({ tipo: 'sincodigo', nombre });
+  $('#dep-resultado').scrollIntoView({ block: 'nearest' });
+  setTimeout(() => $('#dep-n-nombre').focus(), 0);
 }
 function verProductoDep(p, aviso) {
   depTexto = p.codigo;
@@ -4735,13 +4748,17 @@ function iniciarDeposito() {
     if (rv.error) { $('#dep-n-err').textContent = rv.error; $('#dep-n-cant').focus(); return; }
     const nombre = $('#dep-n-nombre').value;
     if (rv.grande && !(await confirmar(`¿Llegaron ${n(rv.cantidad)} de «${nombre.trim()}»? Es una cantidad grande.`, 'Sí, llegaron'))) { $('#dep-n-cant').focus(); return; }
-    const r = altaEnDeposito(db, { codigo: f.dataset.codigo, nombre, ubicacion: $('#dep-n-estante').value }, usuario(), sesion ? sesion.rol : '');
+    const sin = !!f.dataset.sincodigo;
+    const r = altaEnDeposito(db, { codigo: f.dataset.codigo, sinCodigo: sin, nombre, ubicacion: $('#dep-n-estante').value }, usuario(), sesion ? sesion.rol : '');
     if (r.error) { $('#dep-n-err').textContent = r.error; return; }
     const cant = rv.cantidad;
     if (cant > 0) recibirEnDeposito(db, r.producto.id, cant);
     depUltimoEstante = claveUbic(r.producto.ubicacion);
     guardar();
-    verProductoDep(r.producto, `Listo: ${r.producto.nombre} quedó cargado en ${r.producto.ubicacion}${cant > 0 ? ` con ${n(cant)} en stock` : ''}.`);
+    verProductoDep(r.producto, `Listo: ${r.producto.nombre} quedó cargado en ${r.producto.ubicacion}${sin ? ` con el código ${r.producto.codigo}` : ''}${cant > 0 ? ` y ${n(cant)} en stock` : ''}.`);
+    // Sin código de fábrica, la etiqueta es lo que lo hace escaneable: se abre lista con una copia
+    // (lo suelto suele llevar una sola, en la caja o el estante; si van en cada uno, se cambian las copias)
+    if (sin) abrirEtiquetas('producto', [r.producto.id]);
   }
   async function sumarLlegadaDep(p) {
     const rv = revisarCantidadDeposito($('#dep-cant').value);
@@ -4788,6 +4805,8 @@ function iniciarDeposito() {
     if (ub) { const u = ubicacionesDe(db).find((x) => x.clave === ub.dataset.depUbic); if (u) { $('#dep-resultado').innerHTML = htmlDonde({ tipo: 'ubicacion', ubicacion: u }); $('#dep-resultado').scrollIntoView({ block: 'nearest' }); } return; }
     const uno = e.target.closest('[data-etq-uno]');
     if (uno) { abrirEtiquetas('producto', [uno.dataset.etqUno]); return; }
+    const sc = e.target.closest('[data-dep-sincodigo]');
+    if (sc) { abrirSinCodigoDep(sc.dataset.depSincodigo); return; }
     const lugar = e.target.closest('[data-etq-ubic]');
     if (lugar) {
       const u = ubicacionesDe(db).find((x) => x.clave === lugar.dataset.etqUbic);
@@ -4795,6 +4814,7 @@ function iniciarDeposito() {
     }
   });
   $('#btn-etq-productos').addEventListener('click', () => abrirEtiquetas('producto'));
+  $('#btn-dep-sincodigo').addEventListener('click', () => abrirSinCodigoDep(''));
   $('#btn-etq-ubicaciones').addEventListener('click', () => abrirEtiquetas('ubicacion'));
   // Ventana de etiquetas
   try { const f = localStorage.getItem('formatoEtiquetas'); if (f && FORMATOS_ETIQUETA[f]) $(`#etq-dlg [name=etq-formato][value=${f}]`).checked = true; } catch { /* nada */ }
@@ -4820,7 +4840,7 @@ function iniciarDeposito() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
+  module.exports = { codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

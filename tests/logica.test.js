@@ -1134,3 +1134,16 @@ test('QA5 M4: la etiqueta de un estante lleva un número corto (U1) aunque el no
   assert.deepEqual(v.estantes.map((e) => [e.codigo, e.num]), [['A-1', 1], ['C-02', 2]]);
   assert.equal(app.completarEstantes(v), false, 'la segunda vez no cambia nada');
 });
+
+test('depósito: producto suelto sin código de barras recibe un código propio que se puede imprimir y escanear', () => {
+  const d = base();
+  app.guardarEstante(d, { codigo: 'A-1', categoria: 'Bulonería' });
+  d.productos.push({ id: 'x', codigo: 'p-0001', barras: [], nombre: 'Ya usado', stock: 0 });
+  assert.equal(app.codigoLibreDe(d), 'P-0002', 'saltea los códigos que ya existen, sin importar mayúsculas');
+  assert.match(app.altaEnDeposito(d, { sinCodigo: true, nombre: '', ubicacion: 'A-1' }, 'Ana', 'empleado').error, /nombre/);
+  const { producto: p } = app.altaEnDeposito(d, { sinCodigo: true, codigo: '', nombre: 'Arandela plana 8 mm (suelta)', ubicacion: 'A-1' }, 'Ana', 'empleado');
+  assert.deepEqual([p.codigo, p.ubicacion, p.categoria, p.revisar], ['P-0002', 'A-1', 'Bulonería', true]);
+  assert.equal(app.codigoEtiqueta(p), 'P-0002', 'la etiqueta lleva ese código');
+  assert.equal(app.dondeEsta(d, 'P-0002').producto.id, p.id, 'escanear la etiqueta lo encuentra');
+  assert.equal(app.altaEnDeposito(d, { sinCodigo: true, nombre: 'Otra suelta', ubicacion: 'A-1' }, 'Ana', 'empleado').producto.codigo, 'P-0003');
+});
