@@ -391,6 +391,15 @@ dialog::backdrop { background: var(--backdrop); }
 .imp-campos { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; margin: 0; }
 .imp-campos legend { font-weight: 600; padding: 0 4px; }
 .imp-stock:empty { display: none; }
+.imp-stock-barra { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.imp-stock-barra input { flex: 1; min-width: 160px; }
+.imp-stock-tabla { max-height: 320px; overflow: auto; }
+.imp-stock .chk { width: 36px; text-align: center; }
+.imp-stock .chk input { accent-color: var(--accent); width: 18px; height: 18px; }
+.imp-stock .queda-igual { display: none; color: var(--muted); font-size: 13px; }
+.imp-stock tr.no-cambia td { color: var(--muted); }
+.imp-stock tr.no-cambia .queda { display: none; }
+.imp-stock tr.no-cambia .queda-igual { display: inline; }
 
 /* Ticket impreso: pensado para impresora térmica de 80 mm, también sale bien en hoja común */
 .solo-impresion { display: none; }

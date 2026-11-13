@@ -304,7 +304,7 @@ test('QA 9: «Cantidad» no se toma como stock; se puede actualizar solo con Có
 test('QA 9: con las opciones por defecto la lista de un proveedor no pisa nombre ni stock', () => {
   const d = base();
   const plan = app.planImportacion(d, [{ 'Código': 'MAR-16', 'Producto': 'MARTILLO C/MANGO 16OZ', 'Stock': 3, 'Costo': 400, 'Precio': 650 }]);
-  assert.deepEqual(app.cambiosStockImportacion(plan), [{ codigo: 'MAR-16', nombre: 'Martillo 16 oz', antes: 10, despues: 3 }]);
+  assert.deepEqual(app.cambiosStockImportacion(plan), [{ i: 0, codigo: 'MAR-16', nombre: 'Martillo 16 oz', antes: 10, despues: 3, cambiar: true }]);
   app.aplicarImportacion(d, plan, app.CAMPOS_IMPORTAR);
   const p = d.productos[0];
   assert.equal(p.nombre, 'Martillo 16 oz');
@@ -764,7 +764,7 @@ test('QA2 B3: el conteo del Cargador se aplica al importar sin tocar nada; un Ex
   ];
   const plan = app.planImportacion(d, cargador);
   assert.equal(plan.deConteo, true, 'se reconoce el Excel del Cargador');
-  assert.deepEqual(app.cambiosStockImportacion(plan), [{ codigo: 'MAR-16', nombre: 'Martillo 16 oz', antes: 10, despues: 7 }], 'la vista previa muestra qué stock cambia');
+  assert.deepEqual(app.cambiosStockImportacion(plan), [{ i: 0, codigo: 'MAR-16', nombre: 'Martillo 16 oz', antes: 10, despues: 7, cambiar: true }], 'la vista previa muestra qué stock cambia');
   // la ventana marca «Stock» sola cuando plan.deConteo (mostrarPlan); así se importa
   app.aplicarImportacion(d, plan, { ...app.CAMPOS_IMPORTAR, stock: plan.deConteo });
   assert.equal(d.productos.find((p) => p.codigo === 'MAR-16').stock, 7);
@@ -1191,4 +1191,22 @@ test('etiquetas en hoja A4 común: el tamaño se ajusta a cuántas van por hoja'
   assert.match(r.html, /--k:1\.36/);
   const r2 = app.htmlEtiquetas([{ producto: p, copias: 5 }], 'hoja', 0, 2);
   assert.deepEqual([r2.hojas, r2.porHoja], [3, 2], '5 de a 2 por hoja: 3 hojas');
+});
+
+test('importar: el stock se puede dejar sin cambiar producto por producto', () => {
+  const d = app.baseVacia();
+  app.aplicarImportacion(d, app.planImportacion(d, [
+    { 'Código': 'A1', Producto: 'Agua 2 L', Precio: 80, Stock: 12 },
+    { 'Código': 'B1', Producto: 'Bujía', Precio: 50, Stock: 3 },
+  ]));
+  const plan = app.planImportacion(d, [
+    { 'Código': 'A1', Producto: 'Agua 2 L', Precio: 85, Stock: 20, Contado: 'Sí' },
+    { 'Código': 'B1', Producto: 'Bujía', Precio: 55, Stock: 9, Contado: 'Sí' },
+  ]);
+  const cambios = app.cambiosStockImportacion(plan);
+  assert.deepEqual(cambios.map((c) => [c.nombre, c.antes, c.despues, c.cambiar]), [['Agua 2 L', 12, 20, true], ['Bujía', 3, 9, true]]);
+  plan.actualizados[cambios[1].i].sinStock = true; // la bujía no
+  app.aplicarImportacion(d, plan, { precio: true, costo: true, stock: true });
+  const p = (c) => d.productos.find((x) => x.codigo === c);
+  assert.deepEqual([p('A1').stock, p('A1').precio, p('B1').stock, p('B1').precio], [20, 85, 3, 55], 'el precio se actualiza igual; el stock de la desmarcada no');
 });

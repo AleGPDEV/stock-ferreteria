@@ -924,8 +924,10 @@ const DIAS_RECIBIDO_DEPOSITO = 7;
 /** Cambios de stock que haría la importación en productos que ya existen (para mostrarlos antes de confirmar). */
 function cambiosStockImportacion(plan) {
   return plan.actualizados
-    .filter((a) => a.datos.stock != null && a.datos.stock >= 0 && red(a.datos.stock) !== a.stockActual)
-    .map((a) => ({ codigo: a.codigo, nombre: a.nombreActual, antes: a.stockActual, despues: red(a.datos.stock) }));
+    .map((a, i) => ({ a, i }))
+    .filter(({ a }) => a.datos.stock != null && a.datos.stock >= 0 && red(a.datos.stock) !== a.stockActual)
+    // i: la fila en plan.actualizados; cambiar: se puede desmarcar producto por producto (a.sinStock)
+    .map(({ a, i }) => ({ i, codigo: a.codigo, nombre: a.nombreActual, antes: a.stockActual, despues: red(a.datos.stock), cambiar: !a.sinStock }));
 }
 
 /** campos: qué se cambia en los productos que ya existen ({ precio, costo, stock, nombre, otros }).
@@ -983,7 +985,7 @@ function aplicarImportacion(d, plan, campos) {
     }
     if (c.costo && pos(x.costo) != null) p.costo = x.costo;
     if (c.precio && x.precio > 0 && x.precio !== p.precio) { anotarPrecio(d, p, x.precio, 'Importación'); p.precio = x.precio; }
-    if (c.stock && pos(x.stock) != null && red(x.stock) !== p.stock) registrar(d, { tipo: 'ajuste', productoId: p.id, cantidad: x.stock, nota: 'Corrección por importación' });
+    if (c.stock && !act.sinStock && pos(x.stock) != null && red(x.stock) !== p.stock) registrar(d, { tipo: 'ajuste', productoId: p.id, cantidad: x.stock, nota: 'Corrección por importación' });
     sumarLlegada(p, x);
   }
   // Estantes nuevos que vienen en la planilla (por ejemplo, creados en el Cargador sin el programa abierto): quedan con su categoría
@@ -3531,16 +3533,30 @@ const camposImportar = () => {
   return c;
 };
 
+/* Cambios de stock de la importación: se ven todos y cada uno se puede desmarcar (ese producto queda con el stock que tiene). */
 function mostrarCambiosStock() {
   const caja = $('#imp-stock');
   if (!planImp || planImp.error || !camposImportar().stock) { caja.innerHTML = ''; return; }
   const cambios = cambiosStockImportacion(planImp);
-  caja.innerHTML = cambios.length
-    ? `<p class="nota-edit">Se va a cambiar el stock de <strong>${cambios.length} producto${cambios.length === 1 ? '' : 's'}</strong>. Revisá que la columna sea el stock real y no la cantidad por paquete.</p>
-      <div class="table-wrap"><table class="tabla"><thead><tr><th>Producto</th><th class="num">Ahora</th><th class="num">Queda</th></tr></thead>
-      <tbody>${cambios.slice(0, 50).map((c) => `<tr><td>${esc(c.nombre)}<div class="meta mono">${esc(c.codigo)}</div></td><td class="num">${n(c.antes)}</td><td class="num"><strong>${n(c.despues)}</strong></td></tr>`).join('')}
-      ${cambios.length > 50 ? `<tr><td colspan="3" class="muted">… y ${cambios.length - 50} más</td></tr>` : ''}</tbody></table></div>`
-    : '<p class="muted">La planilla no cambia el stock de ningún producto que ya existe.</p>';
+  if (!cambios.length) { caja.innerHTML = '<p class="muted">La planilla no cambia el stock de ningún producto que ya existe.</p>'; return; }
+  caja.innerHTML = `<p class="nota-edit" id="imp-stock-cuenta"></p>
+    <div class="imp-stock-barra"><input type="search" id="imp-stock-buscar" placeholder="Buscar en la lista" aria-label="Buscar producto en la lista de stock">
+      <button class="btn sm" type="button" data-stock-todos="1">Cambiar todos</button><button class="btn sm" type="button" data-stock-todos="0">No cambiar ninguno</button></div>
+    <div class="table-wrap imp-stock-tabla"><table class="tabla"><thead><tr><th class="chk"><span class="visually-hidden">Cambiar</span></th><th>Producto</th><th class="num">Ahora</th><th class="num">Queda</th></tr></thead>
+    <tbody>${cambios.map((c) => `<tr data-stock-fila="${c.i}" data-buscar="${esc(normal(`${c.nombre} ${c.codigo}`))}" class="${c.cambiar ? '' : 'no-cambia'}">
+      <td class="chk"><input type="checkbox" data-stock-cambiar="${c.i}" ${c.cambiar ? 'checked' : ''} aria-label="Cambiar el stock de ${esc(c.nombre)}"></td>
+      <td>${esc(c.nombre)}<div class="meta mono">${esc(c.codigo)}</div></td><td class="num">${n(c.antes)}</td>
+      <td class="num"><strong class="queda">${n(c.despues)}</strong><span class="queda-igual">sigue en ${n(c.antes)}</span></td></tr>`).join('')}</tbody></table></div>`;
+  cuentaCambiosStock();
+}
+function filtrarCambiosStock() {
+  const q = normal($('#imp-stock-buscar').value.trim());
+  $$('#imp-stock tr[data-stock-fila]').forEach((tr) => { tr.hidden = !!q && !tr.dataset.buscar.includes(q); });
+}
+function cuentaCambiosStock() {
+  const cambios = cambiosStockImportacion(planImp);
+  const si = cambios.filter((c) => c.cambiar).length;
+  $('#imp-stock-cuenta').innerHTML = `Se va a cambiar el stock de <strong>${si} de ${plural(cambios.length, 'producto', 'productos')}</strong>.${si < cambios.length ? (cambios.length - si === 1 ? ' El desmarcado queda con el stock que tiene.' : ` Los ${cambios.length - si} desmarcados quedan con el stock que tienen.`) : ''} Desmarcá los que no quieras tocar, y revisá que la columna sea el stock real y no la cantidad por paquete.`;
 }
 
 /**
@@ -3655,6 +3671,25 @@ function iniciarImportacion() {
     lector.readAsArrayBuffer(file);
   });
   $$('#imp-campos [data-campo]').forEach((x) => x.addEventListener('change', mostrarCambiosStock));
+  // Stock producto por producto
+  $('#imp-stock').addEventListener('change', (e) => {
+    const chk = e.target.closest('[data-stock-cambiar]');
+    if (!chk || !planImp) return;
+    planImp.actualizados[Number(chk.dataset.stockCambiar)].sinStock = !chk.checked;
+    chk.closest('tr').classList.toggle('no-cambia', !chk.checked);
+    cuentaCambiosStock();
+  });
+  $('#imp-stock').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-stock-todos]');
+    if (!b || !planImp) return;
+    const si = b.dataset.stockTodos === '1';
+    // Solo los que se ven (si se buscó algo, se marcan o desmarcan esos)
+    $$('#imp-stock tr[data-stock-fila]').forEach((tr) => { if (tr.hidden) return; planImp.actualizados[Number(tr.dataset.stockFila)].sinStock = !si; });
+    const q = $('#imp-stock-buscar').value;
+    mostrarCambiosStock();
+    $('#imp-stock-buscar').value = q; filtrarCambiosStock();
+  });
+  $('#imp-stock').addEventListener('input', (e) => { if (e.target.id === 'imp-stock-buscar') filtrarCambiosStock(); });
   $$('[data-herramienta]').forEach((b) => b.addEventListener('click', () => { if (escritorio() && window.almacen.abrirHerramienta) window.almacen.abrirHerramienta(b.dataset.herramienta); }));
   $('#imp-ok').addEventListener('click', () => {
     if (!planImp || planImp.error) return;
