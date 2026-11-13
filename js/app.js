@@ -4367,6 +4367,23 @@ function asegurarEstante(d, ubicacion, categoria) {
 function estantesParaHerramienta() {
   return ubicacionesDe(db).map((u) => ({ codigo: u.ubicacion, categoria: u.categoria || '' }));
 }
+/** Lo que el Cargador necesita de un producto ya cargado (los mismos datos que el Excel del inventario). */
+function datosParaHerramienta(p) {
+  return { codigo: p.codigo, barras: codigosDe(p).filter((c) => c !== p.codigo), nombre: p.nombre, categoria: p.categoria || '', unidad: p.unidad || '', proveedor: nombreProv(p.proveedorId),
+    ubicacion: p.ubicacion || '', stock: p.stock, minimo: p.minimo, costo: p.costo, precio: p.precio };
+}
+/** El Cargador escaneó un código: ¿es de un producto que ya está cargado? (código propio, de barras o de proveedor) */
+function productoParaHerramienta(codigo) {
+  const p = buscarPorCodigo(db, codigo) || db.productos.find((x) => codigosProvDe(x).some((c) => normCodigo(c.codigo) === normCodigo(codigo)));
+  return p ? datosParaHerramienta(p) : null;
+}
+/** Búsqueda por nombre o código para «¿Ya está en el programa con otro código?» del Cargador. */
+function productosParaHerramienta(texto) {
+  const pal = normal(String(texto || '').trim()).split(/\s+/).filter(Boolean);
+  if (!pal.length || pal.join('').length < 2) return [];
+  return db.productos.filter((p) => { const t = normal(`${p.nombre} ${textoCodigos(p)} ${p.categoria || ''}`); return pal.every((w) => t.includes(w)); })
+    .slice(0, 8).map(datosParaHerramienta);
+}
 /** El Cargador crea un estante: queda guardado en el programa igual que si se creara en Depósito. */
 function nuevoEstanteDesdeHerramienta(x) {
   const r = guardarEstante(db, x || {});

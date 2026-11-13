@@ -352,7 +352,8 @@ ipcMain.handle('almacen:respaldarAhora', async () => hacerRespaldo(true));
 
 /* ---------- Herramientas aparte (Cargador de productos y Lector de facturas) ----------
  * Se abren en su propia ventana, sin acceso a los datos del programa: solo arman un Excel.
- * Única excepción: los estantes (leerlos y crear uno), para que el Cargador use los mismos que el programa.
+ * Excepciones: los estantes (leerlos y crear uno) y buscar productos ya cargados (solo leer), para que el Cargador
+ * use los mismos estantes que el programa y reconozca lo que ya está cargado.
  * Si una falla, la caja sigue funcionando. */
 const HERRAMIENTAS = {
   cargador: { archivo: 'Cargador-de-productos.html', titulo: 'Cargador de productos' },
@@ -385,6 +386,8 @@ async function preguntarAlPrograma(codigo) {
   try { return await ventana.webContents.executeJavaScript(codigo); } catch (err) { return { error: 'El programa no respondió.' }; }
 }
 ipcMain.handle('herramienta:estantes', (e) => (esHerramienta(e) ? preguntarAlPrograma('estantesParaHerramienta()') : null));
+ipcMain.handle('herramienta:buscarProducto', (e, codigo) => (esHerramienta(e) ? preguntarAlPrograma(`productoParaHerramienta(${JSON.stringify(String(codigo || '').slice(0, 80))})`) : null));
+ipcMain.handle('herramienta:buscarProductos', (e, texto) => (esHerramienta(e) ? preguntarAlPrograma(`productosParaHerramienta(${JSON.stringify(String(texto || '').slice(0, 80))})`) : []));
 ipcMain.handle('herramienta:nuevoEstante', (e, x) => {
   if (!esHerramienta(e)) return { error: 'No permitido.' };
   const datos = { codigo: String((x && x.codigo) || '').slice(0, 60), categoria: String((x && x.categoria) || '').slice(0, 60) };

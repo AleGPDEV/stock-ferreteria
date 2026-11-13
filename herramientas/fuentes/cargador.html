@@ -170,7 +170,7 @@ label.btn input { display: none; }
       <label class="btn" for="catalogo">Cargar los productos del programa (opcional)<input type="file" id="catalogo" accept=".xlsx,.xls,.csv"></label>
       <button class="btn danger" type="button" id="nueva">Empezar una lista nueva</button>
     </div>
-    <p class="ayuda" id="catalogo-estado">Si cargás el Excel de <strong>Inventario completo</strong> del programa (Reportes → Stock → Inventario completo → Exportar Excel), al escanear algo que ya existe aparece su nombre y solo tenés que poner la cantidad. Sirve para contar el stock.</p>
+    <p class="ayuda" id="catalogo-estado">Abierto desde el programa (menú Herramientas), reconoce solo lo que ya está cargado. Con doble clic en otra PC: si cargás el Excel de <strong>Inventario completo</strong> del programa (Reportes → Stock → Inventario completo → Exportar Excel), al escanear algo que ya existe aparece su nombre y solo tenés que poner la cantidad. Sirve para contar el stock.</p>
   </section>
 
   <p class="pie">Lo cargado se guarda solo en esta computadora mientras no toques «Empezar una lista nueva». En Stock Ferretería: Productos → Importar desde Excel. Al importarlo, el stock de los productos que ya existen se cambia por lo que contaste (antes te muestra qué cambia).</p>
@@ -346,7 +346,7 @@ function pitido(f = 880) {
 let editando = null; // id del ítem que se está editando, o null para uno nuevo
 let ultimoId = null;
 
-function escaneo(codigoBruto) {
+async function escaneo(codigoBruto) {
   const codigo = String(codigoBruto || '').trim().toUpperCase();
   if (!codigo) return;
   const ya = datos.items.find((x) => (x.codigo && x.codigo.toUpperCase() === codigo) || (x.barras || []).includes(codigo));
@@ -361,14 +361,19 @@ function escaneo(codigoBruto) {
     estado(`<strong>${esc(ya.nombre)}</strong> ya estaba en la lista: ahora hay <strong>${numero.format(ya.cantidad)}</strong>. <button class="btn sm" type="button" data-editar="${ya.id}">Corregir</button>`, 'ok');
     return;
   }
-  pitido(1040);
-  const enPrograma = catalogo.get(codigo);
+  // ¿Ya está en el programa? Abierto desde el programa, se le pregunta directo; si no, se busca en el Excel del inventario
+  let enPrograma = catalogo.get(codigo);
+  if (!enPrograma && conPrograma() && window.programa.buscarProducto) {
+    try { enPrograma = await window.programa.buscarProducto(codigo) || null; } catch (e) { enPrograma = null; }
+    if (enPrograma && enPrograma.error) enPrograma = null;
+  }
+  pitido(enPrograma ? 660 : 1040);
   // Si el código escaneado es un código de barras de un producto del programa, se carga con el código del programa
   abrirForm({ codigo: enPrograma ? enPrograma.codigo : codigo, barras: enPrograma && enPrograma.codigo !== codigo ? [codigo] : [], escaneado: codigo, nombre: enPrograma ? enPrograma.nombre : '', precio: enPrograma ? enPrograma.precio : '', costo: enPrograma ? enPrograma.costo : '',
     unidad: enPrograma ? enPrograma.unidad : '', categoria: enPrograma ? enPrograma.categoria : '', ubicacion: enPrograma ? enPrograma.ubicacion : '',
     proveedor: enPrograma ? enPrograma.proveedor : '', minimo: enPrograma ? enPrograma.minimo : '', cantidad: '', existente: !!enPrograma });
   if (enPrograma) estado(`Este producto ya está en el programa (hay ${numero.format(enPrograma.stock || 0)} según el programa). Poné cuántos hay ahora.`, 'info');
-  else estado(`Código nuevo: <strong>${esc(codigo)}</strong>. ${productosCatalogo().length ? 'Si ya está en el programa con otro código, buscalo arriba del nombre; si no,' : ''} escribí el nombre y el precio.`, 'info');
+  else estado(`Código nuevo: <strong>${esc(codigo)}</strong>. ${hayProductosDelPrograma() ? 'Si ya está en el programa con otro código, buscalo arriba del nombre; si no,' : ''} escribí el nombre y el precio.`, 'info');
 }
 
 function sumarCampoCantidad() {
@@ -401,7 +406,7 @@ function abrirForm(x, id = null) {
   formBarras = (x.barras || []).slice();
   formEscaneado = x.escaneado || '';
   // Código nuevo con los productos del programa cargados: se puede elegir uno que ya existe
-  $('#vincular').hidden = !!(id || x.existente || !productosCatalogo().length || !x.codigo);
+  $('#vincular').hidden = !!(id || x.existente || !hayProductosDelPrograma() || !x.codigo);
   $('#v-buscar').value = '';
   $('#v-lista').innerHTML = '';
   $('#form').hidden = false;
@@ -410,17 +415,25 @@ function abrirForm(x, id = null) {
 let formBarras = [];
 let formEscaneado = '';
 
-function buscarVincular() {
-  const q = normal($('#v-buscar').value.trim());
+const hayProductosDelPrograma = () => conPrograma() || productosCatalogo().length > 0;
+let encontrados = []; // última búsqueda de «¿Ya está en el programa?»
+async function buscarVincular() {
+  const texto = $('#v-buscar').value.trim();
+  const q = normal(texto);
   if (q.length < 2) { $('#v-lista').innerHTML = ''; return; }
   const pal = q.split(/\s+/);
-  const lista = productosCatalogo().filter((p) => { const t = normal(`${p.nombre} ${p.codigo} ${(p.barras || []).join(' ')} ${p.categoria}`); return pal.every((w) => t.includes(w)); }).slice(0, 8);
+  let lista = productosCatalogo().filter((p) => { const t = normal(`${p.nombre} ${p.codigo} ${(p.barras || []).join(' ')} ${p.categoria}`); return pal.every((w) => t.includes(w)); }).slice(0, 8);
+  if (conPrograma() && window.programa.buscarProductos) {
+    try { const r = await window.programa.buscarProductos(texto); if (Array.isArray(r)) lista = r; } catch (e) { /* queda lo del Excel */ }
+    if ($('#v-buscar').value.trim() !== texto) return; // se siguió escribiendo: vale la búsqueda nueva
+  }
+  encontrados = lista;
   $('#v-lista').innerHTML = lista.length
     ? lista.map((p) => `<li><button type="button" class="btn" data-vincular="${esc(p.codigo)}"><span>${esc(p.nombre)} <span class="meta mono">${esc(p.codigo)}</span></span><strong>${p.precio != null ? plata.format(p.precio) : ''}</strong></button></li>`).join('')
     : '<li class="meta">No está en el programa: cargalo como nuevo abajo.</li>';
 }
 function vincular(cod) {
-  const p = productosCatalogo().find((x) => x.codigo === cod);
+  const p = encontrados.find((x) => x.codigo === cod) || productosCatalogo().find((x) => x.codigo === cod);
   if (!p) return;
   const escaneado = formEscaneado || $('#c-codigo').value.trim().toUpperCase();
   abrirForm({ ...p, codigo: p.codigo, barras: escaneado && escaneado !== p.codigo ? [escaneado] : [], escaneado, cantidad: '', existente: true });
@@ -499,7 +512,8 @@ function pintar() {
 }
 
 function pintarCatalogo() {
-  if (productosCatalogo().length) $('#catalogo-estado').innerHTML = `Productos del programa cargados: <strong>${numero.format(productosCatalogo().length)}</strong>. Al escanear uno, aparece su nombre y solo ponés la cantidad.`;
+  if (conPrograma()) $('#catalogo-estado').innerHTML = 'Conectado al programa: al escanear algo que ya está cargado, aparece su nombre y solo ponés la cantidad.';
+  else if (productosCatalogo().length) $('#catalogo-estado').innerHTML = `Productos del programa cargados: <strong>${numero.format(productosCatalogo().length)}</strong>. Al escanear uno, aparece su nombre y solo ponés la cantidad.`;
 }
 
 // ---------- Excel ----------
