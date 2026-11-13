@@ -221,6 +221,7 @@ function guardar() {
  * se leen y se crean ahí mismo (window.programa). Abierto con doble clic en otra PC, se usan los últimos conocidos,
  * los del Excel del inventario y los que se crean acá: esos llegan al programa al importar el Excel (Ubicación y Categoría). */
 const NUEVO = '__nuevo__';
+let sinSesion = false; // abierto desde el programa, pero nadie entró con su usuario: el programa no da datos
 // La misma clave que usa el programa (claveUbic): «a-1» y «A-1» son el mismo estante
 const claveEst = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
 const conPrograma = () => !!(window.programa && window.programa.estantes);
@@ -241,7 +242,9 @@ async function traerEstantesDelPrograma() {
   if (!conPrograma()) return;
   try {
     const lista = await window.programa.estantes();
+    sinSesion = !!(lista && lista.sinSesion);
     if (Array.isArray(lista)) { sumarEstantes(lista, true); guardar(); opcionesEstante($('#c-estante').value); }
+    pintarCatalogo();
   } catch (e) { /* el programa no respondió: quedan los últimos conocidos */ }
 }
 function opcionesEstante(sel) {
@@ -512,7 +515,8 @@ function pintar() {
 }
 
 function pintarCatalogo() {
-  if (conPrograma()) $('#catalogo-estado').innerHTML = 'Conectado al programa: al escanear algo que ya está cargado, aparece su nombre y solo ponés la cantidad.';
+  if (conPrograma() && sinSesion) $('#catalogo-estado').innerHTML = '<strong>Nadie entró al programa:</strong> entrá con tu usuario para que el Cargador reconozca los productos y use los estantes del programa. Mientras tanto funciona como con doble clic.';
+  else if (conPrograma()) $('#catalogo-estado').innerHTML = 'Conectado al programa: al escanear algo que ya está cargado, aparece su nombre y solo ponés la cantidad.';
   else if (productosCatalogo().length) $('#catalogo-estado').innerHTML = `Productos del programa cargados: <strong>${numero.format(productosCatalogo().length)}</strong>. Al escanear uno, aparece su nombre y solo ponés la cantidad.`;
 }
 

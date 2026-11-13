@@ -1222,3 +1222,22 @@ test('depósito: sugerencias mientras se escribe, primero lo que empieza con lo 
   assert.deepEqual(nombres('zzz'), []);
   assert.ok(app.sugerenciasDeposito(d, 'a').length <= 8);
 });
+
+test('QA6 B2: una palabra de presentación, color o material no alcanza para decir que es el mismo producto', () => {
+  assert.equal(app.seParecen('Tarugo nylon 8mm caja x100', 'Tornillo autoperforante 8 x 1" (caja x100)'), false);
+  assert.equal(app.seParecen('Caño PVC 110 blanco', 'Codo PVC 40 blanco'), false);
+  assert.equal(app.seParecen('TORN AUTOP 8X1 CAJA', 'Tornillo autoperforante 8 x 1" (caja x100)'), true, 'abreviado sigue siendo el mismo');
+  assert.equal(app.seParecen('Caja', 'Caja'), true, 'si solo hay palabras comunes, se comparan esas');
+});
+
+test('QA6 B1: lo exacto gana al número corto del estante', () => {
+  const d = app.baseVacia();
+  const a1 = app.guardarEstante(d, { codigo: 'A1', categoria: 'X' }).estante; // número U1
+  const u1 = app.guardarEstante(d, { codigo: 'U1', categoria: 'Y' }).estante; // número U2
+  for (let i = 0; i < 10; i++) app.guardarEstante(d, { codigo: 'Z' + i, categoria: '' }); // hasta U12
+  d.productos.push({ id: 'p', codigo: 'U12', barras: [], nombre: 'Producto U12', stock: 0 });
+  assert.equal(app.dondeEsta(d, 'U1').ubicacion.estanteId, u1.id, 'el estante que se llama U1');
+  assert.equal(app.dondeEsta(d, 'U12').producto.id, 'p', 'el producto con código U12');
+  assert.equal(app.dondeEsta(d, 'U2').ubicacion.estanteId, u1.id, 'el número corto sigue andando');
+  assert.ok(a1.num === 1);
+});

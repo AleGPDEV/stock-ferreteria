@@ -380,9 +380,15 @@ function unirProductos(d, destinoId, origenId) {
  * «TORN» y «tornillo»). Sin palabras para comparar, se da por buena. Sirve para no pisar un tornillo con un esmalte
  * que vino con el mismo código.
  */
+// Palabras que no dicen qué producto es (presentación, colores, materiales, medidas): no alcanzan para decir que son el mismo
+const PALABRAS_COMUNES = new Set(('caja cajas bolsa bolsas blister unidad unidades und uni paquete paquetes pack set kit juego rollo rollos '
+  + 'metro metros litro litros kilo kilos gramos par pares docena para con sin del los las por tipo modelo marca '
+  + 'blanco blanca negro negra gris rojo roja azul verde amarillo amarilla marron naranja transparente cromado plateado dorado '
+  + 'pvc acero hierro plastico metal metalico galvanizado inox madera nylon aluminio bronce cobre goma').split(' '));
 function seParecen(a, b) {
-  const palabras = (t) => normal(t).split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !/^\d/.test(w));
-  const pa = palabras(a), pb = palabras(b);
+  const todas = (t) => normal(t).split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^\d/.test(w) && !/^x\d/.test(w));
+  const importantes = (t) => { const w = todas(t); const f = w.filter((x) => !PALABRAS_COMUNES.has(x)); return f.length ? f : w; };
+  const pa = importantes(a), pb = importantes(b);
   if (!pa.length || !pb.length) return true;
   return pa.some((x) => pb.some((y) => x === y || (x.length >= 3 && y.startsWith(x)) || (y.length >= 3 && x.startsWith(y))));
 }
@@ -4399,21 +4405,27 @@ function asegurarEstante(d, ubicacion, categoria) {
   return !guardarEstante(d, { codigo: ubicacion, categoria }).error;
 }
 /** Para el Cargador de productos (abierto desde el menú Herramientas): los estantes con su categoría. */
+/* Puente con el Cargador: solo con alguien adentro del programa, y el costo solo para el administrador
+ * (el empleado no ve costos). Sin sesión, el Cargador trabaja como si estuviera abierto con doble clic. */
+const SIN_SESION_HERRAMIENTA = { error: 'Entrá al programa con tu usuario para que el Cargador use sus datos.', sinSesion: true };
 function estantesParaHerramienta() {
+  if (!sesion) return SIN_SESION_HERRAMIENTA;
   return ubicacionesDe(db).map((u) => ({ codigo: u.ubicacion, categoria: u.categoria || '' }));
 }
 /** Lo que el Cargador necesita de un producto ya cargado (los mismos datos que el Excel del inventario). */
 function datosParaHerramienta(p) {
   return { codigo: p.codigo, barras: codigosDe(p).filter((c) => c !== p.codigo), nombre: p.nombre, categoria: p.categoria || '', unidad: p.unidad || '', proveedor: nombreProv(p.proveedorId),
-    ubicacion: p.ubicacion || '', stock: p.stock, minimo: p.minimo, costo: p.costo, precio: p.precio };
+    ubicacion: p.ubicacion || '', stock: p.stock, minimo: p.minimo, costo: esAdmin() ? p.costo : null, precio: p.precio };
 }
 /** El Cargador escaneó un código: ¿es de un producto que ya está cargado? (código propio, de barras o de proveedor) */
 function productoParaHerramienta(codigo) {
+  if (!sesion) return SIN_SESION_HERRAMIENTA;
   const p = buscarPorCodigo(db, codigo) || db.productos.find((x) => codigosProvDe(x).some((c) => normCodigo(c.codigo) === normCodigo(codigo)));
   return p ? datosParaHerramienta(p) : null;
 }
 /** Búsqueda por nombre o código para «¿Ya está en el programa con otro código?» del Cargador. */
 function productosParaHerramienta(texto) {
+  if (!sesion) return [];
   const pal = normal(String(texto || '').trim()).split(/\s+/).filter(Boolean);
   if (!pal.length || pal.join('').length < 2) return [];
   return db.productos.filter((p) => { const t = normal(`${p.nombre} ${textoCodigos(p)} ${p.categoria || ''}`); return pal.every((w) => t.includes(w)); })
@@ -4421,6 +4433,7 @@ function productosParaHerramienta(texto) {
 }
 /** El Cargador crea un estante: queda guardado en el programa igual que si se creara en Depósito. */
 function nuevoEstanteDesdeHerramienta(x) {
+  if (!sesion) return SIN_SESION_HERRAMIENTA;
   const r = guardarEstante(db, x || {});
   if (r.error) return { error: r.error };
   guardar();
@@ -4502,6 +4515,11 @@ function dondeEsta(d, texto) {
     const parecidas = s ? ubics.filter((x) => codigoSinSignos(x.clave) === s) : [];
     return parecidas.length === 1 ? parecidas[0] : null;
   };
+  // Primero lo exacto: un estante que se llama así (aunque sea «U1») o un producto con ese código (aunque sea «U12»)
+  const estanteExacto = ubics.find((x) => x.clave === k);
+  if (estanteExacto) return { tipo: 'ubicacion', ubicacion: estanteExacto };
+  const codigoExacto = d.productos.find((p) => codigosDe(p).some((x) => normCodigo(x) === normCodigo(t)));
+  if (codigoExacto) return { tipo: 'producto', producto: codigoExacto };
   // Etiqueta de estante: el número corto (U12); las impresas antes llevan «UBIC nombre» y siguen andando
   const mU = RE_ID_ESTANTE.exec(t);
   const porNumero = mU && ubics.find((x) => x.corto && x.corto.toUpperCase() === `U${Number(mU[1])}`);
@@ -4818,6 +4836,19 @@ function imprimirEtiquetas() {
 }
 
 const rafagaDep = { el: null, antes: '', texto: '', ult: 0 };
+/** ¿Quedó escrita una cantidad sin tocar «Sumar al stock» (o sin guardar el producto nuevo)? */
+function cantidadSinSumarDep() {
+  const c = $('#dep-cant'), b = $('[data-dep-recibir]');
+  if (c && b && c.value.trim() && Number(c.value) > 0) { const p = producto(b.dataset.depRecibir); return p ? { cantidad: c.value.trim(), nombre: p.nombre } : null; }
+  const cn = $('#dep-n-cant'), nom = $('#dep-n-nombre');
+  if (cn && cn.value.trim() && Number(cn.value) > 0) return { cantidad: cn.value.trim(), nombre: (nom && nom.value.trim()) || 'el producto nuevo', nuevo: true };
+  return null;
+}
+function avisoPendienteDep(x) {
+  aviso(x.nuevo
+    ? `No se guardó ${x.nombre} ni se sumaron los ${x.cantidad} que escribiste: faltó tocar «Guardar producto». Volvé a escanearlo para cargarlo.`
+    : `No se sumaron los ${x.cantidad} de ${x.nombre}: faltó tocar «Sumar al stock». Si llegaron, volvé a escanearlo y sumalos.`);
+}
 function vigilarEscanerDeposito(e) {
   const el = e.target;
   if (!el || !el.closest || !el.closest('#v-deposito') || el.id === 'dep-buscar' || !el.matches('input, textarea')) return;
@@ -4835,11 +4866,12 @@ function vigilarEscanerDeposito(e) {
     const codigo = rafagaDep.texto.trim();
     el.value = rafagaDep.antes;
     rafagaDep.el = null;
-    const campo = el.id === 'dep-cant' || el.id === 'dep-n-cant' ? '«¿Cuántos llegaron?»' : 'otro campo';
+    const pendiente = cantidadSinSumarDep();
     $('#dep-buscar').value = codigo;
     mostrarDonde(codigo, true);
     if (!$('#dep-nuevo')) { $('#dep-buscar').focus(); $('#dep-buscar').select(); }
-    toast(`Se escaneó ${codigo} con el cursor en ${campo}: busqué ese código y la cantidad quedó como estaba.`);
+    if (pendiente) avisoPendienteDep(pendiente);
+    else toast(`Se escaneó ${codigo} con el cursor en un campo: busqué ese código.`);
   }
 }
 
@@ -4903,9 +4935,11 @@ function iniciarDeposito() {
     if (e.key === 'Escape' && !lista.hidden) { e.preventDefault(); e.stopPropagation(); cerrarSugerencias(); return; }
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    if (marcada >= 0 && sugeridas[marcada]) { elegirSugerencia(marcada); return; }
+    const pendiente = cantidadSinSumarDep();
+    if (marcada >= 0 && sugeridas[marcada]) { elegirSugerencia(marcada); if (pendiente) avisoPendienteDep(pendiente); return; }
     cerrarSugerencias();
     mostrarDonde(buscar.value, true);
+    if (pendiente && !$('#dep-cant, #dep-n-cant')?.value) avisoPendienteDep(pendiente);
     buscar.select(); // así el próximo escaneo reemplaza lo anterior
   });
   // mousedown y no click: así el cuadro no pierde el foco antes de elegir
