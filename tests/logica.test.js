@@ -1147,3 +1147,11 @@ test('depósito: producto suelto sin código de barras recibe un código propio 
   assert.equal(app.dondeEsta(d, 'P-0002').producto.id, p.id, 'escanear la etiqueta lo encuentra');
   assert.equal(app.altaEnDeposito(d, { sinCodigo: true, nombre: 'Otra suelta', ubicacion: 'A-1' }, 'Ana', 'empleado').producto.codigo, 'P-0003');
 });
+
+test('etiquetas: se reconoce qué productos no traen código de barras de fábrica', () => {
+  assert.equal(app.tieneCodigoFabrica({ codigo: 'P-0003', barras: [] }), false);
+  assert.equal(app.tieneCodigoFabrica({ codigo: 'LH-5283', barras: [] }), false);
+  assert.equal(app.tieneCodigoFabrica({ codigo: 'P-0003', barras: ['7790001234567'] }), true);
+  assert.equal(app.tieneCodigoFabrica({ codigo: '7730901480023' }), true);
+  assert.equal(app.tieneCodigoFabrica({ codigo: '1234' }), false, 'un número corto es un código interno');
+});

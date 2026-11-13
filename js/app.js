@@ -4401,6 +4401,10 @@ function recibirEnDeposito(d, productoId, cantidad) {
 }
 
 /** Código que va en el código de barras de la etiqueta de un producto: su código de barras, si tiene, o el código del programa. */
+/** ¿Trae código de barras de fábrica (EAN/UPC: solo números, de 8 a 14)? Los que no, necesitan etiqueta para escanearlos. */
+function tieneCodigoFabrica(p) {
+  return codigosDe(p).some((c) => /^\d{8,14}$/.test(String(c).trim()));
+}
 function codigoEtiqueta(p) {
   return codigosDe(p).slice(1).concat(p.codigo).find((c) => barras128().sePuede(c)) || '';
 }
@@ -4609,14 +4613,19 @@ function renderDeposito() {
 function itemsEtiquetas() {
   if (etq.tipo === 'ubicacion') return ubicacionesDe(db).map((u) => ({ id: u.clave, ubicacion: u, nombre: u.ubicacion, detalle: [u.categoria, plural(u.productos.length, 'producto', 'productos')].filter(Boolean).join(' · ') }));
   return db.productos.slice().sort((a, b) => ordenNatural(a.ubicacion || '~', b.ubicacion || '~') || ordenNatural(a.nombre, b.nombre))
-    .map((p) => ({ id: p.id, producto: p, nombre: p.nombre, detalle: [codigoEtiqueta(p) || 'sin código para imprimir', p.ubicacion || 'sin ubicación'].join(' · '), ubic: claveUbic(p.ubicacion) }));
+    .map((p) => ({ id: p.id, producto: p, nombre: p.nombre, detalle: [codigoEtiqueta(p) || 'sin código para imprimir', p.ubicacion || 'sin ubicación'].join(' · '), ubic: claveUbic(p.ubicacion), sinFabrica: !tieneCodigoFabrica(p) }));
+}
+/** Lo que se ve en la lista de etiquetas con los filtros puestos (búsqueda, ubicación y «solo sin código de fábrica»). */
+function etiquetasFiltradas(todos = itemsEtiquetas()) {
+  const q = normal($('#etq-buscar').value.trim());
+  const fu = $('#etq-ubic').value;
+  const sinFab = etq.tipo === 'producto' && $('#etq-sinfab').checked;
+  return todos.filter((x) => (!q || normal(`${x.nombre} ${x.detalle}`).includes(q)) && (etq.tipo !== 'producto' || !fu || x.ubic === fu) && (!sinFab || x.sinFabrica));
 }
 
 function renderEtiquetas() {
-  const q = normal($('#etq-buscar').value.trim());
-  const filtroUbic = $('#etq-ubic').value;
   const todos = itemsEtiquetas();
-  const lista = todos.filter((x) => (!q || normal(`${x.nombre} ${x.detalle}`).includes(q)) && (etq.tipo !== 'producto' || !filtroUbic || x.ubic === filtroUbic));
+  const lista = etiquetasFiltradas(todos);
   $('#etq-filtro-ubic').hidden = etq.tipo !== 'producto';
   $('#etq-lista').innerHTML = lista.map((x) => {
     const c = etq.copias.get(x.id) || 0;
@@ -4637,13 +4646,14 @@ function renderEtiquetas() {
   $('#etq-muestra').innerHTML = primera ? htmlEtiqueta(primera, formato) : '';
 }
 
-function abrirEtiquetas(tipo, marcar = []) {
+function abrirEtiquetas(tipo, marcar = [], opciones = {}) {
   // Las etiquetas de estante llevan el número corto: las ubicaciones sin estante pasan a ser estantes y se numeran
   if (tipo === 'ubicacion' && completarEstantes(db)) guardar();
   etq.tipo = tipo;
   etq.copias = new Map(marcar.map((id) => [id, 1]));
   $('#etq-titulo').textContent = tipo === 'ubicacion' ? 'Imprimir etiquetas de estantes' : 'Imprimir etiquetas de productos';
   $('#etq-buscar').value = '';
+  $('#etq-sinfab').checked = !!opciones.sinFabrica;
   $('#etq-ubic').innerHTML = '<option value="">Todas las ubicaciones</option>' + ubicacionesDe(db).map((u) => `<option value="${esc(u.clave)}">${esc(u.ubicacion)}</option>`).join('');
   renderEtiquetas();
   $('#etq-dlg').showModal();
@@ -4820,6 +4830,7 @@ function iniciarDeposito() {
   try { const f = localStorage.getItem('formatoEtiquetas'); if (f && FORMATOS_ETIQUETA[f]) $(`#etq-dlg [name=etq-formato][value=${f}]`).checked = true; } catch { /* nada */ }
   $('#etq-buscar').addEventListener('input', renderEtiquetas);
   $('#etq-ubic').addEventListener('change', renderEtiquetas);
+  $('#etq-sinfab').addEventListener('change', renderEtiquetas);
   $('#etq-saltear').addEventListener('input', renderEtiquetas);
   $$('#etq-dlg [name=etq-formato]').forEach((r) => r.addEventListener('change', renderEtiquetas));
   $('#etq-lista').addEventListener('change', (e) => {
@@ -4830,9 +4841,7 @@ function iniciarDeposito() {
     renderEtiquetas();
   });
   $('#etq-todos').addEventListener('click', () => {
-    const q = normal($('#etq-buscar').value.trim()); const fu = $('#etq-ubic').value;
-    itemsEtiquetas().filter((x) => (!q || normal(`${x.nombre} ${x.detalle}`).includes(q)) && (etq.tipo !== 'producto' || !fu || x.ubic === fu))
-      .forEach((x) => { if (!etq.copias.get(x.id)) etq.copias.set(x.id, 1); });
+    etiquetasFiltradas().forEach((x) => { if (!etq.copias.get(x.id)) etq.copias.set(x.id, 1); });
     renderEtiquetas();
   });
   $('#etq-ninguno').addEventListener('click', () => { etq.copias.clear(); renderEtiquetas(); });
@@ -4840,7 +4849,7 @@ function iniciarDeposito() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
+  module.exports = { tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

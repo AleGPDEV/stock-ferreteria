@@ -156,7 +156,7 @@ label.btn input { display: none; }
       <label class="btn" for="catalogo">Cargar los productos del programa (opcional)<input type="file" id="catalogo" accept=".xlsx,.xls,.csv"></label>
       <button class="btn danger" type="button" id="nueva">Empezar una lista nueva</button>
     </div>
-    <p class="ayuda" id="catalogo-estado">Si cargás el Excel de <strong>Inventario completo</strong> del programa (Reportes y copias → Exportar Excel), al escanear algo que ya existe aparece su nombre y solo tenés que poner la cantidad. Sirve para contar el stock.</p>
+    <p class="ayuda" id="catalogo-estado">Si cargás el Excel de <strong>Inventario completo</strong> del programa (Reportes → Stock → Inventario completo → Exportar Excel), al escanear algo que ya existe aparece su nombre y solo tenés que poner la cantidad. Sirve para contar el stock.</p>
   </section>
 
   <p class="pie">Lo cargado se guarda solo en esta computadora mientras no toques «Empezar una lista nueva». En Stock Ferretería: Productos → Importar desde Excel. Al importarlo, el stock de los productos que ya existen se cambia por lo que contaste (antes te muestra qué cambia).</p>
@@ -473,7 +473,7 @@ $('#escanear').addEventListener('keydown', (e) => {
 $('#v-buscar').addEventListener('input', buscarVincular);
 $('#v-buscar').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = document.querySelectorAll('#v-lista [data-vincular]'); if (b.length === 1) b[0].click(); else $('#c-nombre').focus(); } });
 $('#v-lista').addEventListener('click', (e) => { const b = e.target.closest('[data-vincular]'); if (b) vincular(b.dataset.vincular); });
-$('#sin-codigo').addEventListener('click', () => { estado('Producto sin código: el programa le va a poner uno (P-0001…).', 'info'); abrirForm({ codigo: '' }); });
+$('#sin-codigo').addEventListener('click', () => { estado('Producto sin código: el programa le pone uno propio (P-0001…) al importar. Después, en Depósito → Etiquetas de productos → «Solo los que no traen código de fábrica», se imprimen todas sus etiquetas juntas.', 'info'); abrirForm({ codigo: '' }); });
 $('#form').addEventListener('submit', (e) => { e.preventDefault(); guardarForm(); });
 $('#cancelar').addEventListener('click', () => { estado(''); cerrarForm(); });
 // Enter en el nombre pasa al precio; en el resto guarda

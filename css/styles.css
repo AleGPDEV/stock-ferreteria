@@ -790,7 +790,9 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 .etq-b { display: flex; flex-direction: column; gap: 12px; overflow: auto; }
 .etq-saltear input { max-width: 120px; }
 .etq-filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.etq-filtros input { flex: 1; min-width: 180px; }
+.etq-filtros input[type=search] { flex: 1; min-width: 180px; }
+#etq-filtro-ubic:not([hidden]) { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.etq-sinfab { font-size: 13px; white-space: nowrap; }
 .etq-lista { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; max-height: 300px; overflow: auto; }
 .etq-lista li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
 .etq-lista li:last-child { border-bottom: 0; }
