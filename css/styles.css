@@ -793,7 +793,7 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 .etq-filtros input[type=search] { flex: 1; min-width: 180px; }
 #etq-filtro-ubic:not([hidden]) { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .etq-sinfab { font-size: 13px; white-space: nowrap; }
-.etq-lista { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; max-height: 300px; overflow: auto; }
+.etq-lista { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; max-height: 300px; min-height: 140px; overflow: auto; flex: none; }
 .etq-lista li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
 .etq-lista li:last-child { border-bottom: 0; }
 .etq-lista li.sel { background: var(--accent-soft); }
@@ -806,6 +806,9 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 .etq-muestra:empty { display: none; }
 .etq-muestra.a4 .et { width: 70mm; height: 37mm; }
 .etq-muestra.rollo .et { width: 50mm; height: 25mm; }
+/* Hoja A4 común: la muestra es la hoja entera, en chico */
+.etq-muestra.hoja { border: 0; background: none; flex: none; }
+.etq-muestra.hoja .pagina { zoom: .2; width: 210mm; height: 297mm; box-sizing: border-box; display: grid; background: #fff; box-shadow: 0 0 0 1px var(--line); }
 
 /* La etiqueta: igual en la muestra y al imprimir */
 .et { box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; gap: 1mm; padding: 2.5mm 3.5mm; font-family: Arial, Helvetica, sans-serif; color: #000; background: #fff; }
@@ -830,6 +833,7 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
   #impresion.etiquetas .pagina:last-child { break-after: auto; }
   #impresion.etiquetas .pagina.a4 { width: 210mm; height: 296mm; padding: .5mm 0 0; display: grid; grid-template-columns: repeat(3, 70mm); grid-auto-rows: 37mm; box-sizing: border-box; }
   #impresion.etiquetas .pagina.rollo { width: 50mm; height: 25mm; }
+  #impresion.etiquetas .pagina.hoja { width: 210mm; height: 296mm; display: grid; box-sizing: border-box; }
   #impresion.etiquetas .a4 .et { width: 70mm; height: 37mm; }
   #impresion.etiquetas .rollo .et { width: 50mm; height: 25mm; }
 }
@@ -874,3 +878,17 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 .rollo .et-lugar-nom.largo { font-size: 9pt; }
 .et-id { text-align: center; line-height: 1; }
 .rollo .et-id { font-size: 6.5pt; }
+
+/* Etiquetas en hoja A4 común: el contenido crece con --k (1 = etiqueta de 70 × 37 mm) */
+.pagina.hoja .celda { display: flex; align-items: flex-start; justify-content: center; min-width: 0; min-height: 0; }
+.pagina.hoja .et-marco { box-sizing: border-box; border: .25mm dashed #9aa3ad; }
+.pagina.hoja .et { width: 100%; height: 100%; padding: calc(2.5mm * var(--k)) calc(3.5mm * var(--k)); gap: calc(1mm * var(--k)); }
+.pagina.hoja .et-nom { font-size: calc(11pt * var(--k)); }
+.pagina.hoja .et-cod { font-size: calc(9pt * var(--k)); }
+.pagina.hoja .et-ubi { font-size: calc(13pt * var(--k)); }
+.pagina.hoja .et-sin { font-size: calc(9pt * var(--k)); }
+.pagina.hoja .et-titulo { font-size: calc(8pt * var(--k)); }
+.pagina.hoja .et-lugar-nom { font-size: calc(20pt * var(--k)); }
+.pagina.hoja .et-lugar-nom.largo { font-size: calc(13pt * var(--k)); }
+.pagina.hoja .et-lista { font-size: calc(7.5pt * var(--k)); }
+.pagina.hoja .et-id { font-size: calc(9pt * var(--k)); }

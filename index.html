@@ -792,6 +792,8 @@
   <div class="dlg-b etq-b">
     <fieldset class="imp-campos">
       <legend>¿En qué imprimís?</legend>
+      <label class="check"><input type="radio" name="etq-formato" value="hoja"> <span><strong>Hoja A4 común</strong> (se recortan; el tamaño se ajusta a cuántas van por hoja)</span></label>
+      <label class="f etq-porhoja" id="etq-porhoja-campo" for="etq-porhoja" hidden>Etiquetas por hoja<select id="etq-porhoja"></select><small id="etq-porhoja-ayuda"></small></label>
       <label class="check"><input type="radio" name="etq-formato" value="a4" checked> <span><strong>Hoja A4 de stickers</strong> (24 por hoja, de 70 × 37 mm)</span></label>
       <label class="check"><input type="radio" name="etq-formato" value="rollo"> <span><strong>Impresora de etiquetas</strong> (rollo de 50 × 25 mm, una por etiqueta)</span></label>
       <label class="f etq-saltear" id="etq-saltear-campo" for="etq-saltear">Stickers ya usados en la hoja<input id="etq-saltear" type="number" min="0" max="23" step="1" value="0" inputmode="numeric"><small>Si la hoja ya tiene stickers despegados, poné cuántos: se empieza después.</small></label>

@@ -4474,13 +4474,35 @@ function dondeEsta(d, texto) {
 
 /* Medidas de las etiquetas. A4: hoja de 24 stickers (3 × 8) de 70 × 37 mm. Rollo: impresora de etiquetas de 50 × 25 mm. */
 const FORMATOS_ETIQUETA = {
+  hoja: { nombre: 'Hoja A4 común: el tamaño se ajusta a cuántas van por hoja', porHoja: 0, pagina: '@page { size: A4; margin: 0; }' },
   a4: { nombre: 'Hoja A4 de stickers (24 por hoja, 70 × 37 mm)', porHoja: 24, pagina: '@page { size: A4; margin: 0; }' },
   rollo: { nombre: 'Impresora de etiquetas (50 × 25 mm)', porHoja: 1, pagina: '@page { size: 50mm 25mm; margin: 0; }' },
 };
 
+/* Hoja A4 común: cuántas etiquetas por hoja y en qué grilla (columnas × filas). Con pocas, cada una sale más grande. */
+// Elegidas para que la etiqueta mantenga su forma (más ancha que alta): así crece de verdad cuando son pocas
+const GRILLAS_HOJA = { 1: [1, 1], 2: [1, 2], 3: [1, 3], 4: [1, 4], 6: [2, 3], 8: [2, 4], 10: [2, 5], 12: [2, 6], 14: [2, 7], 21: [3, 7], 24: [3, 8], 40: [4, 10], 65: [5, 13] };
+const POR_HOJA = Object.keys(GRILLAS_HOJA).map(Number);
+const MARGEN_HOJA = 8, SEPARACION_HOJA = 4; // mm
+/** Por hoja: el elegido o, en automático (0), el más chico donde entran todas (hasta 24, para que se lean bien). */
+function porHojaEtiquetas(elegido, total) {
+  if (POR_HOJA.includes(Number(elegido))) return Number(elegido);
+  return POR_HOJA.find((n) => n >= Math.min(Math.max(1, total), 24));
+}
+/** Medidas de cada etiqueta en la hoja común (mm) y cuánto se agranda el contenido (k = 1 es una de 70 × 37 mm). */
+function medidaEtiquetaHoja(porHoja) {
+  const [cols, filas] = GRILLAS_HOJA[porHoja] || GRILLAS_HOJA[24];
+  const celdaAncho = (210 - MARGEN_HOJA * 2 - SEPARACION_HOJA * (cols - 1)) / cols;
+  const celdaAlto = (297 - MARGEN_HOJA * 2 - SEPARACION_HOJA * (filas - 1)) / filas;
+  // La etiqueta ocupa la celda (se recorta por la línea punteada), sin quedar más alta que 3/4 de su ancho
+  const ancho = celdaAncho, alto = Math.min(celdaAlto, celdaAncho * 0.75);
+  const k = Math.min(ancho / 70, alto / 37);
+  const r = (x) => Math.floor(x * 10) / 10;
+  return { cols, filas, celdaAncho: r(celdaAncho), celdaAlto: r(celdaAlto), ancho: r(ancho), alto: r(alto), k: Math.round(k * 100) / 100 };
+}
 /** Una etiqueta (HTML). item: { producto } o { ubicacion } (de ubicacionesDe). */
 function htmlEtiqueta(item, formato) {
-  const alto = formato === 'rollo' ? '9mm' : '12mm';
+  const alto = formato === 'rollo' ? '9mm' : formato === 'hoja' ? 'calc(12mm * var(--k))' : '12mm';
   if (item.producto) {
     const p = item.producto;
     const cod = codigoEtiqueta(p);
@@ -4503,8 +4525,9 @@ function htmlEtiqueta(item, formato) {
  * saltear: en la hoja A4, cuántos stickers ya se usaron (se dejan en blanco al principio).
  * Devuelve { html, etiquetas, hojas }.
  */
-function htmlEtiquetas(items, formato = 'a4', saltear = 0) {
+function htmlEtiquetas(items, formato = 'a4', saltear = 0, porHojaElegido = 0) {
   const f = FORMATOS_ETIQUETA[formato] || FORMATOS_ETIQUETA.a4;
+  if (formato === 'hoja') return htmlEtiquetasHoja(items, porHojaElegido);
   const celdas = [];
   if (formato === 'a4') for (let i = 0; i < Math.min(Math.max(0, Math.floor(saltear) || 0), f.porHoja - 1); i++) celdas.push('<div class="et et-vacia"></div>');
   let etiquetas = 0;
@@ -4516,6 +4539,23 @@ function htmlEtiquetas(items, formato = 'a4', saltear = 0) {
   const hojas = [];
   for (let i = 0; i < celdas.length; i += f.porHoja) hojas.push(`<div class="pagina ${formato === 'rollo' ? 'rollo' : 'a4'}">${celdas.slice(i, i + f.porHoja).join('')}</div>`);
   return { html: etiquetas ? hojas.join('') : '', etiquetas, hojas: etiquetas ? hojas.length : 0 };
+}
+/** Hoja A4 común: las etiquetas se agrandan o achican según cuántas van por hoja (elegido, o automático según cuántas se imprimen). */
+function htmlEtiquetasHoja(items, porHojaElegido) {
+  const celdas = [];
+  for (const it of items) {
+    const copias = Math.max(0, Math.min(500, Math.floor(Number(it.copias) || 0)));
+    const una = htmlEtiqueta(it, 'hoja');
+    for (let i = 0; i < copias; i++) celdas.push(una);
+  }
+  const porHoja = porHojaEtiquetas(porHojaElegido, celdas.length);
+  const m = medidaEtiquetaHoja(porHoja);
+  const estilo = `--k:${m.k};grid-template-columns:repeat(${m.cols},${m.celdaAncho}mm);grid-template-rows:repeat(${m.filas},${m.celdaAlto}mm);padding:${MARGEN_HOJA}mm;gap:${SEPARACION_HOJA}mm`;
+  const hojas = [];
+  for (let i = 0; i < celdas.length; i += porHoja) {
+    hojas.push(`<div class="pagina hoja" style="${estilo}">${celdas.slice(i, i + porHoja).map((c) => `<div class="celda"><div class="et-marco" style="width:${m.ancho}mm;height:${m.alto}mm">${c}</div></div>`).join('')}</div>`);
+  }
+  return { html: hojas.join(''), etiquetas: celdas.length, hojas: hojas.length, porHoja, medida: m };
 }
 
 /* ---------- Pantalla Depósito ---------- */
@@ -4658,16 +4698,22 @@ function renderEtiquetas() {
   }).join('') || '<li class="vacio">Nada coincide.</li>';
   const formato = $('#etq-dlg [name=etq-formato]:checked').value;
   $('#etq-saltear-campo').hidden = formato !== 'a4';
+  $('#etq-porhoja-campo').hidden = formato !== 'hoja';
   const sel = todos.filter((x) => etq.copias.get(x.id) > 0).map((x) => ({ ...x, copias: etq.copias.get(x.id) }));
-  const r = htmlEtiquetas(sel, formato, Number($('#etq-saltear').value));
+  const r = htmlEtiquetas(sel, formato, Number($('#etq-saltear').value), Number($('#etq-porhoja').value));
+  if (formato === 'hoja') {
+    const ph = porHojaEtiquetas(Number($('#etq-porhoja').value), r.etiquetas);
+    const m = medidaEtiquetaHoja(ph);
+    $('#etq-porhoja-ayuda').textContent = `${ph} por hoja: cada etiqueta de ${n(Math.round(m.ancho))} × ${n(Math.round(m.alto))} mm.${Number($('#etq-porhoja').value) ? '' : ' Se elige solo según cuántas imprimís.'}`;
+  }
   $('#etq-cuenta').textContent = r.etiquetas
-    ? `Se van a imprimir ${plural(r.etiquetas, 'etiqueta', 'etiquetas')}${formato === 'a4' ? ` en ${plural(r.hojas, 'hoja', 'hojas')}` : ''}.`
+    ? `Se van a imprimir ${plural(r.etiquetas, 'etiqueta', 'etiquetas')}${formato !== 'rollo' ? ` en ${plural(r.hojas, 'hoja', 'hojas')}` : ''}.`
     : 'Marcá lo que quieras imprimir.';
   $('#etq-imprimir').disabled = !r.etiquetas;
-  // Muestra: la primera etiqueta elegida, en su tamaño
+  // Muestra: en la hoja común, la primera hoja entera en chico; si no, la primera etiqueta en su tamaño
   const primera = sel[0];
   $('#etq-muestra').className = `etq-muestra ${formato}`;
-  $('#etq-muestra').innerHTML = primera ? htmlEtiqueta(primera, formato) : '';
+  $('#etq-muestra').innerHTML = !primera ? '' : formato === 'hoja' ? r.html.split('<div class="pagina hoja"').slice(0, 2).join('<div class="pagina hoja"') : htmlEtiqueta(primera, formato);
 }
 
 function abrirEtiquetas(tipo, marcar = [], opciones = {}) {
@@ -4686,9 +4732,9 @@ function abrirEtiquetas(tipo, marcar = [], opciones = {}) {
 function imprimirEtiquetas() {
   const formato = $('#etq-dlg [name=etq-formato]:checked').value;
   const sel = itemsEtiquetas().filter((x) => etq.copias.get(x.id) > 0).map((x) => ({ ...x, copias: etq.copias.get(x.id) }));
-  const r = htmlEtiquetas(sel, formato, Number($('#etq-saltear').value));
+  const r = htmlEtiquetas(sel, formato, Number($('#etq-saltear').value), Number($('#etq-porhoja').value));
   if (!r.etiquetas) return;
-  try { localStorage.setItem('formatoEtiquetas', formato); } catch { /* sin almacenamiento: no pasa nada */ }
+  try { localStorage.setItem('formatoEtiquetas', formato); localStorage.setItem('etiquetasPorHoja', $('#etq-porhoja').value); } catch { /* sin almacenamiento: no pasa nada */ }
   // La hoja de las etiquetas es distinta a la del ticket: se cambia solo mientras se imprime
   $('#impresion').classList.add('etiquetas');
   $('#estilo-etiquetas').textContent = FORMATOS_ETIQUETA[formato].pagina;
@@ -4852,6 +4898,9 @@ function iniciarDeposito() {
   $('#btn-etq-ubicaciones').addEventListener('click', () => abrirEtiquetas('ubicacion'));
   // Ventana de etiquetas
   try { const f = localStorage.getItem('formatoEtiquetas'); if (f && FORMATOS_ETIQUETA[f]) $(`#etq-dlg [name=etq-formato][value=${f}]`).checked = true; } catch { /* nada */ }
+  $('#etq-porhoja').innerHTML = '<option value="0">Automático (según cuántas imprimís)</option>' + POR_HOJA.map((n) => `<option value="${n}">${n} por hoja</option>`).join('');
+  try { const ph = localStorage.getItem('etiquetasPorHoja'); if (ph && $(`#etq-porhoja option[value="${ph}"]`)) $('#etq-porhoja').value = ph; } catch { /* nada */ }
+  $('#etq-porhoja').addEventListener('change', renderEtiquetas);
   $('#etq-buscar').addEventListener('input', renderEtiquetas);
   $('#etq-ubic').addEventListener('change', renderEtiquetas);
   $('#etq-sinfab').addEventListener('change', renderEtiquetas);
@@ -4873,7 +4922,7 @@ function iniciarDeposito() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
+  module.exports = { porHojaEtiquetas, medidaEtiquetaHoja, asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

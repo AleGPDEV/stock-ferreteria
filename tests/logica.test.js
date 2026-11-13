@@ -1170,3 +1170,25 @@ test('importar lo del Cargador crea los estantes nuevos con su categoría', () =
   assert.equal(app.asegurarEstante(d, 'A-2', 'Otra'), false, 'uno que ya existe no cambia');
   assert.equal(app.estantesDe(d)[1].categoria, 'Indumentaria');
 });
+
+test('etiquetas en hoja A4 común: el tamaño se ajusta a cuántas van por hoja', () => {
+  const d = base();
+  const p = d.productos[0];
+  // automático: con pocas, salen grandes; nunca más de 24 por hoja
+  assert.equal(app.porHojaEtiquetas(0, 1), 1);
+  assert.equal(app.porHojaEtiquetas(0, 5), 6);
+  assert.equal(app.porHojaEtiquetas(0, 30), 24);
+  assert.equal(app.porHojaEtiquetas(40, 3), 40, 'si se eligió, se respeta');
+  const grande = app.medidaEtiquetaHoja(1), chica = app.medidaEtiquetaHoja(24);
+  assert.ok(grande.k > chica.k * 3, 'una sola es más de 3 veces más grande que de a 24');
+  for (const n of [1, 2, 3, 4, 6, 8, 10, 12, 14, 21, 24, 40, 65]) {
+    const m = app.medidaEtiquetaHoja(n);
+    assert.equal(m.cols * m.filas, n);
+    assert.ok(m.cols * m.celdaAncho + (m.cols - 1) * 4 + 16 <= 210.01 && m.filas * m.celdaAlto + (m.filas - 1) * 4 + 16 <= 297.01, `${n} entran en la hoja`);
+  }
+  const r = app.htmlEtiquetas([{ producto: p, copias: 7 }], 'hoja', 0, 0);
+  assert.deepEqual([r.etiquetas, r.hojas, r.porHoja], [7, 1, 8]);
+  assert.match(r.html, /--k:1\.36/);
+  const r2 = app.htmlEtiquetas([{ producto: p, copias: 5 }], 'hoja', 0, 2);
+  assert.deepEqual([r2.hojas, r2.porHoja], [3, 2], '5 de a 2 por hoja: 3 hojas');
+});
