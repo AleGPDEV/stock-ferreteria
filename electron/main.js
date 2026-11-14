@@ -444,11 +444,19 @@ function crearVentana() {
   });
 
   // Exportaciones a Excel y copias: preguntar dónde guardar
-  ventana.webContents.session.on('will-download', (e, item) => {
-    const destino = dialog.showSaveDialogSync(ventana, {
-      defaultPath: path.join(app.getPath('documents'), item.getFilename()),
+  // (la misma sesión la usan las herramientas, así que también vale para el Excel del Cargador)
+  ventana.webContents.session.on('will-download', (e, item, wc) => {
+    const nombre = item.getFilename();
+    const ext = path.extname(nombre).toLowerCase(); // .xlsx, .json…
+    const tipos = { '.xlsx': 'Planilla de Excel', '.xls': 'Planilla de Excel', '.csv': 'Planilla CSV', '.json': 'Copia de seguridad', '.pdf': 'PDF' };
+    let destino = dialog.showSaveDialogSync((wc && BrowserWindow.fromWebContents(wc)) || ventana, {
+      defaultPath: path.join(app.getPath('documents'), nombre),
+      filters: ext ? [{ name: tipos[ext] || ext.slice(1).toUpperCase(), extensions: [ext.slice(1)] }] : [],
     });
-    if (destino) item.setSavePath(destino); else item.cancel();
+    if (!destino) { item.cancel(); return; }
+    // Si se escribe un nombre sin «.xlsx», se le agrega: sin la terminación, el programa no la encuentra al importar
+    if (ext && path.extname(destino).toLowerCase() !== ext) destino += ext;
+    item.setSavePath(destino);
   });
 }
 
