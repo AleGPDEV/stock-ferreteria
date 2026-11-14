@@ -134,6 +134,9 @@ function crearUsuario(nombre, rol, pin, porDefecto = false) {
 
 /** La primera vez crea «Administrador» (PIN 1234) y «Empleado» (PIN 0000). Siempre deja al menos un administrador. */
 function asegurarUsuarios(d) {
+  // Los datos de prueba traían «Ferretería de prueba» como nombre del negocio: pasa a Grupo Muros
+  let cambio = false;
+  if (d.negocio && d.negocio.nombre === 'Ferretería de prueba') { d.negocio.nombre = NOMBRE_NEGOCIO; cambio = true; }
   if (!Array.isArray(d.usuarios) || !d.usuarios.length) {
     d.usuarios = [crearUsuario('Administrador', 'admin', '1234', true), crearUsuario('Empleado', 'empleado', '0000', true)];
     return true;
@@ -142,7 +145,7 @@ function asegurarUsuarios(d) {
     d.usuarios.unshift(crearUsuario('Administrador', 'admin', '1234', true));
     return true;
   }
-  return false;
+  return cambio;
 }
 
 /** Crea o modifica un usuario. datos: { nombre, rol, pin }. Al editar, el PIN vacío no cambia. */
@@ -177,6 +180,8 @@ function eliminarUsuario(d, id, idActual) {
 
 /* ---------- Datos ---------- */
 
+// El nombre que se ve si en Configuración → Datos del negocio no se escribió otro
+const NOMBRE_NEGOCIO = 'Grupo Muros';
 function baseVacia() {
   return { productos: [], proveedores: [], movimientos: [], ventas: [], numVenta: 0, cajas: [], numCaja: 0, ejemplo: false, negocio: { nombre: '', direccion: '', telefono: '', rut: '', pie: '' } };
 }
@@ -1173,7 +1178,7 @@ function render() {
   $('#badge-ajustes').hidden = !pendientes;
   $('#badge-ajustes').textContent = pendientes;
   $('#badge-ajustes').title = [faltaPin && 'Cambiar los PIN iniciales', faltaClave && 'Crear la clave de recuperación'].filter(Boolean).join(' · ');
-  $('#marca-nombre').textContent = (db.negocio && db.negocio.nombre) || 'Stock Ferretería';
+  $('#marca-nombre').textContent = (db.negocio && db.negocio.nombre) || NOMBRE_NEGOCIO;
   renderAlertaStock();
   // Solo se dibuja la pantalla que se está viendo
   ({ panel: renderPanel, caja: renderCaja, productos: renderProductos, deposito: renderDeposito, movimientos: renderMovimientos, proveedores: renderProveedores, reportes: renderReportes, ajustes: renderAjustes })[vistaActual()]();
@@ -3285,7 +3290,7 @@ function descargarExcel(filas, hoja, base, opc = {}) {
   try {
     if (window.XLSX) {
       const info = `Hecho el ${new Date().toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}${sesion ? ` por ${sesion.nombre}` : ''}`;
-      const titulo = opc.titulo ? ((db.negocio && db.negocio.nombre) || 'Stock Ferretería') : '';
+      const titulo = opc.titulo ? ((db.negocio && db.negocio.nombre) || NOMBRE_NEGOCIO) : '';
       const ws = hojaExcel(XLSX, filas, { ...opc, titulo, subtitulo: opc.titulo, info: opc.titulo ? [opc.subtitulo, info].filter(Boolean).join(' · ') : '' });
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, hoja.slice(0, 31));
@@ -3795,7 +3800,7 @@ function mostrarLogin() {
   sesion = null;
   document.body.classList.remove('rol-empleado', 'rol-admin');
   $$('dialog[open]').forEach((d) => d.close());
-  $('#login-negocio').textContent = (db.negocio && db.negocio.nombre) || 'Stock Ferretería';
+  $('#login-negocio').textContent = (db.negocio && db.negocio.nombre) || NOMBRE_NEGOCIO;
   const lista = [...db.usuarios].sort((a, b) => (a.rol === 'admin') - (b.rol === 'admin') || a.nombre.localeCompare(b.nombre));
   $('#login-usuarios').innerHTML = lista.map((u) => `
     <button type="button" class="login-user" data-usuario="${u.id}">
