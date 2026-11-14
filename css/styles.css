@@ -908,3 +908,10 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 .pagina.hoja .et-lugar-nom.largo { font-size: calc(13pt * var(--k)); }
 .pagina.hoja .et-lista { font-size: calc(7.5pt * var(--k)); }
 .pagina.hoja .et-id { font-size: calc(9pt * var(--k)); }
+
+/* Productos en dólares */
+.rep-usd-nota { margin: 0 0 12px; padding: 9px 12px; border-radius: var(--r-ctrl); background: var(--surface-2, #f1f3f5); color: var(--muted); font-size: 14px; }
+.ac-usd { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 520px) { .ac-usd { grid-template-columns: 1fr; } }
+.caja-cotiz { margin-bottom: 8px; }
+.cc-sep { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; }

@@ -1241,3 +1241,37 @@ test('QA6 B1: lo exacto gana al número corto del estante', () => {
   assert.equal(app.dondeEsta(d, 'U2').ubicacion.estanteId, u1.id, 'el número corto sigue andando');
   assert.ok(a1.num === 1);
 });
+
+test('dólares: un producto en U$S se cobra en dólares, con la cotización del día', () => {
+  const d = app.baseVacia();
+  d.productos.push({ id: 'ta', codigo: 'TAL', barras: [], nombre: 'Taladro', unidad: 'unidad', stock: 5, minimo: 0, costo: 80, precio: 120, moneda: 'USD' });
+  d.productos.push({ id: 'to', codigo: 'TOR', barras: [], nombre: 'Tornillo', unidad: 'unidad', stock: 50, minimo: 0, costo: 5, precio: 10 });
+  app.abrirCaja(d, 1000, 'Ana', undefined, { inicialUSD: 50, cotizacion: 40 });
+  assert.match(app.cobrar(d, [{ productoId: 'ta', cantidad: 1, precio: 120 }, { productoId: 'to', cantidad: 1, precio: 10 }], 'Efectivo', '', '').error, /pesos y en dólares/);
+  assert.match(app.cobrar(d, [{ productoId: 'ta', cantidad: 1, precio: 120 }], 'Efectivo', '', '').error, /cotización/);
+  const { venta } = app.cobrar(d, [{ productoId: 'ta', cantidad: 2, precio: 120 }], 'Efectivo', 300, '', undefined, 0, { cotizacion: 40 });
+  assert.deepEqual([venta.moneda, venta.total, venta.cotizacion, venta.vuelto], ['USD', 240, 40, 60]);
+  app.cobrar(d, [{ productoId: 'to', cantidad: 3, precio: 10 }], 'Efectivo', '', '');
+  // Caja: pesos y dólares por separado
+  const r = app.resumenCaja(d, d.cajas[0]);
+  assert.deepEqual([r.esperado, r.total, r.usd.esperado, r.usd.total, r.ventas], [1030, 30, 290, 240, 2]);
+  assert.match(app.cerrarCaja(d, 1030, 'Ana', '').error, /dólares/);
+  const c = app.cerrarCaja(d, 1030, 'Ana', '', undefined, 280).caja;
+  assert.deepEqual([c.diferencia, c.diferenciaUSD], [0, -10]);
+  // Reportes: la venta en dólares se suma en pesos con su cotización
+  const a = app.analisisVentas(d, 0, Date.now() + 1e9);
+  assert.deepEqual([a.total, a.usd.total, a.usd.enPesos, a.ganancia], [9630, 240, 9600, 2*40*40 + 15]);
+  assert.equal(app.$m(1234.5, 'USD'), 'U$S 1.234,50');
+});
+
+test('dólares: la columna Moneda de la planilla', () => {
+  assert.deepEqual(['USD', 'U$S', 'dólares', 'us$', '$', 'pesos', 'UYU', '', 'x'].map(app.leerMoneda), ['USD', 'USD', 'USD', 'USD', 'UYU', 'UYU', 'UYU', null, null]);
+  const d = app.baseVacia();
+  app.aplicarImportacion(d, app.planImportacion(d, [{ 'Código': 'TAL', Producto: 'Taladro', Moneda: 'USD', Costo: 80, Precio: 120, Stock: 2 }, { 'Código': 'TOR', Producto: 'Tornillo', Precio: 10 }]));
+  assert.deepEqual(d.productos.map((p) => [p.codigo, p.moneda || 'UYU', p.precio]), [['TAL', 'USD', 120], ['TOR', 'UYU', 10]]);
+  // sin precio en la fila, la moneda no cambia
+  app.aplicarImportacion(d, app.planImportacion(d, [{ 'Código': 'TAL', Producto: 'Taladro', Moneda: 'UYU', Stock: 3 }]));
+  assert.equal(d.productos[0].moneda, 'USD');
+  app.aplicarImportacion(d, app.planImportacion(d, [{ 'Código': 'TAL', Producto: 'Taladro', Moneda: 'pesos', Precio: 4900 }]));
+  assert.deepEqual([d.productos[0].moneda, d.productos[0].precio], [undefined, 4900]);
+});

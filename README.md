@@ -173,3 +173,13 @@ tests/almacen.test.js     Pruebas de la base SQLite
 - Varias cajas o PCs compartiendo los mismos datos (requiere una base de datos en un servidor).
 - Ventas a crédito (fiado) con cuenta corriente por cliente.
 - Facturación electrónica (CFE de DGI) a través de un proveedor habilitado.
+
+## Productos en dólares
+
+- En la ficha del producto, **Moneda**: Pesos o Dólares. En dólares, el **costo y el precio** están en U$S (también la ganancia).
+- Los productos en dólares **se cobran en dólares**. Un ticket es todo en una moneda: si se agrega un producto en pesos a un ticket en dólares (o al revés), el programa avisa y hay que cobrarlos en dos ventas.
+- **Dólar del día**: al abrir la caja se escribe la cotización (y los dólares que hay para dar cambio). Al cobrar en dólares se pide si falta; queda guardada en la caja y en cada venta.
+- **Caja**: pesos y dólares por separado. Al cerrar se cuentan los dos; el arqueo, el resumen impreso y los cierres muestran las dos monedas. Los retiros e ingresos pueden ser en dólares.
+- **Reportes**: las ventas en dólares se suman en pesos con la cotización de su día, y arriba se avisa cuánto fue en U$S. El inventario en dólares se valoriza con el dólar de hoy.
+- **Excel**: columna **Moneda** (USD, U$S, dólares o UYU, pesos) al importar, en el inventario y en el Cargador de productos. Si la fila no trae precio, la moneda del producto no cambia.
+

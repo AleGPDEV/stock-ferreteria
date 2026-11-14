@@ -116,7 +116,8 @@ label.btn input { display: none; }
       </div>
       <div class="campos">
         <label class="f f-wide" for="c-nombre">Nombre del producto<input id="c-nombre" type="text" autocomplete="off" placeholder="Ej.: Tornillo autoperforante 8 x 1&quot;"></label>
-        <label class="f" for="c-precio">Precio de venta ($)<input id="c-precio" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej.: 290"></label>
+        <label class="f" for="c-precio"><span id="c-precio-lbl">Precio de venta ($)</span><input id="c-precio" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej.: 290"></label>
+        <label class="f" for="c-moneda">Moneda<select id="c-moneda"><option value="UYU">Pesos ($)</option><option value="USD">Dólares (U$S)</option></select><small>El precio y el costo van en esta moneda.</small></label>
         <label class="f" for="c-cantidad">Cantidad que hay<input id="c-cantidad" type="text" inputmode="decimal" autocomplete="off" placeholder="1"></label>
         <label class="f" for="c-estante">Estante<select id="c-estante"></select><small id="c-estante-ayuda">Queda puesto para el siguiente.</small></label>
         <label class="f" for="c-categoria">Categoría<input id="c-categoria" type="text" list="lista-cat" autocomplete="off" placeholder="Ej.: Tornillería"><small id="c-cat-ayuda"></small></label>
@@ -135,7 +136,7 @@ label.btn input { display: none; }
         <summary>Más datos (opcional): código, costo, unidad, proveedor, mínimo</summary>
         <div class="campos">
           <label class="f" for="c-codigo">Código<input id="c-codigo" type="text" autocomplete="off" spellcheck="false"><small>Vacío: el programa le pone uno.</small></label>
-          <label class="f" for="c-costo">Costo ($)<input id="c-costo" type="text" inputmode="decimal" autocomplete="off"></label>
+          <label class="f" for="c-costo"><span id="c-costo-lbl">Costo ($)</span><input id="c-costo" type="text" inputmode="decimal" autocomplete="off"></label>
           <label class="f" for="c-unidad">Unidad
             <select id="c-unidad"><option>unidad</option><option>kg</option><option>m</option><option>litro</option><option>caja</option><option>paquete</option><option>rollo</option><option>par</option></select>
           </label>
@@ -215,6 +216,14 @@ const $ = (s) => document.querySelector(s);
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const plata = new Intl.NumberFormat('es-UY', { style: 'currency', currency: 'UYU', maximumFractionDigits: 2 });
+const plata2 = new Intl.NumberFormat('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const $m = (x, moneda) => (moneda === 'USD' ? `U$S ${plata2.format(x)}` : plata.format(x));
+const leerMoneda = (t) => { const s = normal(t).replace(/\s+/g, ''); return /^(usd|us\$|u\$s|u\$|us|dolar|dolares|dol|u\$d)$/.test(s) ? 'USD' : /^(\$|uyu|\$u|pesos?|uy)$/.test(s) ? 'UYU' : ''; };
+function rotulosMoneda() {
+  const usd = $('#c-moneda').value === 'USD';
+  $('#c-precio-lbl').textContent = usd ? 'Precio de venta (U$S)' : 'Precio de venta ($)';
+  $('#c-costo-lbl').textContent = usd ? 'Costo (U$S)' : 'Costo ($)';
+}
 const numero = new Intl.NumberFormat('es-UY', { maximumFractionDigits: 3 });
 const normal = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const hoy = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -398,7 +407,7 @@ async function escaneo(codigoBruto) {
   pitido(enPrograma ? 660 : 1040);
   // Si el código escaneado es un código de barras de un producto del programa, se carga con el código del programa
   abrirForm({ codigo: enPrograma ? enPrograma.codigo : codigo, barras: enPrograma && enPrograma.codigo !== codigo ? [codigo] : [], escaneado: codigo, nombre: enPrograma ? enPrograma.nombre : '', precio: enPrograma ? enPrograma.precio : '', costo: enPrograma ? enPrograma.costo : '',
-    unidad: enPrograma ? enPrograma.unidad : '', categoria: enPrograma ? enPrograma.categoria : '', ubicacion: enPrograma ? enPrograma.ubicacion : '',
+    moneda: enPrograma ? enPrograma.moneda : '', unidad: enPrograma ? enPrograma.unidad : '', categoria: enPrograma ? enPrograma.categoria : '', ubicacion: enPrograma ? enPrograma.ubicacion : '',
     proveedor: enPrograma ? enPrograma.proveedor : '', minimo: enPrograma ? enPrograma.minimo : '', cantidad: '', existente: !!enPrograma });
   if (enPrograma) estado(`Este producto ya está en el programa (hay ${numero.format(enPrograma.stock || 0)} según el programa). Poné cuántos hay ahora.`, 'info');
   else estado(`Código nuevo: <strong>${esc(codigo)}</strong>. ${hayProductosDelPrograma() ? 'Si ya está en el programa con otro código, buscalo arriba del nombre; si no,' : ''} escribí el nombre y el precio.`, 'info');
@@ -417,6 +426,8 @@ function abrirForm(x, id = null) {
   $('#c-codigo').value = x.codigo || '';
   $('#c-nombre').value = x.nombre || '';
   $('#c-precio').value = x.precio === '' || x.precio == null ? '' : String(x.precio).replace('.', ',');
+  $('#c-moneda').value = x.moneda === 'USD' ? 'USD' : 'UYU';
+  rotulosMoneda();
   $('#c-costo').value = x.costo === '' || x.costo == null || x.costo === 0 ? '' : String(x.costo).replace('.', ',');
   $('#c-cantidad').value = x.cantidad === '' || x.cantidad == null ? '' : String(x.cantidad).replace('.', ',');
   $('#c-minimo').value = x.minimo === '' || x.minimo == null || x.minimo === 0 ? '' : String(x.minimo).replace('.', ',');
@@ -457,7 +468,7 @@ async function buscarVincular() {
   }
   encontrados = lista;
   $('#v-lista').innerHTML = lista.length
-    ? lista.map((p) => `<li><button type="button" class="btn" data-vincular="${esc(p.codigo)}"><span>${esc(p.nombre)} <span class="meta mono">${esc(p.codigo)}</span></span><strong>${p.precio != null ? plata.format(p.precio) : ''}</strong></button></li>`).join('')
+    ? lista.map((p) => `<li><button type="button" class="btn" data-vincular="${esc(p.codigo)}"><span>${esc(p.nombre)} <span class="meta mono">${esc(p.codigo)}</span></span><strong>${p.precio != null ? $m(p.precio, p.moneda) : ''}</strong></button></li>`).join('')
     : '<li class="meta">No está en el programa: cargalo como nuevo abajo.</li>';
 }
 function vincular(cod) {
@@ -488,7 +499,7 @@ function guardarForm() {
   if (precio != null && precio < 0) { err('El precio no puede ser negativo.'); $('#c-precio').focus(); return; }
   if (codigo && datos.items.some((x) => x.id !== editando && x.codigo && x.codigo.toUpperCase() === codigo)) { err(`Ese producto ya está en la lista: escaneá de nuevo para sumarle 1, o tocá Editar.`); return; }
   const item = {
-    codigo, nombre, precio, cantidad,
+    codigo, nombre, precio, cantidad, moneda: $('#c-moneda').value === 'USD' ? 'USD' : 'UYU',
     costo: parseNum($('#c-costo').value), minimo: parseNum($('#c-minimo').value),
     categoria: $('#c-categoria').value.trim(), ubicacion: $('#c-estante').value === NUEVO ? '' : $('#c-estante').value,
     unidad: $('#c-unidad').value, proveedor: $('#c-proveedor').value.trim(),
@@ -528,7 +539,7 @@ function pintar() {
       <td><div>${esc(x.nombre)} ${x.existente ? '<span class="chip">ya en el programa</span>' : ''}</div>
         <div class="meta"><span class="mono">${esc(x.codigo || 'sin código')}${(x.barras || []).length ? ' · ' + (x.barras || []).map(esc).join(' · ') : ''}</span>${[x.categoria, x.ubicacion].filter(Boolean).map((t) => ' · ' + esc(t)).join('')}</div></td>
       <td class="num"><strong>${numero.format(x.cantidad || 0)}</strong></td>
-      <td class="num">${x.precio == null ? (x.existente ? '<span class="meta">sin cambio</span>' : '<span class="err">falta</span>') : plata.format(x.precio)}</td>
+      <td class="num">${x.precio == null ? (x.existente ? '<span class="meta">sin cambio</span>' : '<span class="err">falta</span>') : $m(x.precio, x.moneda)}</td>
       <td class="acc"><button class="btn sm ghost" type="button" data-editar="${x.id}">Editar</button><button class="btn sm danger" type="button" data-borrar="${x.id}">Quitar</button></td>
     </tr>`).join('')
     : `<tr><td colspan="4" class="vacio">${items.length ? 'Nada coincide con la búsqueda.' : 'Todavía no cargaste nada. Escaneá el primer producto.'}</td></tr>`;
@@ -550,11 +561,11 @@ function descargarExcel() {
   if (!datos.items.length) return;
   const filas = datos.items.map((x) => ({
     'Código': x.codigo, 'Códigos de barras': (x.barras || []).join(' '), 'Producto': x.nombre, 'Categoría': x.categoria, 'Unidad': x.unidad, 'Proveedor': x.proveedor, 'Ubicación': x.ubicacion,
-    'Stock': x.cantidad, 'Stock mínimo': x.minimo ?? '', 'Costo': x.costo ?? '', 'Precio': x.precio ?? '',
+    'Stock': x.cantidad, 'Stock mínimo': x.minimo ?? '', 'Moneda': x.moneda === 'USD' ? 'USD' : 'UYU', 'Costo': x.costo ?? '', 'Precio': x.precio ?? '',
     // «Contado: Sí» le avisa al programa que el Stock es lo que se contó: lo aplica sin tener que marcar nada
     'Contado': 'Sí',
   }));
-  const hoja = XLSX.utils.json_to_sheet(filas, { header: ['Código', 'Códigos de barras', 'Producto', 'Categoría', 'Unidad', 'Proveedor', 'Ubicación', 'Stock', 'Stock mínimo', 'Costo', 'Precio', 'Contado'] });
+  const hoja = XLSX.utils.json_to_sheet(filas, { header: ['Código', 'Códigos de barras', 'Producto', 'Categoría', 'Unidad', 'Proveedor', 'Ubicación', 'Stock', 'Stock mínimo', 'Moneda', 'Costo', 'Precio', 'Contado'] });
   // El código como texto, para que Excel no le saque los ceros ni lo pase a notación científica
   filas.forEach((f, i) => { const c = hoja[XLSX.utils.encode_cell({ r: i + 1, c: 0 })]; if (c) { c.t = 's'; c.v = String(f['Código'] || ''); c.z = '@'; } });
   hoja['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 42 }, { wch: 16 }, { wch: 9 }, { wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 9 }];
@@ -579,7 +590,7 @@ function cargarCatalogo(file) {
         if (!codigo || !nombre) continue;
         const barras = String(col(f, 'codigos de barras', 'codigo de barras', 'barras')).toUpperCase().split(/[\s,;]+/).filter(Boolean);
         lista.push({ codigo, barras, nombre, categoria: String(col(f, 'categoria')).trim(), unidad: String(col(f, 'unidad')).trim(), proveedor: String(col(f, 'proveedor')).trim(),
-          ubicacion: String(col(f, 'ubicacion')).trim(), stock: parseNum(col(f, 'stock')), minimo: parseNum(col(f, 'stock minimo', 'minimo')), costo: parseNum(col(f, 'costo')), precio: parseNum(col(f, 'precio', 'precio de venta')) });
+          ubicacion: String(col(f, 'ubicacion')).trim(), stock: parseNum(col(f, 'stock')), minimo: parseNum(col(f, 'stock minimo', 'minimo')), costo: parseNum(col(f, 'costo')), precio: parseNum(col(f, 'precio', 'precio de venta')), moneda: leerMoneda(col(f, 'moneda')) });
       }
       if (!lista.length) { toast('Esa planilla no tiene productos con Código y Producto.'); return; }
       datos.catalogo = lista;
@@ -613,6 +624,7 @@ $('#form').addEventListener('submit', (e) => { e.preventDefault(); if (!$('#nuev
 $('#c-estante').addEventListener('focus', () => { if ($('#c-estante').value !== NUEVO) estanteAnterior = $('#c-estante').value; });
 $('#c-estante').addEventListener('change', () => alElegirEstante(''));
 $('#ne-crear').addEventListener('click', crearEstante);
+$('#c-moneda').addEventListener('change', rotulosMoneda);
 $('#ne-cancelar').addEventListener('click', cancelarNuevoEstante);
 // Abierto desde el programa: los estantes se traen al empezar y cada vez que se vuelve a esta ventana
 window.addEventListener('focus', traerEstantesDelPrograma);

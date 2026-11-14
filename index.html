@@ -91,6 +91,10 @@
         <p class="sub">Para empezar a vender, abrí la caja. Contá el efectivo que hay para dar cambio y escribilo.</p>
         <form id="form-abrir-caja" class="abrir-caja" novalidate>
           <label class="f" for="ac-monto">¿Con cuánto efectivo empezás?<input id="ac-monto" type="number" min="0" step="any" inputmode="decimal" placeholder="Ej.: 2000"></label>
+          <div class="ac-usd" id="ac-usd" hidden>
+            <label class="f" for="ac-cotiz">Dólar hoy ($ por U$S 1)<input id="ac-cotiz" type="number" min="0" step="any" inputmode="decimal" placeholder="Ej.: 40,50"></label>
+            <label class="f" for="ac-usd-monto">Dólares en la caja (U$S)<input id="ac-usd-monto" type="number" min="0" step="any" inputmode="decimal" placeholder="0"></label>
+          </div>
           <p class="err" id="ac-err" role="alert"></p>
           <button class="btn verde btn-grande" type="submit">Abrir caja</button>
         </form>
@@ -147,6 +151,9 @@
               <label><input type="radio" name="medio" value="Transferencia"><span>Transferencia</span></label>
             </div>
           </fieldset>
+          <label class="f caja-cotiz" for="caja-cotiz" id="caja-cotiz-campo" hidden>Dólar hoy ($ por U$S 1)
+            <input id="caja-cotiz" type="number" min="0" step="any" inputmode="decimal" placeholder="Ej.: 40,50">
+          </label>
           <div class="efectivo" id="bloque-efectivo">
             <label class="f" for="caja-recibido">¿Con cuánto paga? (opcional)
               <input id="caja-recibido" type="number" min="0" step="any" inputmode="decimal" placeholder="0">
@@ -334,6 +341,7 @@
         <button type="button" role="tab" data-tab="caja" aria-selected="false">Cierres de caja</button>
         <button type="button" role="tab" data-tab="precios" aria-selected="false">Cambios de precio</button>
       </div>
+      <p class="rep-usd-nota" id="rep-usd-nota" hidden></p>
 
       <div class="tab-panel" data-panel="tablero">
         <div id="tab-kpis" class="kpis"></div>
@@ -570,8 +578,9 @@
       </label>
       <label class="f" for="p-proveedor">Proveedor<select id="p-proveedor"></select></label>
       <label class="f" for="p-ubicacion">Ubicación<input id="p-ubicacion" type="text" placeholder="Ej.: Estante A-01"></label>
-      <label class="f solo-admin" for="p-costo">Costo<input id="p-costo" type="number" step="any" min="0" inputmode="decimal"></label>
-      <label class="f" for="p-precio">Precio de venta<input id="p-precio" type="number" step="any" min="0.01" inputmode="decimal"><small class="muted" id="p-margen"></small><small class="muted" id="p-precio-nota" hidden>Solo el administrador puede cambiar el precio.</small></label>
+      <label class="f f-wide p-moneda" for="p-moneda">Moneda<select id="p-moneda"><option value="UYU">Pesos ($)</option><option value="USD">Dólares (U$S)</option></select><small class="muted" id="p-moneda-nota">El costo y el precio van en esta moneda. Los productos en dólares se cobran en dólares.</small></label>
+      <label class="f solo-admin" for="p-costo"><span id="p-costo-lbl">Costo</span><input id="p-costo" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="f" for="p-precio"><span id="p-precio-lbl">Precio de venta</span><input id="p-precio" type="number" step="any" min="0.01" inputmode="decimal"><small class="muted" id="p-margen"></small><small class="muted" id="p-precio-nota" hidden>Solo el administrador puede cambiar el precio.</small></label>
       <label class="f" for="p-minimo">Stock mínimo<input id="p-minimo" type="number" step="any" min="0" inputmode="decimal"></label>
       <label class="f" for="p-stock" id="p-stock-wrap">Stock inicial<input id="p-stock" type="number" step="any" min="0" inputmode="decimal" placeholder="0"></label>
       <fieldset class="f-wide codprov solo-admin">
@@ -700,6 +709,7 @@
         <label><input type="radio" name="cm-tipo" value="ingreso"><span>Entra efectivo</span></label>
       </div>
       <label class="f" for="cm-monto">Monto<input id="cm-monto" type="number" min="0" step="any" inputmode="decimal"></label>
+      <label class="f" for="cm-moneda" id="cm-moneda-campo" hidden>Moneda<select id="cm-moneda"><option value="UYU">Pesos ($)</option><option value="USD">Dólares (U$S)</option></select></label>
       <label class="f" for="cm-motivo">Motivo<input id="cm-motivo" type="text" placeholder="Ej.: Pago a Distribuidora Sur, factura 1234"></label>
     </div>
     <p class="err dlg-err" id="cm-err" role="alert"></p>
@@ -713,8 +723,12 @@
     <header class="dlg-h"><h2 id="cc-titulo">Cerrar caja</h2><p class="sub">Contá todo el efectivo que hay en la caja, billetes y monedas, y escribí el total.</p></header>
     <div class="dlg-b campos-col">
       <ul class="lista cc-resumen solo-admin" id="cc-resumen"></ul>
-      <label class="f" for="cc-contado">¿Cuánto efectivo hay en la caja?<input id="cc-contado" type="number" min="0" step="any" inputmode="decimal" class="cc-contado"></label>
+      <label class="f" for="cc-contado">¿Cuánto efectivo hay en la caja? (pesos)<input id="cc-contado" type="number" min="0" step="any" inputmode="decimal" class="cc-contado"></label>
       <div class="cc-diferencia solo-admin" id="cc-diferencia"></div>
+      <div id="cc-usd" hidden>
+        <label class="f" for="cc-contado-usd">¿Cuántos dólares hay en la caja? (U$S)<input id="cc-contado-usd" type="number" min="0" step="any" inputmode="decimal" class="cc-contado"></label>
+        <div class="cc-diferencia solo-admin" id="cc-diferencia-usd"></div>
+      </div>
       <label class="f" for="cc-nota">Nota (opcional)<input id="cc-nota" type="text" placeholder="Ej.: faltan $ 100 de un vuelto mal dado"></label>
     </div>
     <p class="err dlg-err" id="cc-err" role="alert"></p>

@@ -17,6 +17,19 @@ const red2 = (n) => Math.round(Number(n) * 100) / 100;
 const dinero = new Intl.NumberFormat('es-UY', { style: 'currency', currency: 'UYU', maximumFractionDigits: 2 });
 const numero = new Intl.NumberFormat('es-UY', { maximumFractionDigits: 3 });
 const $u = (n) => dinero.format(Number(n) || 0);
+/* Productos en dólares: precio y costo en U$S, y se cobran en dólares (la venta queda en U$S, con la cotización del día) */
+const plata2 = new Intl.NumberFormat('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const $usd = (x) => `U$S ${plata2.format(Number(x) || 0)}`;
+const esUSD = (x) => !!x && x.moneda === 'USD';
+const $m = (x, moneda) => (moneda === 'USD' ? $usd(x) : $u(x));
+/** «USD», «U$S», «dólares»… → 'USD'; «$», «pesos», «UYU» → 'UYU'; vacío o raro → null */
+function leerMoneda(t) {
+  const s = String(t ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (!s) return null;
+  if (/^(usd|us\$|u\$s|u\$|us|dolar|dolares|dol|u\$d)$/.test(s.replace(/\s+/g, ''))) return 'USD';
+  if (/^(\$|uyu|\$u|pesos?|uy)$/.test(s.replace(/\s+/g, ''))) return 'UYU';
+  return null;
+}
 const n = (x) => numero.format(Number(x) || 0);
 const fechaHora = (iso) => new Date(iso).toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 const hora = (iso) => new Date(iso).toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' });
@@ -518,6 +531,13 @@ function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0, opc
     const f = faltan[0];
     return { error: `No alcanza el stock de ${f.nombre}: hay ${n(f.hay)} ${f.unidad}.`, faltan };
   }
+  // Un ticket es todo en pesos o todo en dólares (los productos en dólares se cobran en dólares)
+  const monedas = new Set(items.map((it) => (esUSD(d.productos.find((x) => x.id === it.productoId)) ? 'USD' : 'UYU')));
+  if (monedas.size > 1) return { error: 'El ticket tiene productos en pesos y en dólares. Cobralos en dos ventas: primero unos y después los otros.' };
+  const moneda = monedas.has('USD') ? 'USD' : 'UYU';
+  const cotizacion = Number(opc.cotizacion) || 0;
+  if (moneda === 'USD' && !(cotizacion > 0)) return { error: 'Escribí la cotización del dólar de hoy.', cotizacion: true };
+  const $v = (x) => $m(x, moneda);
   const pct = Number(descuentoPct) || 0;
   if (pct < 0 || pct > 100) return { error: 'El descuento tiene que estar entre 0 y 100.' };
   if (opc.topeDescuento != null && pct > opc.topeDescuento && !opc.autorizo) {
@@ -527,10 +547,10 @@ function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0, opc
   const descuento = red2(subtotal * pct / 100);
   const total = red2(subtotal - descuento);
   if (medio === 'Efectivo' && recibido !== '' && recibido != null && Number(recibido) < total) {
-    return { error: `El efectivo recibido no alcanza: faltan ${$u(total - Number(recibido))}.` };
+    return { error: `El efectivo recibido no alcanza: faltan ${$v(total - Number(recibido))}.` };
   }
   if (medio === 'Efectivo' && recibido !== '' && recibido != null && recibidoRaro(Number(recibido), total)) {
-    return { error: `Revisá el efectivo recibido: ${$u(Number(recibido))} es mucho más que el total.` };
+    return { error: `Revisá el efectivo recibido: ${$v(Number(recibido))} es mucho más que el total.` };
   }
   d.numVenta = (d.numVenta || 0) + 1;
   const venta = {
@@ -546,6 +566,7 @@ function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0, opc
     descuento,
     descuentoAutorizo: pct > 0 && opc.autorizo ? opc.autorizo : '',
     total,
+    ...(moneda === 'USD' ? { moneda, cotizacion } : {}),
     medio,
     recibido: medio === 'Efectivo' && recibido !== '' && recibido != null ? Number(recibido) : null,
     vuelto: medio === 'Efectivo' && recibido !== '' && recibido != null ? red(Number(recibido) - total) : null,
@@ -571,7 +592,7 @@ function devolucionEnOtraCaja(d, v) {
   if (!v || v.anulada || v.medio !== 'Efectivo') return null;
   const caja = cajaAbierta(d);
   if (caja && v.cajaId === caja.id) return null;
-  return { caja, monto: v.total };
+  return { caja, monto: v.total, ...(esUSD(v) ? { moneda: 'USD' } : {}) };
 }
 
 /** opc.devolucion: anota un retiro «Devolución venta N.º X» en la caja abierta (para ventas en efectivo de otra caja). */
@@ -590,7 +611,7 @@ function anularVenta(d, ventaId, opc = {}) {
   v.anulada = true;
   v.anuladaEl = new Date().toISOString();
   if (opc.devolucion) {
-    movimientoCaja(d, 'retiro', v.total, `Devolución venta N.º ${v.numero}`, opc.usuario || '');
+    movimientoCaja(d, 'retiro', v.total, `Devolución venta N.º ${v.numero}`, opc.usuario || '', undefined, esUSD(v) ? 'USD' : 'UYU');
     v.devolucionCajaId = cajaAbierta(d).id;
   }
   return null;
@@ -602,42 +623,65 @@ function anularVenta(d, ventaId, opc = {}) {
 
 const cajaAbierta = (d) => (Array.isArray(d.cajas) ? d.cajas.find((c) => !c.cerrada) : null) || null;
 
-function abrirCaja(d, monto, usuario, fecha) {
+/** extra: { inicialUSD, cotizacion } — los dólares para dar cambio y el dólar de hoy (si se venden productos en U$S). */
+function abrirCaja(d, monto, usuario, fecha, extra = {}) {
   if (!Array.isArray(d.cajas)) d.cajas = [];
   if (cajaAbierta(d)) return { error: 'La caja ya está abierta.' };
   const inicial = monto === '' || monto == null ? 0 : Number(monto);
   if (!Number.isFinite(inicial) || inicial < 0) return { error: 'Escribí el efectivo con el que empezás (puede ser 0).' };
+  const inicialUSD = extra.inicialUSD === '' || extra.inicialUSD == null ? 0 : Number(extra.inicialUSD);
+  if (!Number.isFinite(inicialUSD) || inicialUSD < 0) return { error: 'Revisá los dólares con los que empezás (puede ser 0).' };
+  const cot = extra.cotizacion === '' || extra.cotizacion == null ? null : Number(extra.cotizacion);
+  if (cot != null && !(cot > 0 && cot < 1000)) return { error: 'Revisá la cotización del dólar (por ejemplo 40,50).' };
   d.numCaja = (d.numCaja || 0) + 1;
   const caja = { id: uid(), numero: d.numCaja, abierta: fecha || new Date().toISOString(), abiertaPor: usuario || '', inicial: red2(inicial), movs: [], cerrada: null };
+  if (inicialUSD > 0) caja.inicialUSD = red2(inicialUSD);
+  if (cot) { caja.cotizacion = red2(cot); d.cotizacion = caja.cotizacion; }
   d.cajas.push(caja);
   return { caja };
 }
 
 /** Retiro (pago a un proveedor, llevar a depósito…) o ingreso (más cambio) de efectivo. */
-function movimientoCaja(d, tipo, monto, motivo, usuario, fecha) {
+function movimientoCaja(d, tipo, monto, motivo, usuario, fecha, moneda = 'UYU') {
   const caja = cajaAbierta(d);
   if (!caja) return 'La caja está cerrada.';
   if (tipo !== 'retiro' && tipo !== 'ingreso') return 'Elegí si es un retiro o un ingreso.';
   const m = Number(monto);
   if (!(m > 0)) return 'Escribí el monto.';
   if (!String(motivo || '').trim()) return 'Escribí el motivo, por ejemplo «Pago a proveedor».';
-  caja.movs.push({ id: uid(), fecha: fecha || new Date().toISOString(), tipo, monto: red2(m), motivo: String(motivo).trim(), usuario: usuario || '' });
+  caja.movs.push({ id: uid(), fecha: fecha || new Date().toISOString(), tipo, monto: red2(m), motivo: String(motivo).trim(), usuario: usuario || '', ...(moneda === 'USD' ? { moneda } : {}) });
   return null;
 }
 
 /** Cuánto efectivo debería haber y cuánto se vendió por cada medio de pago. */
 function resumenCaja(d, caja) {
   const ventas = d.ventas.filter((v) => v.cajaId === caja.id);
-  const validas = ventas.filter((v) => !v.anulada);
+  const todas = ventas.filter((v) => !v.anulada);
+  // Pesos y dólares van por separado: cada uno tiene su efectivo para contar
+  const validas = todas.filter((v) => !esUSD(v));
+  const enUSD = todas.filter(esUSD);
   const porMedio = {};
   validas.forEach((v) => { porMedio[v.medio] = red2((porMedio[v.medio] || 0) + v.total); });
   const ventasEfectivo = porMedio.Efectivo || 0;
-  const ingresos = red2(caja.movs.filter((m) => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0));
-  const retiros = red2(caja.movs.filter((m) => m.tipo === 'retiro').reduce((s, m) => s + m.monto, 0));
+  const movs = (tipo, usd) => red2(caja.movs.filter((m) => m.tipo === tipo && (m.moneda === 'USD') === usd).reduce((s, m) => s + m.monto, 0));
+  const ingresos = movs('ingreso', false), retiros = movs('retiro', false);
+  const porMedioUSD = {};
+  enUSD.forEach((v) => { porMedioUSD[v.medio] = red2((porMedioUSD[v.medio] || 0) + v.total); });
+  const usd = enUSD.length || caja.inicialUSD || caja.movs.some((m) => m.moneda === 'USD') ? {
+    inicial: caja.inicialUSD || 0,
+    ventas: enUSD.length,
+    total: red2(enUSD.reduce((s, v) => s + v.total, 0)),
+    porMedio: porMedioUSD,
+    ventasEfectivo: porMedioUSD.Efectivo || 0,
+    ingresos: movs('ingreso', true),
+    retiros: movs('retiro', true),
+  } : null;
+  if (usd) usd.esperado = red2(usd.inicial + usd.ventasEfectivo + usd.ingresos - usd.retiros);
   return {
+    usd,
     inicial: caja.inicial,
-    ventas: validas.length,
-    anuladas: ventas.length - validas.length,
+    ventas: todas.length,
+    anuladas: ventas.length - todas.length,
     total: red2(validas.reduce((s, v) => s + v.total, 0)),
     porMedio,
     ventasEfectivo,
@@ -647,13 +691,20 @@ function resumenCaja(d, caja) {
   };
 }
 
-function cerrarCaja(d, contado, usuario, nota, fecha) {
+function cerrarCaja(d, contado, usuario, nota, fecha, contadoUSD) {
   const caja = cajaAbierta(d);
   if (!caja) return { error: 'La caja ya está cerrada.' };
   if (contado === '' || contado == null) return { error: 'Contá el efectivo que hay en la caja y escribí el total.' };
   const c = Number(contado);
   if (!Number.isFinite(c) || c < 0) return { error: 'Escribí cuánto efectivo hay en la caja.' };
   const resumen = resumenCaja(d, caja);
+  if (resumen.usd) {
+    if (contadoUSD === '' || contadoUSD == null) return { error: 'Contá también los dólares que hay en la caja.', usd: true };
+    const cu = Number(contadoUSD);
+    if (!Number.isFinite(cu) || cu < 0) return { error: 'Escribí cuántos dólares hay en la caja.', usd: true };
+    caja.contadoUSD = red2(cu);
+    caja.diferenciaUSD = red2(cu - resumen.usd.esperado);
+  }
   Object.assign(caja, {
     cerrada: fecha || new Date().toISOString(),
     cerradaPor: usuario || '',
@@ -677,9 +728,10 @@ function productosDeFiltro(d, filtro) {
 const MAX_HISTORIAL_PRECIOS = 5000;
 
 /** Anota un cambio de precio de un producto (quién, cuándo, de cuánto a cuánto). */
-function anotarPrecio(d, p, nuevo, motivo = '') {
-  if (!p || red2(nuevo) === red2(p.precio)) return;
-  anotarHistorial(d, { productoId: p.id, codigo: p.codigo, producto: p.nombre, antes: p.precio, despues: red2(nuevo), motivo });
+function anotarPrecio(d, p, nuevo, motivo = '', moneda = esUSD(p) ? 'USD' : 'UYU') {
+  if (!p || (red2(nuevo) === red2(p.precio) && moneda === (esUSD(p) ? 'USD' : 'UYU'))) return;
+  anotarHistorial(d, { productoId: p.id, codigo: p.codigo, producto: p.nombre, antes: p.precio, despues: red2(nuevo), motivo,
+    ...(esUSD(p) ? { monedaAntes: 'USD' } : {}), ...(moneda === 'USD' ? { moneda: 'USD' } : {}) });
 }
 /** Precio de venta igual o menor al costo: se vende sin ganar o perdiendo plata. */
 const precioBajoCosto = (p) => p.costo > 0 && p.precio > 0 && p.precio <= p.costo;
@@ -760,6 +812,7 @@ const COLUMNAS = {
   entrada: ['llego', 'entrada', 'cantidad que llego', 'sumar al stock', 'llegada'],
   factura: ['factura', 'comprobante', 'documento'],
   conteo: ['contado', 'conteo', 'stock contado'], // la pone el Cargador de productos: el Stock es lo que se contó
+  moneda: ['moneda', 'divisa'], // USD (U$S, dólares) o UYU (pesos): en qué moneda están el costo y el precio
 };
 const UNIDADES = ['unidad', 'kg', 'm', 'litro', 'caja', 'paquete', 'rollo', 'par'];
 const ALIAS_UNIDAD = { u: 'unidad', un: 'unidad', und: 'unidad', unid: 'unidad', unidades: 'unidad', kilo: 'kg', kilos: 'kg', kgs: 'kg', metro: 'm', metros: 'm', mt: 'm', mts: 'm', l: 'litro', lt: 'litro', lts: 'litro', litros: 'litro', cajas: 'caja', paq: 'paquete', paquetes: 'paquete', rollos: 'rollo', pares: 'par' };
@@ -886,6 +939,7 @@ function planImportacion(d, filas) {
       nombre, categoria: txt('categoria'), unidad: txt('unidad') ? normUnidad(txt('unidad')) : '', proveedor: provFila,
       ubicacion: txt('ubicacion'), stock: num('stock'), minimo: num('minimo'), costo: num('costo'), precio: num('precio'),
       entrada: num('entrada'), factura: txt('factura'), barras, codprov: codprov || (choca ? codigo : ''),
+      moneda: leerMoneda(txt('moneda')),
     };
     if (mapa.conteo && /^(si|sí|s|x|1|true)$/i.test(txt('conteo'))) { datos.contado = true; plan.deConteo = true; }
     // ¿La mercadería de esta factura ya se sumó antes? (mismo número y, si se sabe, mismo proveedor)
@@ -973,6 +1027,7 @@ function aplicarImportacion(d, plan, campos) {
     const p = {
       id: uid(), codigo: nuevo.codigo, nombre: x.nombre, categoria: x.categoria, unidad: x.unidad || 'unidad', proveedorId: provId(x.proveedor),
       ubicacion: x.ubicacion, costo: pos(x.costo) || 0, precio: pos(x.precio) || 0, minimo: pos(x.minimo) || 0, stock: 0,
+      ...(x.moneda === 'USD' ? { moneda: 'USD' } : {}),
     };
     d.productos.push(p);
     if (x.codprov && p.proveedorId) anotarCodigoProv(p, p.proveedorId, x.codprov, x.nombre);
@@ -994,8 +1049,12 @@ function aplicarImportacion(d, plan, campos) {
       if (x.proveedor) p.proveedorId = provId(x.proveedor);
       if (pos(x.minimo) != null) p.minimo = x.minimo;
     }
+    // La moneda va con el precio: si la planilla la dice y se actualizan los precios, el producto pasa a esa moneda
+    const cambiaMoneda = c.precio && x.precio > 0 && x.moneda && x.moneda !== (esUSD(p) ? 'USD' : 'UYU');
+    const moneda = cambiaMoneda ? x.moneda : (esUSD(p) ? 'USD' : 'UYU');
+    if (c.precio && x.precio > 0 && (x.precio !== p.precio || cambiaMoneda)) { anotarPrecio(d, p, x.precio, 'Importación', moneda); p.precio = x.precio; }
+    if (cambiaMoneda) { if (x.moneda === 'USD') p.moneda = 'USD'; else delete p.moneda; }
     if (c.costo && pos(x.costo) != null) p.costo = x.costo;
-    if (c.precio && x.precio > 0 && x.precio !== p.precio) { anotarPrecio(d, p, x.precio, 'Importación'); p.precio = x.precio; }
     if (c.stock && !act.sinStock && pos(x.stock) != null && red(x.stock) !== p.stock) registrar(d, { tipo: 'ajuste', productoId: p.id, cantidad: x.stock, nota: 'Corrección por importación' });
     sumarLlegada(p, x);
   }
@@ -1197,12 +1256,12 @@ function ventasDelDia(fechaStr = isoLocal()) {
 /* ---------- Panel ---------- */
 
 function renderPanel() {
-  const valorCosto = db.productos.reduce((s, p) => s + Math.max(p.stock, 0) * p.costo, 0);
-  const valorVenta = db.productos.reduce((s, p) => s + Math.max(p.stock, 0) * p.precio, 0);
+  const valorCosto = db.productos.reduce((s, p) => s + Math.max(p.stock, 0) * p.costo * factorPesos(db, p), 0);
+  const valorVenta = db.productos.reduce((s, p) => s + Math.max(p.stock, 0) * p.precio * factorPesos(db, p), 0);
   const bajos = db.productos.filter((p) => estado(p) !== 'ok');
   const sin = bajos.filter((p) => estado(p) === 'sin').length;
   const hoy = ventasDelDia().filter((v) => !v.anulada);
-  const totalHoy = hoy.reduce((s, v) => s + v.total, 0);
+  const totalHoy = hoy.reduce((s, v) => s + enPesos(v).total, 0);
 
   $('#kpis').innerHTML = `
     <div class="kpi"><span class="lbl">Vendido hoy</span><span class="val">${$u(totalHoy)}</span><span class="det">${hoy.length} ${hoy.length === 1 ? 'venta' : 'ventas'}</span></div>
@@ -1309,6 +1368,9 @@ function vigilarEscaner(e) {
 function medioActual() { return ($('input[name="medio"]:checked') || {}).value || 'Efectivo'; }
 function descuentoActual() { const x = Number($('#caja-desc').value); return x > 0 && x <= 100 ? x : 0; }
 function subtotalTicket() { return red2(ticket.reduce((s, it) => s + it.cantidad * it.precio, 0)); }
+/** El ticket es todo en una moneda: la del primer producto. */
+function monedaTicket() { const p = ticket.length ? producto(ticket[0].productoId) : null; return esUSD(p) ? 'USD' : 'UYU'; }
+const $t = (x) => $m(x, monedaTicket());
 function totalTicket() { const s = subtotalTicket(); return red2(s - red2(s * descuentoActual() / 100)); }
 
 function agregarAlTicket(id, cant = 1) {
@@ -1318,6 +1380,10 @@ function agregarAlTicket(id, cant = 1) {
   const enTicket = linea ? linea.cantidad : 0;
   if (enTicket + cant > p.stock + 1e-9) {
     toast(p.stock > 0 ? `Ojo: según el programa quedan ${n(p.stock)} ${p.unidad} de ${p.nombre}.` : `Ojo: según el programa no hay stock de ${p.nombre}. Al cobrar se pide confirmar.`);
+  }
+  if (!linea && ticket.length && (esUSD(p) ? 'USD' : 'UYU') !== monedaTicket()) {
+    aviso(`${p.nombre} es en ${esUSD(p) ? 'dólares' : 'pesos'} y este ticket es en ${monedaTicket() === 'USD' ? 'dólares' : 'pesos'}. Los productos en dólares se cobran aparte: cobrá primero este ticket y después agregalo en uno nuevo.`);
+    return;
   }
   if (linea) linea.cantidad = red(linea.cantidad + cant);
   else ticket.push({ productoId: id, cantidad: cant, precio: p.precio });
@@ -1331,12 +1397,16 @@ function renderEstadoCaja() {
   $('#caja-abierta').hidden = !caja;
   $('#caja-barra').hidden = !caja;
   if (!caja) {
+    // Con productos en dólares, al abrir se escribe el dólar de hoy y los dólares que hay para dar cambio
+    const hayUSD = db.productos.some(esUSD);
+    $('#ac-usd').hidden = !hayUSD;
+    if (hayUSD && !$('#ac-cotiz').value && db.cotizacion) $('#ac-cotiz').value = db.cotizacion;
     const ultima = [...(db.cajas || [])].reverse().find((c) => c.cerrada);
     $('#caja-ultimo-cierre').textContent = ultima ? `Último cierre: ${fechaHora(ultima.cerrada)}${ultima.cerradaPor ? ` por ${ultima.cerradaPor}` : ''}.` : '';
     return false;
   }
   const deOtroDia = isoLocal(new Date(caja.abierta)) !== isoLocal();
-  $('#caja-barra-texto').innerHTML = `Caja N.º ${caja.numero} abierta ${deOtroDia ? `el ${fechaHora(caja.abierta)}` : `a las ${hora(caja.abierta)}`}${caja.abiertaPor ? ` por ${esc(caja.abiertaPor)}` : ''} · empezó con ${$u(caja.inicial)}`
+  $('#caja-barra-texto').innerHTML = `Caja N.º ${caja.numero} abierta ${deOtroDia ? `el ${fechaHora(caja.abierta)}` : `a las ${hora(caja.abierta)}`}${caja.abiertaPor ? ` por ${esc(caja.abiertaPor)}` : ''} · empezó con ${$u(caja.inicial)}${caja.inicialUSD ? ` y ${$usd(caja.inicialUSD)}` : ''}${caja.cotizacion ? ` · dólar a ${$u(caja.cotizacion)}` : ''}`
     + (caja.movs.length ? ` · ${plural(caja.movs.length, 'movimiento de efectivo', 'movimientos de efectivo')}` : '');
   $('#caja-barra-estado').className = 'chip ' + (deOtroDia ? 'warn' : 'ok');
   $('#caja-barra-estado').textContent = deOtroDia ? 'Abierta desde otro día: cerrala' : 'Caja abierta';
@@ -1416,7 +1486,7 @@ function renderResultados() {
         ${tieneFoto(p) ? `<img class="foto pb-foto" src="${esc(fotoUrl(p))}" alt="" loading="lazy">` : ''}
         <span class="nom">${esc(p.nombre)}</span>
         <span class="fila"><span class="mono">${esc(p.codigo)}</span><span class="${estado(p) === 'bajo' ? 'stock-bajo' : ''}">${p.stock <= 0 ? 'Sin stock' : estado(p) === 'bajo' ? `Quedan ${n(p.stock)} ${esc(p.unidad)}` : `Stock ${n(p.stock)} ${esc(p.unidad)}`}</span></span>
-        <span class="precio">${$u(p.precio)}</span>
+        <span class="precio">${$m(p.precio, p.moneda)}</span>
       </button>`).join('') + (total > lista.length ? `<button class="btn ver-mas" type="button" data-ver-mas>Ver más productos (faltan ${total - lista.length})</button>` : '')
     : `<div class="vacio sin-resultado">
         <p>${q ? `No encontré ningún producto con «${esc(texto)}»${filtros ? ' con esos filtros' : ''}.` : (filtros ? 'No hay productos con esos filtros.' : 'Todavía no hay productos cargados.')}</p>
@@ -1432,27 +1502,32 @@ function renderTicket() {
       const p = producto(it.productoId);
       return `<div class="ticket-linea">
         <span class="nom">${miniatura(p, 'mini tl-foto')}${esc(p.nombre)}</span>
-        <span class="sub-t">${$u(it.cantidad * it.precio)}</span>
+        <span class="sub-t">${$t(it.cantidad * it.precio)}</span>
         <div class="ctrl">
           <span class="qty">
             <button type="button" data-menos="${i}" aria-label="Restar uno">−</button>
             <input type="number" min="0" step="any" inputmode="decimal" value="${it.cantidad}" data-cant="${i}" aria-label="Cantidad de ${esc(p.nombre)}">
             <button type="button" data-mas="${i}" aria-label="Sumar uno">+</button>
           </span>
-          <span>${esc(p.unidad)} × ${$u(it.precio)}</span>
+          <span>${esc(p.unidad)} × ${$t(it.precio)}</span>
           <button class="btn sm danger quitar" type="button" data-quitar="${i}" aria-label="Quitar ${esc(p.nombre)}">Quitar</button>
         </div>
       </div>`;
     }).join('')
     : '<p class="vacio">Agregá productos tocándolos en la lista o escaneando su código.</p>';
-  $('#ticket-total').textContent = $u(totalTicket());
+  $('#ticket-total').textContent = $t(totalTicket());
   const pct = descuentoActual();
   const det = $('#ticket-desc-det');
   det.hidden = !(pct && ticket.length);
-  det.textContent = pct ? `Subtotal ${$u(subtotalTicket())} · Descuento −${$u(red2(subtotalTicket() * pct / 100))}` : '';
+  det.textContent = pct ? `Subtotal ${$t(subtotalTicket())} · Descuento −${$t(red2(subtotalTicket() * pct / 100))}` : '';
+  // Ticket en dólares: se pide la cotización del día (queda en la caja y en la venta, para los reportes)
+  const usd = ticket.length && monedaTicket() === 'USD';
+  $('#caja-cotiz-campo').hidden = !usd;
+  if (usd && !$('#caja-cotiz').value) $('#caja-cotiz').value = cotizacionActual(db) || '';
+  $('#bloque-efectivo').classList.toggle('en-usd', !!usd);
   actualizarVuelto();
   $('#btn-cobrar').disabled = !ticket.length;
-  $('#btn-cobrar').textContent = ticket.length ? `Cobrar ${$u(totalTicket())}` : 'Cobrar';
+  $('#btn-cobrar').textContent = ticket.length ? `Cobrar ${$t(totalTicket())}` : 'Cobrar';
 }
 
 function actualizarVuelto() {
@@ -1462,7 +1537,7 @@ function actualizarVuelto() {
   const v = $('#caja-vuelto');
   if (!ef || rec === '') { v.textContent = '—'; v.style.color = ''; return; }
   const dif = Number(rec) - totalTicket();
-  v.textContent = dif >= 0 ? $u(dif) : `Faltan ${$u(-dif)}`;
+  v.textContent = dif >= 0 ? $t(dif) : `Faltan ${$t(-dif)}`;
   v.style.color = dif >= 0 ? '' : 'var(--danger)';
 }
 
@@ -1473,11 +1548,13 @@ function renderVentasHoy() {
   const esHoy = dia === isoLocal();
   const lista = ventasDelDia(dia).sort((a, b) => b.fecha.localeCompare(a.fecha));
   const validas = lista.filter((v) => !v.anulada);
-  const total = validas.reduce((s, v) => s + v.total, 0);
+  const enPes = validas.filter((v) => !esUSD(v)), enUSD = validas.filter(esUSD);
+  const total = enPes.reduce((s, v) => s + v.total, 0);
   const porMedio = {};
-  validas.forEach((v) => { porMedio[v.medio] = (porMedio[v.medio] || 0) + v.total; });
+  enPes.forEach((v) => { porMedio[v.medio] = (porMedio[v.medio] || 0) + v.total; });
   $('#ventas-hoy-resumen').textContent = validas.length
     ? `${validas.length} ${validas.length === 1 ? 'venta' : 'ventas'} · ${$u(total)} · ` + Object.entries(porMedio).map(([m, t]) => `${m} ${$u(t)}`).join(' · ')
+      + (enUSD.length ? ` · En dólares: ${$usd(enUSD.reduce((s, v) => s + v.total, 0))}` : '')
     : (esHoy ? 'Todavía no hay ventas hoy.' : 'No hubo ventas ese día.');
   $('#btn-cierre').disabled = !validas.length;
   $('#ventas-hoy').innerHTML = lista.length
@@ -1488,8 +1565,8 @@ function renderVentasHoy() {
             <td class="mono">${String(v.numero).padStart(4, '0')}</td>
             <td class="num">${hora(v.fecha)}${v.usuario ? `<div class="meta">${esc(v.usuario)}</div>` : ''}</td>
             <td><div>${v.items.map((it) => `${n(it.cantidad)} × ${esc(it.nombre)}`).join('<br>')}</div>${v.cliente ? `<div class="meta">${esc(v.cliente)}</div>` : ''}</td>
-            <td>${esc(v.medio)}${v.vuelto != null ? `<div class="meta">Vuelto ${$u(v.vuelto)}</div>` : ''}</td>
-            <td class="num"><strong>${$u(v.total)}</strong>${v.descuento ? `<div class="meta">Descuento ${n(v.descuentoPct)} %</div>` : ''}</td>
+            <td>${esc(v.medio)}${v.vuelto != null ? `<div class="meta">Vuelto ${$m(v.vuelto, v.moneda)}</div>` : ''}</td>
+            <td class="num"><strong>${$m(v.total, v.moneda)}</strong>${esUSD(v) ? `<div class="meta">Dólar a ${$u(v.cotizacion)}</div>` : ''}${v.descuento ? `<div class="meta">Descuento ${n(v.descuentoPct)} %</div>` : ''}</td>
             <td class="acc">${puedeImprimir() ? `<button class="btn sm" type="button" data-ticket="${v.id}">Imprimir</button>` : ''}${v.anulada ? '<span class="chip neutro">Anulada</span>' : (esAdmin() ? `<button class="btn sm danger" type="button" data-anular="${v.id}">Anular</button>` : '')}</td>
           </tr>`).join('')}</tbody>
       </table></div>`
@@ -1514,9 +1591,10 @@ function htmlTicket(v) {
     ${v.cliente ? `<div>Cliente: ${esc(v.cliente)}</div>` : ''}
     ${v.usuario ? `<div>Atendió: ${esc(v.usuario)}</div>` : ''}
     ${v.anulada ? '<div class="t-c"><strong>VENTA ANULADA</strong></div>' : ''}<hr>
-    ${v.items.map((it) => `<div>${esc(it.nombre)}</div>${fila(`${n(it.cantidad)} ${esc(it.unidad)} × ${$u(it.precio)}`, $u(it.subtotal))}`).join('')}<hr>
-    ${v.descuento ? fila('Subtotal', $u(v.subtotal)) + fila(`Descuento ${n(v.descuentoPct)} %`, '−' + $u(v.descuento)) : ''}
-    ${fila('TOTAL', $u(v.total), 't-total')}
+    ${v.items.map((it) => `<div>${esc(it.nombre)}</div>${fila(`${n(it.cantidad)} ${esc(it.unidad)} × ${$m(it.precio, v.moneda)}`, $m(it.subtotal, v.moneda))}`).join('')}<hr>
+    ${v.descuento ? fila('Subtotal', $m(v.subtotal, v.moneda)) + fila(`Descuento ${n(v.descuentoPct)} %`, '−' + $m(v.descuento, v.moneda)) : ''}
+    ${fila('TOTAL', $m(v.total, v.moneda), 't-total')}
+    ${esUSD(v) ? '<div class="t-c t-chico">Importes en dólares estadounidenses (U$S)</div>' : ''}
     ${fila('Pago', esc(v.medio))}
     ${v.recibido != null ? fila('Recibido', $u(v.recibido)) + fila('Vuelto', $u(v.vuelto)) : ''}<hr>
     <div class="t-c">${esc(g.pie || '¡Gracias por su compra!')}</div>
@@ -1525,16 +1603,20 @@ function htmlTicket(v) {
 
 function htmlCierre(dia) {
   const lista = ventasDelDia(dia);
-  const validas = lista.filter((v) => !v.anulada);
+  const todas = lista.filter((v) => !v.anulada);
+  const validas = todas.filter((v) => !esUSD(v)), enUSD = todas.filter(esUSD);
   const porMedio = {};
   validas.forEach((v) => { porMedio[v.medio] = (porMedio[v.medio] || 0) + v.total; });
+  const porMedioUSD = {};
+  enUSD.forEach((v) => { porMedioUSD[v.medio] = (porMedioUSD[v.medio] || 0) + v.total; });
   const fila = (a, b, cls = '') => `<div class="t-fila ${cls}"><span>${a}</span><span>${b}</span></div>`;
   return `${encabezadoNegocio()}<hr>
     <div class="t-c"><strong>CIERRE DE CAJA</strong><div>${new Date(dia + 'T12:00:00').toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div></div><hr>
-    ${fila('Ventas cobradas', validas.length)}
-    ${fila('Ventas anuladas', lista.length - validas.length)}<hr>
+    ${fila('Ventas cobradas', todas.length)}
+    ${fila('Ventas anuladas', lista.length - todas.length)}<hr>
     ${Object.entries(porMedio).map(([m, t]) => fila(esc(m), $u(t))).join('')}<hr>
     ${fila('TOTAL', $u(validas.reduce((s, v) => s + v.total, 0)), 't-total')}
+    ${enUSD.length ? `<hr><div><strong>En dólares</strong></div>${Object.entries(porMedioUSD).map(([m, t]) => fila(esc(m), $usd(t))).join('')}${fila('TOTAL U$S', $usd(enUSD.reduce((s, v) => s + v.total, 0)), 't-total')}` : ''}
     <div class="t-c t-chico">Impreso el ${fechaHora(new Date().toISOString())}</div>`;
 }
 
@@ -1583,7 +1665,7 @@ function buscarParaVincular() {
     .sort((a, b) => a.nombre.localeCompare(b.nombre))
     .slice(0, 8);
   $('#ar-lista').innerHTML = lista.length
-    ? lista.map((p) => `<li><button type="button" data-vincular="${p.id}">${fotoUrl(p) ? `<img class="foto mini" src="${esc(fotoUrl(p))}" alt="">` : ''}<span class="ar-txt">${esc(p.nombre)}<br><span class="meta"><span class="mono">${esc(p.codigo)}</span>${p.categoria ? ' · ' + esc(p.categoria) : ''}${p.ubicacion ? ' · ' + esc(p.ubicacion) : ''} · stock ${n(p.stock)}</span></span><strong>${$u(p.precio)}</strong></button></li>`).join('')
+    ? lista.map((p) => `<li><button type="button" data-vincular="${p.id}">${fotoUrl(p) ? `<img class="foto mini" src="${esc(fotoUrl(p))}" alt="">` : ''}<span class="ar-txt">${esc(p.nombre)}<br><span class="meta"><span class="mono">${esc(p.codigo)}</span>${p.categoria ? ' · ' + esc(p.categoria) : ''}${p.ubicacion ? ' · ' + esc(p.ubicacion) : ''} · stock ${n(p.stock)}</span></span><strong>${$m(p.precio, p.moneda)}</strong></button></li>`).join('')
     : '<li class="meta">No encontré ese producto. Cargalo como nuevo abajo.</li>';
 }
 
@@ -1727,6 +1809,13 @@ function iniciarCaja() {
     cobrando = true;
     try {
       const opc = { topeDescuento: esAdmin() ? null : topeDescuentoEmpleado() };
+      if (monedaTicket() === 'USD') {
+        const cot = Number($('#caja-cotiz').value);
+        if (!(cot > 0 && cot < 1000)) { $('#caja-err').textContent = 'Escribí la cotización del dólar de hoy (por ejemplo 40,50).'; $('#caja-cotiz').focus(); return; }
+        opc.cotizacion = red2(cot);
+        const caja = cajaAbierta(db);
+        if (caja && caja.cotizacion !== opc.cotizacion) { caja.cotizacion = opc.cotizacion; db.cotizacion = opc.cotizacion; }
+      }
       const intentar = () => cobrar(db, ticket, medioActual(), $('#caja-recibido').value, $('#caja-cliente').value.trim(), undefined, Number($('#caja-desc').value) || 0, opc);
       let r = intentar();
       if (r.autorizar) {
@@ -1749,6 +1838,7 @@ function iniciarCaja() {
   function cobrarListo(r) {
     ticket = [];
     $('#caja-recibido').value = '';
+    $('#caja-cotiz').value = '';
     $('#caja-cliente').value = '';
     $('#cliente-det').open = false;
     $('#caja-desc').value = '';
@@ -1763,18 +1853,18 @@ function iniciarCaja() {
     const b = e.target.closest('[data-anular]');
     if (!b || !esAdmin()) return;
     const v = db.ventas.find((x) => x.id === b.dataset.anular);
-    if (!(await confirmar(`¿Anular la venta N.º ${v.numero} por ${$u(v.total)}? Los productos vuelven al stock.`, 'Anular venta', true))) return;
+    if (!(await confirmar(`¿Anular la venta N.º ${v.numero} por ${$m(v.total, v.moneda)}? Los productos vuelven al stock.`, 'Anular venta', true))) return;
     // Venta en efectivo de una caja ya cerrada: la plata que se devuelve sale de la caja de hoy
     const dev = devolucionEnOtraCaja(db, v);
     let devolucion = false;
     if (dev && dev.caja) {
-      devolucion = await confirmar(`La venta N.º ${v.numero} se cobró en efectivo en una caja que ya se cerró. ¿Le devolviste los ${$u(v.total)} al cliente con plata de la caja de ahora? Se anota como retiro «Devolución venta N.º ${v.numero}», así al cerrar no falta plata.`, 'Sí, anotar el retiro', false, 'No devolví plata');
+      devolucion = await confirmar(`La venta N.º ${v.numero} se cobró en efectivo en una caja que ya se cerró. ¿Le devolviste los ${$m(v.total, v.moneda)} al cliente con plata de la caja de ahora? Se anota como retiro «Devolución venta N.º ${v.numero}», así al cerrar no falta plata.`, 'Sí, anotar el retiro', false, 'No devolví plata');
     }
     const err = anularVenta(db, v.id, { devolucion, usuario: sesion ? sesion.nombre : '' });
     if (err) { toast(err); return; }
     guardar();
     render();
-    toast(devolucion ? `Venta N.º ${v.numero} anulada. Se repuso el stock y se anotó el retiro de ${$u(v.total)} en la caja.`
+    toast(devolucion ? `Venta N.º ${v.numero} anulada. Se repuso el stock y se anotó el retiro de ${$m(v.total, v.moneda)} en la caja.`
       : dev && !dev.caja ? `Venta N.º ${v.numero} anulada. Si devolviste plata, anotala como retiro cuando abras la caja.`
         : `Venta N.º ${v.numero} anulada. El stock se repuso.`);
   });
@@ -1807,8 +1897,8 @@ function renderProductos() {
         <td class="num"><strong>${n(p.stock)}</strong> <span class="u">${esc(p.unidad)}</span></td>
         <td class="num">${n(p.minimo)}</td>
         <td>${chipEstado(p)}</td>
-        <td class="num solo-admin">${$u(p.costo)}</td>
-        <td class="num">${$u(p.precio)}${precioBajoCosto(p) && esAdmin() ? `<div><span class="chip danger" title="El precio de venta no supera el costo (${$u(p.costo)}).">${p.precio < p.costo ? 'Bajo el costo' : 'Igual al costo'}</span></div>` : ''}</td>
+        <td class="num solo-admin">${$m(p.costo, p.moneda)}</td>
+        <td class="num">${$m(p.precio, p.moneda)}${precioBajoCosto(p) && esAdmin() ? `<div><span class="chip danger" title="El precio de venta no supera el costo (${$m(p.costo, p.moneda)}).">${p.precio < p.costo ? 'Bajo el costo' : 'Igual al costo'}</span></div>` : ''}</td>
         <td class="acc"><div class="acc-botones">
           <button class="btn sm verde-suave" type="button" data-accion="entrada" data-id="${p.id}" title="Sumar stock a ${esc(p.nombre)}" aria-label="Sumar stock a ${esc(p.nombre)}">+ Sumar</button>
           <button class="btn sm" type="button" data-accion="salida" data-id="${p.id}" title="Restar stock de ${esc(p.nombre)}" aria-label="Restar stock de ${esc(p.nombre)}">− Restar</button>
@@ -1844,7 +1934,7 @@ function verFoto(id) {
   const u = fotoUrl(p);
   if (!u) return;
   $('#foto-titulo').textContent = p.nombre;
-  $('#foto-sub').textContent = `${p.codigo} · ${$u(p.precio)}${p.ubicacion ? ' · ' + p.ubicacion : ''}`;
+  $('#foto-sub').textContent = `${p.codigo} · ${$m(p.precio, p.moneda)}${p.ubicacion ? ' · ' + p.ubicacion : ''}`;
   $('#foto-grande').src = u;
   $('#dlg-foto').showModal();
 }
@@ -1958,9 +2048,12 @@ function abrirProducto(id) {
   $('#p-ubicacion').value = p.ubicacion;
   $('#p-costo').value = p.costo;
   $('#p-precio').value = p.precio;
+  $('#p-moneda').value = esUSD(p) ? 'USD' : 'UYU';
   // Solo el administrador cambia el precio de un producto que ya existe (queda anotado en el historial)
   const bloqueaPrecio = !!id && !esAdmin();
   $('#p-precio').disabled = bloqueaPrecio;
+  $('#p-moneda').disabled = bloqueaPrecio;
+  etiquetasMoneda();
   $('#p-precio-nota').hidden = !bloqueaPrecio;
   $('#p-minimo').value = p.minimo;
   $('#p-stock').value = '';
@@ -1973,6 +2066,12 @@ function abrirProducto(id) {
   $('#p-codigo').focus();
 }
 
+/** Los rótulos de costo y precio dicen la moneda elegida. */
+function etiquetasMoneda() {
+  const usd = $('#p-moneda').value === 'USD';
+  $('#p-costo-lbl').textContent = usd ? 'Costo (U$S)' : 'Costo';
+  $('#p-precio-lbl').textContent = usd ? 'Precio de venta (U$S)' : 'Precio de venta';
+}
 function actualizarMargen() {
   const c = Number($('#p-costo').value), pr = Number($('#p-precio').value);
   $('#p-margen').textContent = c > 0 && pr > 0 ? `Margen: ${n(Math.round(((pr - c) / c) * 1000) / 10)} % sobre el costo` : '';
@@ -1982,6 +2081,7 @@ function iniciarProductos() {
   $('#btn-nuevo-prod').addEventListener('click', () => abrirProducto());
   ['#prod-buscar', '#prod-cat', '#prod-estado'].forEach((s) => $(s).addEventListener('input', renderProductos));
   ['#p-costo', '#p-precio'].forEach((s) => $(s).addEventListener('input', actualizarMargen));
+  $('#p-moneda').addEventListener('change', etiquetasMoneda);
 
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-accion]');
@@ -2050,11 +2150,12 @@ function iniciarProductos() {
       costo: Number($('#p-costo').value) || 0,
       precio: Number($('#p-precio').value) || 0,
       minimo: Number($('#p-minimo').value) || 0,
+      moneda: $('#p-moneda').value === 'USD' ? 'USD' : 'UYU',
     };
     if (!datos.codigo) return err('Escribí un código para el producto.');
     if (!datos.nombre) return err('Escribí el nombre del producto.');
     const actual = editandoProd ? producto(editandoProd) : null;
-    if (actual && !esAdmin()) { datos.precio = actual.precio; datos.costo = actual.costo; }
+    if (actual && !esAdmin()) { datos.precio = actual.precio; datos.costo = actual.costo; datos.moneda = esUSD(actual) ? 'USD' : 'UYU'; }
     if (!actual && !esAdmin()) datos.costo = 0;
     if (!(datos.precio > 0)) return err('Escribí el precio de venta (mayor a 0).');
     if (datos.costo < 0 || datos.minimo < 0) return err('El costo y el stock mínimo no pueden ser negativos.');
@@ -2065,9 +2166,9 @@ function iniciarProductos() {
       const otro = codigoUsado(db, b, editandoProd);
       if (otro) return err(`El código de barras ${b} ya es de «${otro.nombre}».`);
     }
-    const cambioPrecio = !actual || actual.precio !== datos.precio || actual.costo !== datos.costo;
+    const cambioPrecio = !actual || actual.precio !== datos.precio || actual.costo !== datos.costo || (esUSD(actual) ? 'USD' : 'UYU') !== datos.moneda;
     if (esAdmin() && cambioPrecio && precioBajoCosto(datos)
-      && !(await confirmar(`El precio de venta (${$u(datos.precio)}) ${datos.precio < datos.costo ? 'es menor que' : 'es igual a'} el costo (${$u(datos.costo)}): ${datos.precio < datos.costo ? 'se vende perdiendo plata' : 'no deja ganancia'}. ¿Guardar igual?`, 'Guardar igual', false, 'Corregir el precio'))) {
+      && !(await confirmar(`El precio de venta (${$m(datos.precio, datos.moneda)}) ${datos.precio < datos.costo ? 'es menor que' : 'es igual a'} el costo (${$m(datos.costo, datos.moneda)}): ${datos.precio < datos.costo ? 'se vende perdiendo plata' : 'no deja ganancia'}. ¿Guardar igual?`, 'Guardar igual', false, 'Corregir el precio'))) {
       $('#p-precio').focus();
       return;
     }
@@ -2083,13 +2184,17 @@ function iniciarProductos() {
       if (conFoto.fotoData) datos.fotoData = conFoto.fotoData;
     }
     datos.codigosProv = codprovEdit.map((x) => ({ ...x }));
+    // La moneda se guarda solo si es dólares (sin el campo, el producto es en pesos)
+    const moneda = datos.moneda;
+    delete datos.moneda;
     if (actual) {
-      anotarPrecio(db, actual, datos.precio, 'Editar producto');
+      anotarPrecio(db, actual, datos.precio, 'Editar producto', moneda);
       Object.assign(actual, datos);
+      if (moneda === 'USD') actual.moneda = 'USD'; else delete actual.moneda;
       if (esAdmin()) delete actual.revisar; // un administrador lo revisó
       toast('Producto guardado.');
     } else {
-      const p = { id: nuevoId, ...datos, stock: 0 };
+      const p = { id: nuevoId, ...datos, ...(moneda === 'USD' ? { moneda } : {}), stock: 0 };
       db.productos.push(p);
       marcarProductoNuevo(db, p, sesion ? sesion.nombre : '', sesion ? sesion.rol : '');
       const ini = Number($('#p-stock').value);
@@ -2497,7 +2602,7 @@ function renderCambiosPrecio() {
     ? `<div class="table-wrap"><table class="tabla"><thead><tr><th>Fecha</th><th>Producto</th><th class="num">Antes</th><th class="num">Ahora</th><th>Quién</th></tr></thead>
       <tbody>${lista.slice(0, 200).map((h) => `<tr><td class="num">${fechaHora(h.fecha)}</td>
         <td><div class="nom">${esc(h.producto)}</div><div class="meta">${esc(h.motivo || '')}${h.codigo ? ` · <span class="mono">${esc(h.codigo)}</span>` : ''}</div></td>
-        <td class="num">${h.masivo || h.antes == null ? '—' : $u(h.antes)}</td><td class="num">${h.masivo ? '—' : `<strong>${$u(h.despues)}</strong>`}</td><td>${esc(h.usuario || '')}</td></tr>`).join('')}
+        <td class="num">${h.masivo || h.antes == null ? '—' : $m(h.antes, h.monedaAntes)}</td><td class="num">${h.masivo ? '—' : `<strong>${$m(h.despues, h.moneda)}</strong>`}</td><td>${esc(h.usuario || '')}</td></tr>`).join('')}
       ${lista.length > 200 ? `<tr><td colspan="5" class="muted">… y ${lista.length - 200} más (exportá a Excel para verlos todos)</td></tr>` : ''}</tbody></table></div>`
     : '<p class="vacio">No hubo cambios de precio en este período.</p>';
 }
@@ -2505,11 +2610,25 @@ function renderCambiosPrecio() {
 /* ---------- Análisis de ventas (sin pantalla, para poder probarlo) ---------- */
 
 const SIN_CAT = 'Sin categoría';
+/** Una venta en dólares pasada a pesos con la cotización de ese día (para sumarla en los reportes). En pesos, queda igual. */
+function enPesos(v) {
+  if (!esUSD(v)) return v;
+  const k = Number(v.cotizacion) || 0;
+  const x = (y) => red2((Number(y) || 0) * k);
+  return { ...v, usd: v.total, subtotal: x(v.subtotal), descuento: x(v.descuento), total: x(v.total),
+    items: v.items.map((it) => ({ ...it, precio: x(it.precio), costo: x(it.costo), subtotal: x(it.subtotal) })) };
+}
+/** La cotización que se usa hoy: la de la caja abierta o la última que se escribió. */
+const cotizacionActual = (d) => (cajaAbierta(d) || {}).cotizacion || d.cotizacion || null;
+/** Un producto en pesos (para valorizar el stock): los de dólares, a la cotización actual. */
+const factorPesos = (d, p) => (esUSD(p) ? Number(cotizacionActual(d)) || 0 : 1);
 /** Todo lo que se necesita para los reportes de un período: totales, por medio, vendedor, día, categoría y producto. */
 function analisisVentas(d, desde, hasta) {
   const prods = new Map(d.productos.map((p) => [p.id, p]));
-  const ventas = d.ventas.filter((v) => { const t = Date.parse(v.fecha); return !v.anulada && t >= desde && t <= hasta; });
-  const r = { cantidad: ventas.length, total: 0, descuentos: 0, porMedio: {}, porVendedor: {}, porDia: {}, porDiaCant: {}, porHora: {}, porHoraCant: {}, porCategoria: {}, porProducto: {}, ventas };
+  const ventas = d.ventas.filter((v) => { const t = Date.parse(v.fecha); return !v.anulada && t >= desde && t <= hasta; }).map(enPesos);
+  // Las ventas en dólares se suman en pesos (a la cotización de su día); aparte se dice cuánto fue en U$S
+  const enUSD = ventas.filter((v) => v.usd != null);
+  const r = { usd: { cant: enUSD.length, total: red2(enUSD.reduce((s, v) => s + v.usd, 0)), enPesos: red2(enUSD.reduce((s, v) => s + v.total, 0)) }, cantidad: ventas.length, total: 0, descuentos: 0, porMedio: {}, porVendedor: {}, porDia: {}, porDiaCant: {}, porHora: {}, porHoraCant: {}, porCategoria: {}, porProducto: {}, ventas };
   ventas.forEach((v) => {
     r.total += v.total;
     r.descuentos += v.descuento || 0;
@@ -2598,7 +2717,7 @@ function mercaderiaParada(d, dias, ahora = Date.now()) {
   d.movimientos.forEach((m) => { const t = Date.parse(m.fecha); if (!(primera[m.productoId] <= t)) primera[m.productoId] = t; });
   return d.productos
     .filter((p) => p.stock > 0 && !(ultima[p.id] >= limite) && !(primera[p.id] >= limite))
-    .map((p) => ({ p, ultimaVenta: ultima[p.id] || null, diasSinVenta: ultima[p.id] ? Math.floor((ahora - ultima[p.id]) / DIA) : null, valorCosto: red2(p.stock * p.costo), valorVenta: red2(p.stock * p.precio) }))
+    .map((p) => ({ p, ultimaVenta: ultima[p.id] || null, diasSinVenta: ultima[p.id] ? Math.floor((ahora - ultima[p.id]) / DIA) : null, valorCosto: red2(p.stock * p.costo * factorPesos(d, p)), valorVenta: red2(p.stock * p.precio * factorPesos(d, p)) }))
     .sort((a, b) => b.valorCosto - a.valorCosto || b.valorVenta - a.valorVenta);
 }
 
@@ -2709,7 +2828,7 @@ function resumenDia(d, dia) {
   const ventas = d.ventas.filter((v) => isoLocal(new Date(v.fecha)) === dia).sort((x, y) => x.fecha.localeCompare(y.fecha));
   const anuladas = ventas.filter((v) => v.anulada);
   const cajas = (d.cajas || []).filter((c) => isoLocal(new Date(c.abierta)) === dia || (c.cerrada && isoLocal(new Date(c.cerrada)) === dia));
-  return { dia, a, ant, comp, ventas, anuladas, totalAnulado: red2(anuladas.reduce((s, v) => s + v.total, 0)), cajas };
+  return { dia, a, ant, comp, ventas, anuladas, totalAnulado: red2(anuladas.reduce((s, v) => s + enPesos(v).total, 0)), cajas };
 }
 
 /* ---------- Pantalla de reportes ---------- */
@@ -2890,6 +3009,14 @@ function renderReportes() {
   $$('.tabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tabReportes)));
   $$('#v-reportes .tab-panel').forEach((p) => { p.hidden = p.dataset.panel !== tabReportes; });
   const per = periodoReportes();
+  // Ventas en dólares: los reportes las suman en pesos, a la cotización del día de cada venta
+  const nota = $('#rep-usd-nota');
+  const u = ['tablero', 'ventas', 'ganancias'].includes(tabReportes) ? analisisVentas(db, per.desde, per.hasta).usd : null;
+  const enStock = tabReportes === 'stock' && db.productos.some(esUSD);
+  nota.hidden = !((u && u.cant) || enStock);
+  nota.textContent = u && u.cant
+    ? `Incluye ${plural(u.cant, 'venta en dólares', 'ventas en dólares')} por ${$usd(u.total)}: acá se suman en pesos (${$u(u.enPesos)}), con el dólar del día de cada venta.`
+    : enStock ? `Los productos en dólares se valorizan en pesos con el dólar de hoy${cotizacionActual(db) ? ` (${$u(cotizacionActual(db))})` : ': escribilo al abrir la caja'}.` : '';
   ({ tablero: renderRepTablero, ventas: renderRepVentas, ganancias: renderRepGanancias, stock: renderRepStock, caja: renderCierresCaja, precios: renderCambiosPrecio })[tabReportes](per);
 }
 
@@ -2964,7 +3091,7 @@ function renderRepTablero(per) {
     .map((x) => prods.get(x.id)).filter((p) => p && estado(p) !== 'ok');
   if (buenosSinStock.length) alertas.push(['baja', `${buenosSinStock.length} de los más vendidos se están quedando sin stock`, buenosSinStock.slice(0, 4).map((p) => `${p.nombre} (${n(p.stock)})`).join(', ') + (buenosSinStock.length > 4 ? '…' : ''), '#productos']);
   const anuladas = db.ventas.filter((v) => v.anulada && Date.parse(v.fecha) >= per.desde && Date.parse(v.fecha) <= per.hasta);
-  if (anuladas.length) alertas.push(['aviso', `${anuladas.length} venta${anuladas.length === 1 ? ' anulada' : 's anuladas'}`, `Por ${$u(anuladas.reduce((x, v) => x + v.total, 0))} en total.`]);
+  if (anuladas.length) alertas.push(['aviso', `${anuladas.length} venta${anuladas.length === 1 ? ' anulada' : 's anuladas'}`, `Por ${$u(anuladas.reduce((x, v) => x + enPesos(v).total, 0))} en total.`]);
   const cajasDif = (db.cajas || []).filter((c) => c.cerrada && Math.abs(c.diferencia || 0) >= 0.01 && Date.parse(c.cerrada) >= per.desde && Date.parse(c.cerrada) <= per.hasta);
   if (cajasDif.length) alertas.push(['baja', `${cajasDif.length} cierre${cajasDif.length === 1 ? '' : 's'} de caja con diferencia`, cajasDif.slice(0, 3).map((c) => `Caja ${String(c.numero).padStart(3, '0')}: ${signoPlata(c.diferencia)}`).join(' · ')]);
   if (a.descuentos > 0) alertas.push([claseCambio(ant.descuentos, a.descuentos) === 'baja' ? 'aviso' : 'info', `Descuentos por ${$u(a.descuentos)}`, ant.descuentos ? `Antes: ${$u(ant.descuentos)} (${pctCambio((a.descuentos - ant.descuentos) / ant.descuentos * 100)})` : 'Lo que se dejó de cobrar en el período.']);
@@ -2972,7 +3099,7 @@ function renderRepTablero(per) {
   const bajoCosto = db.productos.filter(precioBajoCosto);
   if (bajoCosto.length) alertas.push(['baja', `${bajoCosto.length} producto${bajoCosto.length === 1 ? '' : 's'} con precio igual o menor al costo`, bajoCosto.slice(0, 3).map((p) => p.nombre).join(', ') + (bajoCosto.length > 3 ? '…' : '') + ' · En Productos, filtro «Precio igual o menor al costo».']);
   const revisar = db.productos.filter((p) => p.revisar);
-  if (revisar.length) alertas.push(['aviso', `${revisar.length} producto${revisar.length === 1 ? '' : 's'} nuevo${revisar.length === 1 ? '' : 's'} cargado${revisar.length === 1 ? '' : 's'} por empleados para revisar`, `${revisar.slice(0, 3).map((p) => `${p.nombre} (${$u(p.precio)})`).join(', ')}${revisar.length > 3 ? '…' : ''} · En Productos, filtro «Nuevos para revisar»; al editarlos quedan revisados.`]);
+  if (revisar.length) alertas.push(['aviso', `${revisar.length} producto${revisar.length === 1 ? '' : 's'} nuevo${revisar.length === 1 ? '' : 's'} cargado${revisar.length === 1 ? '' : 's'} por empleados para revisar`, `${revisar.slice(0, 3).map((p) => `${p.nombre} (${$m(p.precio, p.moneda)})`).join(', ')}${revisar.length > 3 ? '…' : ''} · En Productos, filtro «Nuevos para revisar»; al editarlos quedan revisados.`]);
   const parada = mercaderiaParada(db, 90);
   if (parada.length) alertas.push(['info', `${$u(parada.reduce((x, y) => x + y.valorCosto, 0))} en mercadería parada`, `${parada.length} producto${parada.length === 1 ? '' : 's'} con stock y sin ventas en 90 días.`]);
   $('#tab-alertas').innerHTML = alertas.length
@@ -3139,8 +3266,8 @@ function renderReposicionYValor() {
           <td>${esc(nombreProv(p.proveedorId)) || '<span class="muted">—</span>'}</td>
           <td class="num">${n(p.stock)} / ${n(p.minimo)}</td>
           <td class="num"><strong>${n(sugerido(p))}</strong> <span class="u">${esc(p.unidad)}</span></td>
-          <td class="num">${$u(sugerido(p) * p.costo)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td colspan="4">Total estimado del pedido</td><td class="num">${$u(rep.reduce((s, p) => s + sugerido(p) * p.costo, 0))}</td></tr></tfoot>
+          <td class="num">${$m(sugerido(p) * p.costo, p.moneda)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="4">Total estimado del pedido${rep.some(esUSD) ? ' (en pesos; lo de dólares, a la cotización de hoy)' : ''}</td><td class="num">${$u(rep.reduce((s, p) => s + sugerido(p) * p.costo * factorPesos(db, p), 0))}</td></tr></tfoot>
       </table></div>`
     : '<p class="vacio">No hay productos para reponer.</p>';
 
@@ -3150,8 +3277,8 @@ function renderReposicionYValor() {
     const c = p.categoria || 'Sin categoría';
     cats[c] = cats[c] || { items: 0, costo: 0, venta: 0 };
     cats[c].items++;
-    cats[c].costo += Math.max(p.stock, 0) * p.costo;
-    cats[c].venta += Math.max(p.stock, 0) * p.precio;
+    cats[c].costo += Math.max(p.stock, 0) * p.costo * factorPesos(db, p);
+    cats[c].venta += Math.max(p.stock, 0) * p.precio * factorPesos(db, p);
   });
   const filas = Object.entries(cats).sort((x, y) => y[1].costo - x[1].costo);
   const max = Math.max(1, ...filas.map(([, v]) => v.costo));
@@ -3325,7 +3452,7 @@ function exportar(tipo) {
     descargarExcel([...db.productos].sort((a, b) => a.nombre.localeCompare(b.nombre)).map((p) => ({
       'Código': p.codigo, 'Códigos de barras': (p.barras || []).join(' '), 'Producto': p.nombre, 'Categoría': p.categoria, 'Unidad': p.unidad, 'Proveedor': nombreProv(p.proveedorId),
       'Ubicación': p.ubicacion, 'Stock': p.stock, 'Stock mínimo': p.minimo, 'Estado': { ok: 'En stock', bajo: 'Bajo mínimo', sin: 'Sin stock' }[estado(p)],
-      'Costo': p.costo, 'Precio': p.precio, 'Valor a costo': red(Math.max(p.stock, 0) * p.costo), 'Valor a venta': red(Math.max(p.stock, 0) * p.precio),
+      'Moneda': esUSD(p) ? 'USD' : 'UYU', 'Costo': p.costo, 'Precio': p.precio, 'Valor a costo': red(Math.max(p.stock, 0) * p.costo), 'Valor a venta': red(Math.max(p.stock, 0) * p.precio),
     })), 'Inventario', 'inventario', {
       // Sin renglones de título: este Excel se vuelve a importar (Productos y Cargador de productos)
       texto: ['Código', 'Códigos de barras'], plata: ['Costo', 'Precio', 'Valor a costo', 'Valor a venta'],
@@ -3345,8 +3472,8 @@ function exportar(tipo) {
       const c = p.categoria || 'Sin categoría';
       cats[c] = cats[c] || { 'Categoría': c, 'Productos': 0, 'Valor a costo': 0, 'Valor a venta': 0 };
       cats[c]['Productos']++;
-      cats[c]['Valor a costo'] = red(cats[c]['Valor a costo'] + Math.max(p.stock, 0) * p.costo);
-      cats[c]['Valor a venta'] = red(cats[c]['Valor a venta'] + Math.max(p.stock, 0) * p.precio);
+      cats[c]['Valor a costo'] = red(cats[c]['Valor a costo'] + Math.max(p.stock, 0) * p.costo * factorPesos(db, p));
+      cats[c]['Valor a venta'] = red(cats[c]['Valor a venta'] + Math.max(p.stock, 0) * p.precio * factorPesos(db, p));
     });
     descargarExcel(Object.values(cats).sort((x, y) => y['Valor a costo'] - x['Valor a costo']), 'Valorización', 'valorizacion', {
       titulo: 'Valor del inventario por categoría', entero: ['Productos'], plata: ['Valor a costo', 'Valor a venta'], totales: ['Productos', 'Valor a costo', 'Valor a venta'],
@@ -3403,7 +3530,7 @@ function exportar(tipo) {
     });
   } else if (tipo === 'precios') {
     descargarExcel(cambiosPrecioPeriodo().map((h) => ({
-      'Fecha': f(h.fecha), 'Usuario': h.usuario || '', 'Código': h.codigo || '', 'Producto': h.producto, 'Precio antes': h.masivo ? '' : h.antes, 'Precio nuevo': h.masivo ? '' : h.despues, 'Motivo': h.motivo || '',
+      'Fecha': f(h.fecha), 'Usuario': h.usuario || '', 'Código': h.codigo || '', 'Producto': h.producto, 'Precio antes': h.masivo ? '' : h.antes, 'Precio nuevo': h.masivo ? '' : h.despues, 'Moneda': h.moneda === 'USD' ? 'USD' : 'UYU', 'Motivo': h.motivo || '',
     })), 'Cambios de precio', 'cambios_de_precio', {
       titulo: 'Cambios de precio', subtitulo: periodo(), texto: ['Código'], plata: ['Precio antes', 'Precio nuevo'],
     });
@@ -3412,9 +3539,10 @@ function exportar(tipo) {
     ventasPeriodo().forEach((v) => v.items.forEach((it) => filas.push({
       'Venta N.º': v.numero, 'Fecha': f(v.fecha), 'Estado': v.anulada ? 'Anulada' : 'Cobrada', 'Medio de pago': v.medio, 'Vendedor': v.usuario || '', 'Cliente': v.cliente,
       'Código': it.codigo, 'Producto': it.nombre, 'Cantidad': it.cantidad, 'Unidad': it.unidad, 'Precio': it.precio, 'Subtotal': it.subtotal, 'Descuento %': v.descuentoPct || 0, 'Total venta': v.total,
+      'Moneda': esUSD(v) ? 'USD' : 'UYU', 'Dólar del día': esUSD(v) ? v.cotizacion : '', 'Total en pesos': enPesos(v).total,
     })));
     descargarExcel(filas, 'Ventas', 'ventas', {
-      titulo: 'Ventas', subtitulo: periodo(), entero: ['Venta N.º'], texto: ['Código'], plata: ['Precio', 'Subtotal', 'Total venta'], pct: ['Descuento %'],
+      titulo: 'Ventas', subtitulo: periodo(), entero: ['Venta N.º'], texto: ['Código'], plata: ['Precio', 'Subtotal', 'Total venta', 'Dólar del día', 'Total en pesos'], pct: ['Descuento %'],
       resaltar: (x) => (x['Estado'] === 'Anulada' ? 'rojo' : ''),
     });
   }
@@ -3521,10 +3649,10 @@ function iniciarRespaldo() {
 let ultimaVenta = null;
 function mostrarVentaCobrada(v) {
   ultimaVenta = v;
-  $('#venta-total').textContent = $u(v.total);
+  $('#venta-total').textContent = $m(v.total, v.moneda);
   $('#venta-medio').textContent = `Pagó con ${v.medio.toLowerCase()} · Venta N.º ${String(v.numero).padStart(4, '0')}`;
   $('#venta-vuelto-box').hidden = v.vuelto == null;
-  $('#venta-vuelto').textContent = $u(v.vuelto);
+  $('#venta-vuelto').textContent = $m(v.vuelto, v.moneda);
   const avisos = [...new Set(v.items.map((it) => it.productoId))].map(producto).filter(Boolean).map((p) => ({ p, e: estado(p) })).filter((x) => x.e !== 'ok');
   $('#venta-alerta').hidden = !avisos.length;
   $('#venta-alerta').innerHTML = avisos.length ? `<strong>Hay que reponer</strong><ul>${avisos.map(({ p, e }) => `<li><span>${esc(p.nombre)}</span>${e === 'sin'
@@ -3740,7 +3868,7 @@ function vistaPreviaPrecios() {
   const fmt = (v) => `${v > 0 ? '+' : ''}${n(Math.round(v * 10) / 10)} %`;
   const ej = cambios.length ? cambios[0] : null;
   prev.innerHTML = `Se ${o.pct > 0 ? 'suben' : 'bajan'} <strong>${lista.length} productos</strong>.`
-    + (ej ? ` Ejemplo: ${esc(p.nombre)} pasa de ${$u(p.precio)} a <strong>${$u(ej.nuevo)}</strong>.` : '')
+    + (ej ? ` Ejemplo: ${esc(p.nombre)} pasa de ${$m(p.precio, p.moneda)} a <strong>${$m(ej.nuevo, p.moneda)}</strong>.` : '')
     + (cambios.length ? `<br>Cambio real con el redondeo: entre <strong>${fmt(min)}</strong> y <strong>${fmt(max)}</strong>.` : '')
     + (lejos.length ? `<br><span class="stock-bajo">${lejos.length} producto${lejos.length === 1 ? '' : 's'} cambia${lejos.length === 1 ? '' : 'n'} más de 2 puntos distinto de lo pedido (casi siempre artículos muy baratos), por ejemplo ${esc(lejos[0].x.nombre)}: ${$u(lejos[0].x.precio)} → ${$u(lejos[0].nuevo)}.</span>` : '');
 }
@@ -4123,15 +4251,20 @@ function htmlArqueo(caja) {
     ${fila('Ventas', r.ventas)}${r.anuladas ? fila('Anuladas', r.anuladas) : ''}
     ${Object.entries(r.porMedio).map(([m, t]) => fila(esc(m), $u(t))).join('')}
     ${fila('Total vendido', $u(r.total))}
-    ${caja.movs.length ? '<hr>' + caja.movs.map((m) => fila(`${m.tipo === 'retiro' ? 'Retiro' : 'Ingreso'}: ${esc(m.motivo)}`, (m.tipo === 'retiro' ? '−' : '+') + $u(m.monto))).join('') : ''}
+    ${r.usd ? `<hr><div><strong>DÓLARES</strong></div>${fila('Dólares al empezar', $usd(r.usd.inicial))}${fila('+ Ventas en efectivo', $usd(r.usd.ventasEfectivo))}
+      ${r.usd.ingresos ? fila('+ Ingresos', $usd(r.usd.ingresos)) : ''}${r.usd.retiros ? fila('− Retiros', $usd(r.usd.retiros)) : ''}
+      ${fila('Debería haber', $usd(r.usd.esperado), 't-total')}
+      ${caja.cerrada && caja.contadoUSD != null ? fila('Se contó', $usd(caja.contadoUSD)) + fila(caja.diferenciaUSD === 0 ? 'Diferencia' : caja.diferenciaUSD > 0 ? 'Sobrante' : 'Faltante', $usd(Math.abs(caja.diferenciaUSD)), 't-total') : ''}
+      ${Object.entries(r.usd.porMedio).map(([m, t]) => fila(esc(m), $usd(t))).join('')}${fila('Total vendido en U$S', $usd(r.usd.total))}` : ''}
+    ${caja.movs.length ? '<hr>' + caja.movs.map((m) => fila(`${m.tipo === 'retiro' ? 'Retiro' : 'Ingreso'}: ${esc(m.motivo)}`, (m.tipo === 'retiro' ? '−' : '+') + $m(m.monto, m.moneda))).join('') : ''}
     ${caja.nota ? `<hr><div>Nota: ${esc(caja.nota)}</div>` : ''}
     <div class="t-c t-chico">Impreso el ${fechaHora(new Date().toISOString())}</div>`;
 }
 
-function chipDiferencia(dif) {
+function chipDiferencia(dif, moneda) {
   if (dif == null) return '';
   if (Math.abs(dif) < 0.005) return '<span class="chip ok">Justo</span>';
-  return dif > 0 ? `<span class="chip warn">Sobran ${$u(dif)}</span>` : `<span class="chip danger">Faltan ${$u(-dif)}</span>`;
+  return dif > 0 ? `<span class="chip warn">Sobran ${$m(dif, moneda)}</span>` : `<span class="chip danger">Faltan ${$m(-dif, moneda)}</span>`;
 }
 
 function renderCierreEnVivo() {
@@ -4145,9 +4278,19 @@ function renderCierreEnVivo() {
     ${r.retiros ? `<li><span>− Retiros de efectivo</span><span>${$u(r.retiros)}</span></li>` : ''}
     <li class="cc-total"><span>Debería haber en efectivo</span><strong>${$u(r.esperado)}</strong></li>
     ${Object.entries(r.porMedio).filter(([m]) => m !== 'Efectivo').map(([m, t]) => `<li class="muted"><span>${esc(m)} (no es efectivo)</span><span>${$u(t)}</span></li>`).join('')}
+    ${r.usd ? `<li class="cc-sep"><span><strong>Dólares</strong></span><span></span></li>
+      <li><span>Dólares al empezar</span><span>${$usd(r.usd.inicial)}</span></li>
+      <li><span>+ Ventas en efectivo (U$S)</span><span>${$usd(r.usd.ventasEfectivo)}</span></li>
+      ${r.usd.ingresos ? `<li><span>+ Ingresos (U$S)</span><span>${$usd(r.usd.ingresos)}</span></li>` : ''}
+      ${r.usd.retiros ? `<li><span>− Retiros (U$S)</span><span>${$usd(r.usd.retiros)}</span></li>` : ''}
+      <li class="cc-total"><span>Debería haber en dólares</span><strong>${$usd(r.usd.esperado)}</strong></li>
+      ${Object.entries(r.usd.porMedio).filter(([m]) => m !== 'Efectivo').map(([m, t]) => `<li class="muted"><span>${esc(m)} en U$S (no es efectivo)</span><span>${$usd(t)}</span></li>`).join('')}` : ''}
     <li class="muted"><span>Ventas cobradas</span><span>${r.ventas}${r.anuladas ? ` · ${r.anuladas} anuladas` : ''}</span></li>`;
   const v = $('#cc-contado').value;
   $('#cc-diferencia').innerHTML = v === '' ? '' : chipDiferencia(red2(Number(v) - r.esperado));
+  $('#cc-usd').hidden = !r.usd;
+  const vu = $('#cc-contado-usd').value;
+  $('#cc-diferencia-usd').innerHTML = !r.usd || vu === '' ? '' : chipDiferencia(red2(Number(vu) - r.usd.esperado), 'USD');
 }
 
 function mostrarResultadoCierre(caja) {
@@ -4155,8 +4298,11 @@ function mostrarResultadoCierre(caja) {
   $('#cr-detalle').innerHTML = esAdmin()
     ? `<ul class="lista"><li><span>Debería haber</span><strong>${$u(caja.resumen.esperado)}</strong></li>
        <li><span>Se contó</span><strong>${$u(caja.contado)}</strong></li>
-       <li><span>Resultado</span>${chipDiferencia(caja.diferencia)}</li></ul>`
-    : `<p>Se guardó el conteo: <strong>${$u(caja.contado)}</strong> en efectivo. El administrador revisa el cierre.</p>`;
+       <li><span>Resultado</span>${chipDiferencia(caja.diferencia)}</li>
+       ${caja.resumen.usd ? `<li><span>Dólares: debería haber</span><strong>${$usd(caja.resumen.usd.esperado)}</strong></li>
+       <li><span>Dólares: se contó</span><strong>${$usd(caja.contadoUSD)}</strong></li>
+       <li><span>Resultado en dólares</span>${chipDiferencia(caja.diferenciaUSD, 'USD')}</li>` : ''}</ul>`
+    : `<p>Se guardó el conteo: <strong>${$u(caja.contado)}</strong>${caja.resumen.usd ? ` y <strong>${$usd(caja.contadoUSD)}</strong>` : ''} en efectivo. El administrador revisa el cierre.</p>`;
   cajaParaImprimir = caja;
   $('#dlg-caja-resultado').showModal();
 }
@@ -4172,10 +4318,10 @@ function renderCierresCaja() {
       <td>${fechaHora(c.abierta)}<div class="meta">${esc(c.abiertaPor || '')}</div></td>
       <td>${c.cerrada ? `${fechaHora(c.cerrada)}<div class="meta">${esc(c.cerradaPor || '')}</div>` : '<span class="chip ok">Abierta</span>'}</td>
       <td class="num">${r.ventas}</td>
-      <td class="num">${$u(r.total)}</td>
-      <td class="num">${$u(r.esperado)}</td>
-      <td class="num">${c.cerrada ? $u(c.contado) : '—'}</td>
-      <td>${c.cerrada ? chipDiferencia(c.diferencia) : ''}</td>
+      <td class="num">${$u(r.total)}${r.usd ? `<div class="meta">${$usd(r.usd.total)}</div>` : ''}</td>
+      <td class="num">${$u(r.esperado)}${r.usd ? `<div class="meta">${$usd(r.usd.esperado)}</div>` : ''}</td>
+      <td class="num">${c.cerrada ? $u(c.contado) : '—'}${c.cerrada && c.contadoUSD != null ? `<div class="meta">${$usd(c.contadoUSD)}</div>` : ''}</td>
+      <td>${c.cerrada ? chipDiferencia(c.diferencia) : ''}${c.cerrada && c.diferenciaUSD != null ? `<div>${chipDiferencia(c.diferenciaUSD, 'USD')}</div>` : ''}</td>
       <td class="acc">${puedeImprimir() ? `<button class="btn sm" type="button" data-imprimir-caja="${c.id}">Imprimir</button>` : ''}</td>
     </tr>`;
   }).join('') : '<tr><td colspan="9" class="vacio">Todavía no se abrió ninguna caja.</td></tr>';
@@ -4184,13 +4330,14 @@ function renderCierresCaja() {
 function iniciarAperturaCaja() {
   $('#form-abrir-caja').addEventListener('submit', (e) => {
     e.preventDefault();
-    const r = abrirCaja(db, $('#ac-monto').value, sesion ? sesion.nombre : '');
+    const r = abrirCaja(db, $('#ac-monto').value, sesion ? sesion.nombre : '', undefined, { inicialUSD: $('#ac-usd-monto').value, cotizacion: $('#ac-cotiz').value });
     if (r.error) { $('#ac-err').textContent = r.error; return; }
     $('#ac-err').textContent = '';
     $('#ac-monto').value = '';
+    $('#ac-usd-monto').value = '';
     guardar();
     render();
-    toast(`Caja abierta con ${$u(r.caja.inicial)}. Ya se puede vender.`);
+    toast(`Caja abierta con ${$u(r.caja.inicial)}${r.caja.inicialUSD ? ` y ${$usd(r.caja.inicialUSD)}` : ''}. Ya se puede vender.`);
     $('#caja-buscar').focus();
   });
 
@@ -4199,24 +4346,30 @@ function iniciarAperturaCaja() {
     $('#cm-monto').value = '';
     $('#cm-motivo').value = '';
     $('#cm-err').textContent = '';
+    $('#cm-moneda').value = 'UYU';
+    // Si se trabaja con dólares, el retiro o ingreso puede ser en dólares
+    const caja = cajaAbierta(db);
+    $('#cm-moneda-campo').hidden = !(db.productos.some(esUSD) || (caja && resumenCaja(db, caja).usd));
     $('#dlg-caja-mov').showModal();
     $('#cm-monto').focus();
   });
   $('#form-caja-mov').addEventListener('submit', (e) => {
     e.preventDefault();
     const tipo = ($('input[name="cm-tipo"]:checked') || {}).value;
-    const err = movimientoCaja(db, tipo, $('#cm-monto').value, $('#cm-motivo').value, sesion ? sesion.nombre : '');
+    const moneda = $('#cm-moneda').value === 'USD' ? 'USD' : 'UYU';
+    const err = movimientoCaja(db, tipo, $('#cm-monto').value, $('#cm-motivo').value, sesion ? sesion.nombre : '', undefined, moneda);
     if (err) { $('#cm-err').textContent = err; return; }
     guardar();
     $('#dlg-caja-mov').close();
     render();
-    toast(`${tipo === 'retiro' ? 'Retiro' : 'Ingreso'} de ${$u(Number($('#cm-monto').value))} anotado.`);
+    toast(`${tipo === 'retiro' ? 'Retiro' : 'Ingreso'} de ${$m(Number($('#cm-monto').value), moneda)} anotado.`);
   });
 
   // Cierre
   $('#btn-cerrar-caja').addEventListener('click', () => {
     if (ticket.length) { toast('Hay productos en el ticket. Cobrá o borrá la venta antes de cerrar la caja.'); return; }
     $('#cc-contado').value = '';
+    $('#cc-contado-usd').value = '';
     $('#cc-nota').value = '';
     $('#cc-err').textContent = '';
     renderCierreEnVivo();
@@ -4224,10 +4377,11 @@ function iniciarAperturaCaja() {
     $('#cc-contado').focus();
   });
   $('#cc-contado').addEventListener('input', renderCierreEnVivo);
+  $('#cc-contado-usd').addEventListener('input', renderCierreEnVivo);
   $('#form-cerrar-caja').addEventListener('submit', (e) => {
     e.preventDefault();
-    const r = cerrarCaja(db, $('#cc-contado').value, sesion ? sesion.nombre : '', $('#cc-nota').value);
-    if (r.error) { $('#cc-err').textContent = r.error; return; }
+    const r = cerrarCaja(db, $('#cc-contado').value, sesion ? sesion.nombre : '', $('#cc-nota').value, undefined, $('#cc-contado-usd').value);
+    if (r.error) { $('#cc-err').textContent = r.error; if (r.usd) $('#cc-contado-usd').focus(); return; }
     guardar();
     // Respaldo al cerrar la caja, así la copia del pendrive incluye las ventas del día
     if (escritorio() && window.almacen.respaldarAhora) window.almacen.respaldarAhora().catch(() => {});
@@ -4420,7 +4574,7 @@ function estantesParaHerramienta() {
 /** Lo que el Cargador necesita de un producto ya cargado (los mismos datos que el Excel del inventario). */
 function datosParaHerramienta(p) {
   return { codigo: p.codigo, barras: codigosDe(p).filter((c) => c !== p.codigo), nombre: p.nombre, categoria: p.categoria || '', unidad: p.unidad || '', proveedor: nombreProv(p.proveedorId),
-    ubicacion: p.ubicacion || '', stock: p.stock, minimo: p.minimo, costo: esAdmin() ? p.costo : null, precio: p.precio };
+    ubicacion: p.ubicacion || '', stock: p.stock, minimo: p.minimo, costo: esAdmin() ? p.costo : null, precio: p.precio, moneda: esUSD(p) ? 'USD' : 'UYU' };
 }
 /** El Cargador escaneó un código: ¿es de un producto que ya está cargado? (código propio, de barras o de proveedor) */
 function productoParaHerramienta(codigo) {
@@ -5093,7 +5247,7 @@ function iniciarDeposito() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { sugerenciasDeposito, porHojaEtiquetas, medidaEtiquetaHoja, asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
+  module.exports = { leerMoneda, enPesos, $m, sugerenciasDeposito, porHojaEtiquetas, medidaEtiquetaHoja, asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }
