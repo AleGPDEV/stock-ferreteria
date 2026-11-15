@@ -183,3 +183,8 @@ tests/almacen.test.js     Pruebas de la base SQLite
 - **Reportes**: las ventas en dólares se suman en pesos con la cotización de su día, y arriba se avisa cuánto fue en U$S. El inventario en dólares se valoriza con el dólar de hoy.
 - **Excel**: columna **Moneda** (USD, U$S, dólares o UYU, pesos) al importar, en el inventario y en el Cargador de productos. Si la fila no trae precio, la moneda del producto no cambia.
 
+## Impresora de etiquetas (rollo)
+
+- En **Etiquetas → Impresora de etiquetas** se elige la **medida de la etiqueta del rollo**: 50 × 25, 40 × 30, 50 × 30, 58 × 40, 60 × 40, 100 × 50, 100 × 100, 100 × 150 mm u **Otra medida** (ancho de 20 a 108 mm). Sale una etiqueta por página, del tamaño elegido, y el contenido se agranda o achica con ella. Se recuerda la última medida.
+- Probado para impresoras térmicas de 4" y 203 dpi como la **Unnion LP4206D**. En Windows, en las *Preferencias de impresión* de la impresora, el tamaño de papel tiene que ser la misma medida, con etiquetas separadas por espacio (gap). Al imprimir: escala 100 % y sin márgenes.
+

@@ -915,3 +915,12 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 @media (max-width: 520px) { .ac-usd { grid-template-columns: 1fr; } }
 .caja-cotiz { margin-bottom: 8px; }
 .cc-sep { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; }
+
+/* Etiquetas de rollo de otra medida (impresora térmica): una por página, contenido escalado con --k */
+.pagina.hoja.rollo-m { display: block; box-sizing: border-box; overflow: hidden; background: #fff; }
+.pagina.hoja.rollo-m .et { width: 100%; height: 100%; box-sizing: border-box; }
+.etq-muestra.rollo-m { border: 0; background: none; }
+.etq-muestra.rollo-m .pagina { box-shadow: 0 0 0 1px var(--line); border-radius: 2mm; }
+.etq-rollo { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px 28px; }
+.etq-rollo-otra:not([hidden]) { display: flex; gap: 10px; }
+.etq-rollo small { color: var(--muted); font-size: 13px; }

@@ -810,7 +810,15 @@
       <label class="check"><input type="radio" name="etq-formato" value="hoja"> <span><strong>Hoja A4 común</strong> (se recortan; el tamaño se ajusta a cuántas van por hoja)</span></label>
       <label class="f etq-porhoja" id="etq-porhoja-campo" for="etq-porhoja" hidden>Etiquetas por hoja<select id="etq-porhoja"></select><small id="etq-porhoja-ayuda"></small></label>
       <label class="check"><input type="radio" name="etq-formato" value="a4" checked> <span><strong>Hoja A4 de stickers</strong> (24 por hoja, de 70 × 37 mm)</span></label>
-      <label class="check"><input type="radio" name="etq-formato" value="rollo"> <span><strong>Impresora de etiquetas</strong> (rollo de 50 × 25 mm, una por etiqueta)</span></label>
+      <label class="check"><input type="radio" name="etq-formato" value="rollo"> <span><strong>Impresora de etiquetas</strong> (rollo, una por etiqueta)</span></label>
+      <div class="etq-rollo" id="etq-rollo-campo" hidden>
+        <label class="f" for="etq-rollo">Medida de la etiqueta del rollo<select id="etq-rollo"></select></label>
+        <span class="etq-rollo-otra" id="etq-rollo-otra" hidden>
+          <label class="f" for="etq-rollo-ancho">Ancho (mm)<input id="etq-rollo-ancho" type="number" min="20" max="108" step="1" inputmode="numeric"></label>
+          <label class="f" for="etq-rollo-alto">Alto (mm)<input id="etq-rollo-alto" type="number" min="15" max="300" step="1" inputmode="numeric"></label>
+        </span>
+        <small>Elegí la medida de UNA etiqueta del rollo (sin contar el espacio entre etiquetas). La misma medida va en las preferencias de la impresora en Windows.</small>
+      </div>
       <label class="f etq-saltear" id="etq-saltear-campo" for="etq-saltear">Stickers ya usados en la hoja<input id="etq-saltear" type="number" min="0" max="23" step="1" value="0" inputmode="numeric"><small>Si la hoja ya tiene stickers despegados, poné cuántos: se empieza después.</small></label>
     </fieldset>
     <div class="etq-filtros">
