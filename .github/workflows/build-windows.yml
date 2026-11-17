@@ -156,6 +156,8 @@ jobs:
           disable-animations: true
           script: |
             adb install -r $(ls celular/Etiquetador-Grupo-Muros-*.apk)
+            adb shell pm grant uy.grupomuros.etiquetador android.permission.BLUETOOTH_CONNECT
+            adb shell pm grant uy.grupomuros.etiquetador android.permission.BLUETOOTH_SCAN
             npm install --no-save --no-audit --no-fund playwright@1.64.1
             timeout 420 node celular/prueba-emulador.js || (adb shell cat /proc/net/unix | grep -a devtools; adb logcat -d | grep -a -i -E "capacitor|chromium|AndroidRuntime|FATAL" | tail -60; exit 1)
 

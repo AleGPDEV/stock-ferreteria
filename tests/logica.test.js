@@ -1298,3 +1298,26 @@ test('celular: etiqueta TSPL para la etiquetadora (mismo código de barras que e
   assert.match(t, /PRINT 1,3\r\n$/);
   assert.match(E.tsplPrueba({ ancho: 50, alto: 25 }), /BOX 4,4,396,196,3/);
 });
+
+test('celular + Cargador: las dos planillas se importan juntas sin duplicar', () => {
+  const d = app.baseVacia();
+  d.productos.push({ id: 'ag', codigo: 'P-0001', barras: ['7730123456789'], nombre: 'Agua 2 L', unidad: 'unidad', stock: 3, minimo: 0, costo: 40, precio: 80 });
+  // Planilla del Cargador (PC): lo que ya tenía código de barras, contado
+  const cargador = [
+    { 'Código': 'P-0001', 'Códigos de barras': '7730123456789', Producto: 'Agua 2 L', Stock: 12, Precio: '', Contado: 'Sí' },
+    { 'Código': '7790001234567', Producto: 'Taladro', Ubicación: 'V-1', Categoría: 'Herramientas', Stock: 2, Precio: 4900, Contado: 'Sí' },
+  ];
+  // Planilla del celular: lo suelto, con códigos propios del celular C1
+  const celular = [
+    { 'Código': 'C1-0001', Producto: 'Arandela plana 8 mm', Ubicación: 'B-2', Categoría: 'Bulonería', Stock: 200, Moneda: 'UYU', Precio: 5, Contado: 'Sí' },
+    { 'Código': 'C1-0002', Producto: 'Gancho S', Ubicación: 'B-2', Categoría: 'Bulonería', Stock: 1, Moneda: 'UYU', Precio: 30, Contado: 'Sí' },
+  ];
+  app.aplicarImportacion(d, app.planImportacion(d, cargador));
+  app.aplicarImportacion(d, app.planImportacion(d, celular));
+  // Importar otra vez la del celular no duplica
+  app.aplicarImportacion(d, app.planImportacion(d, celular));
+  assert.deepEqual(d.productos.map((p) => [p.codigo, p.stock]).sort(), [['7790001234567', 2], ['C1-0001', 200], ['C1-0002', 1], ['P-0001', 12]]);
+  assert.deepEqual(app.estantesDe(d).map((e) => [e.codigo, e.categoria]).sort(), [['B-2', 'Bulonería'], ['V-1', 'Herramientas']]);
+  // Lo del celular se puede escanear con la etiqueta que imprimió
+  assert.equal(app.dondeEsta(d, 'C1-0001').producto.nombre, 'Arandela plana 8 mm');
+});
