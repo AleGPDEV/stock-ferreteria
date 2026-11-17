@@ -4,12 +4,18 @@
 const { _android: android } = require('playwright');
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
-  const [device] = await android.devices();
+  console.log('Buscando el emulador…');
+  const [device] = await android.devices({ omitDriverInstall: true });
   if (!device) throw new Error('No hay emulador');
+  console.log('Emulador:', device.model());
   await device.shell('am start -n uy.grupomuros.etiquetador/.MainActivity');
+  await espera(8000);
+  console.log('WebViews:', JSON.stringify(device.webViews().map((w) => w.pkg())));
   const webview = await device.webView({ pkg: 'uy.grupomuros.etiquetador' }, { timeout: 60000 });
+  console.log('WebView encontrada');
   const page = await webview.page();
   await page.waitForSelector('#sin-codigo', { timeout: 30000 });
+  console.log('Página cargada');
   const r = {};
   r.plugins = await page.evaluate(() => Object.keys((window.Capacitor && window.Capacitor.Plugins) || {}).filter((k) => /Impresora|Filesystem|Share/.test(k)));
   r.ajustesAbiertos = await page.evaluate(() => document.getElementById('dlg-ajustes').open);
@@ -44,6 +50,7 @@ const espera = (ms) => new Promise((r) => setTimeout(r, ms));
   await device.shell('am force-stop uy.grupomuros.etiquetador');
   await espera(1000);
   await device.shell('am start -n uy.grupomuros.etiquetador/.MainActivity');
+  await espera(6000);
   const page2 = await (await device.webView({ pkg: 'uy.grupomuros.etiquetador' }, { timeout: 60000 })).page();
   await page2.waitForSelector('#lista li', { timeout: 30000 });
   r.despuesDeReabrir = await page2.textContent('#lista');

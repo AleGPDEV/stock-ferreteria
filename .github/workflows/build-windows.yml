@@ -157,7 +157,7 @@ jobs:
           script: |
             adb install -r $(ls celular/Etiquetador-Grupo-Muros-*.apk)
             npm install --no-save --no-audit --no-fund playwright@1.64.1
-            node celular/prueba-emulador.js
+            timeout 420 node celular/prueba-emulador.js || (adb shell cat /proc/net/unix | grep -a devtools; adb logcat -d | grep -a -i -E "capacitor|chromium|AndroidRuntime|FATAL" | tail -60; exit 1)
 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
