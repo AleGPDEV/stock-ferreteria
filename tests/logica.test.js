@@ -1275,3 +1275,26 @@ test('dólares: la columna Moneda de la planilla', () => {
   app.aplicarImportacion(d, app.planImportacion(d, [{ 'Código': 'TAL', Producto: 'Taladro', Moneda: 'pesos', Precio: 4900 }]));
   assert.deepEqual([d.productos[0].moneda, d.productos[0].precio], [undefined, 4900]);
 });
+
+test('celular: etiqueta TSPL para la etiquetadora (mismo código de barras que el programa)', () => {
+  const E = require('../herramientas/fuentes/etiqueta-tspl.js');
+  const CB = require('../js/codigo-barras.js');
+  assert.equal(E.ascii('Caño ½" PVC — 3ª'), "Cano 1/2' PVC 3");
+  for (const [a, h] of [[50, 25], [40, 30], [60, 40], [100, 50], [100, 150]]) {
+    const d = E.disenoEtiqueta({ nombre: 'Taladro percutor 800 W Makawa con maletín', codigo: '7790001234567', ubicacion: 'V-1' }, { ancho: a, alto: h });
+    const [W, H] = d.puntos;
+    assert.equal(W, a * 8);
+    // todo adentro de la etiqueta
+    for (const b of d.barras) assert.ok(b.x >= 0 && b.x + b.w <= W && b.y >= 0 && b.y + b.h <= H, `barra fuera en ${a}x${h}`);
+    for (const t of d.textos) assert.ok(t.x >= 0 && t.x + t.texto.length * E.FUENTES[t.fuente][0] <= W && t.y + E.FUENTES[t.fuente][1] <= H, `texto fuera en ${a}x${h}: ${t.texto}`);
+    // las barras son exactamente las del código de barras del programa
+    const fino = d.barras[0].w / CB.anchos('7790001234567')[0];
+    assert.deepEqual(d.barras.map((b) => b.w / fino), CB.anchos('7790001234567').filter((_, i) => i % 2 === 0));
+    assert.ok(fino >= 2, `barras de al menos 2 puntos en ${a}x${h}`);
+  }
+  const t = E.tspl(E.disenoEtiqueta({ nombre: 'Gancho "S"', codigo: 'C1-0002', ubicacion: 'B-2' }, { ancho: 50, alto: 25 }), { copias: 3, separacion: 3, oscuridad: 10 });
+  assert.match(t, /^SIZE 50 mm,25 mm\r\nGAP 3 mm,0 mm\r\nDENSITY 10\r\n/);
+  assert.match(t, /TEXT \d+,\d+,"2",0,1,1,"Gancho 'S'"/);
+  assert.match(t, /PRINT 1,3\r\n$/);
+  assert.match(E.tsplPrueba({ ancho: 50, alto: 25 }), /BOX 4,4,396,196,3/);
+});

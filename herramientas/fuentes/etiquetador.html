@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Etiquetador</title>
+<style>
+:root {
+  --bg: #eceff1; --surface: #fff; --surface-2: #f2f4f6; --fg: #1c2127; --muted: #56606b; --line: #d3d9df;
+  --accent: #b5520f; --accent-soft: #fbeadd; --verde: #2a7a4b; --verde-soft: #e1f2e7; --rojo: #b3261e; --rojo-soft: #fbe9e7;
+  --warn: #8a5a00; --warn-soft: #fbf0d9; --side: #2b2e33; --r: 12px;
+  --f: system-ui, -apple-system, Roboto, "Segoe UI", Arial, sans-serif; --mono: ui-monospace, "Roboto Mono", Consolas, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.45 var(--f); }
+button, input, select { font: inherit; }
+.top { position: sticky; top: 0; z-index: 5; background: var(--side); color: #fff; display: flex; align-items: center; gap: 10px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) 10px max(14px, env(safe-area-inset-left, 0px)); }
+.top img { width: 38px; height: 38px; border-radius: 50%; flex: none; }
+.top h1 { margin: 0; font-size: 19px; line-height: 1.1; }
+.top .sub { margin: 0; color: #c4c9cf; font-size: 13px; }
+.top .sp { flex: 1; }
+.icono { background: rgba(255,255,255,.12); color: #fff; border: 0; border-radius: 10px; width: 44px; height: 44px; font-size: 22px; cursor: pointer; flex: none; }
+main { max-width: 640px; margin: 0 auto; padding: 12px max(12px, env(safe-area-inset-left, 0px)) 120px; display: flex; flex-direction: column; gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.card h2 { margin: 0; font-size: 18px; }
+.card.imp { flex-direction: row; align-items: center; gap: 10px; padding: 10px 12px; }
+.f[hidden] { display: none; }
+.imp .punto { width: 12px; height: 12px; border-radius: 50%; background: #a0a8b0; flex: none; }
+.imp.ok .punto { background: var(--verde); }
+.imp .txt { flex: 1; min-width: 0; font-size: 15px; }
+.imp .txt strong { display: block; }
+.imp .txt span { color: var(--muted); font-size: 13.5px; }
+.acciones { display: grid; grid-template-columns: 1fr; gap: 10px; }
+#escanear { width: 100%; font-size: 20px; font-family: var(--mono); padding: 13px 14px; border: 2px solid var(--line); border-radius: var(--r); background: var(--surface); }
+#escanear:focus { outline: 3px solid var(--accent-soft); border-color: var(--accent); }
+.ayuda { color: var(--muted); font-size: 14px; margin: 0; }
+.campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.f { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 14px; min-width: 0; }
+.f-wide { grid-column: 1 / -1; }
+.f input, .f select { font-weight: 400; font-size: 17px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--fg); width: 100%; min-width: 0; min-height: 46px; }
+.f input:focus, .f select:focus { outline: 3px solid var(--accent-soft); border-color: var(--accent); }
+.f input[readonly] { background: var(--surface-2); color: var(--muted); }
+.f small { font-weight: 400; color: var(--muted); }
+.codigo-propio { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--accent); }
+.mas { border-top: 1px dashed var(--line); padding-top: 10px; }
+.mas summary { cursor: pointer; font-weight: 600; color: var(--accent); min-height: 32px; }
+.mas[open] summary { margin-bottom: 10px; }
+.botonera { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.btn { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 10px; padding: 11px 16px; cursor: pointer; font-weight: 600; min-height: 46px; }
+.btn.grande { font-size: 18px; padding: 14px 18px; width: 100%; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.verde { background: var(--verde); border-color: var(--verde); color: #fff; }
+.btn.rojo { background: var(--rojo); border-color: var(--rojo); color: #fff; }
+.btn.danger { color: var(--rojo); background: var(--rojo-soft); border-color: #f0c7c2; }
+.btn.sm { padding: 7px 12px; font-size: 14px; min-height: 38px; }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--accent); }
+.btn:disabled { opacity: .5; }
+.aviso { border-radius: var(--r); padding: 10px 12px; font-size: 15px; margin: 0; }
+.aviso.ok { background: var(--verde-soft); color: #174a2c; }
+.aviso.info { background: var(--accent-soft); color: #6b2f07; }
+.aviso.warn { background: var(--warn-soft); color: var(--warn); }
+.aviso:empty { display: none; }
+.err { color: var(--rojo); font-weight: 600; margin: 0; }
+.err:empty { display: none; }
+.resumen { display: flex; gap: 8px; }
+.resumen div { background: var(--surface-2); border-radius: var(--r); padding: 8px 12px; flex: 1; }
+.resumen .lbl { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.resumen .val { font-size: 22px; font-weight: 700; }
+#buscar { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 16px; min-height: 46px; }
+.lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lista li { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.lista li.recien { background: var(--verde-soft); border-color: #b9dcc6; }
+.lista .fila1 { display: flex; justify-content: space-between; gap: 10px; }
+.lista .nom { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.lista .cant { font-weight: 700; white-space: nowrap; }
+.lista .meta { color: var(--muted); font-size: 13.5px; }
+.lista .mono { font-family: var(--mono); }
+.lista .acc { display: flex; gap: 6px; flex-wrap: wrap; }
+.vacio { text-align: center; color: var(--muted); padding: 22px 10px; }
+.chip { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+.chip.ok { background: var(--verde-soft); color: var(--verde); }
+dialog { border: 0; border-radius: 16px; padding: 18px; width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 40px); overflow: auto; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+dialog::backdrop { background: rgba(15, 20, 28, .55); }
+dialog h2 { margin: 0 0 12px; font-size: 19px; }
+dialog p { margin: 0 0 14px; font-size: 16px; }
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: #1c2127; color: #fff; padding: 12px 18px; border-radius: 12px; font-size: 15px; box-shadow: 0 8px 24px rgba(0,0,0,.3); max-width: calc(100vw - 32px); z-index: 20; }
+.toast[hidden] { display: none; }
+label.btn input { display: none; }
+.vincular { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: var(--r); background: var(--surface-2); }
+.v-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.v-lista:empty { display: none; }
+.v-lista .btn { width: 100%; display: flex; justify-content: space-between; gap: 10px; text-align: left; font-weight: 400; }
+.v-lista .meta { color: var(--muted); font-size: 13px; }
+.nuevo-estante { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: var(--r); background: var(--verde-soft); }
+.nuevo-estante[hidden] { display: none; }
+.ne-tit { margin: 0; font-weight: 700; }
+.vista { display: flex; justify-content: center; padding: 12px; background: var(--surface-2); border-radius: var(--r); overflow-x: auto; }
+.vista canvas { box-shadow: 0 1px 4px rgba(0,0,0,.25); border-radius: 4px; max-width: 100%; height: auto; image-rendering: pixelated; }
+.copias { display: flex; align-items: center; gap: 8px; }
+.copias input { width: 90px; text-align: center; font-size: 20px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; min-height: 46px; }
+.dispositivos { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dispositivos .btn { width: 100%; text-align: left; display: flex; justify-content: space-between; gap: 10px; font-weight: 400; }
+.pie { color: var(--muted); font-size: 13px; text-align: center; margin: 4px 0 0; }
+</style>
+</head>
+<body>
+<header class="top">
+  <img src="__LOGO__" alt="">
+  <div><h1>Etiquetador</h1><p class="sub" id="sub-equipo">Grupo Muros</p></div>
+  <span class="sp"></span>
+  <button class="icono" type="button" id="btn-ajustes" aria-label="Ajustes">⚙</button>
+</header>
+
+<main>
+  <section class="card imp" id="imp-barra">
+    <span class="punto" aria-hidden="true"></span>
+    <div class="txt"><strong id="imp-titulo">Impresora sin conectar</strong><span id="imp-detalle">Tocá «Conectar» para elegir la etiquetadora.</span></div>
+    <button class="btn sm" type="button" id="btn-conectar">Conectar</button>
+  </section>
+
+  <section class="card">
+    <div class="acciones">
+      <button class="btn primary grande" type="button" id="sin-codigo">+ Producto sin código</button>
+      <input id="escanear" type="text" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="Código o nombre de un producto" aria-label="Código o nombre de un producto">
+      <ul class="v-lista" id="b-lista"></ul>
+    </div>
+    <p class="ayuda">Para lo que viene suelto, tocá <strong>Producto sin código</strong>: la app le da un código propio y le imprime la etiqueta. Para un producto que ya existe, buscalo por código o nombre.</p>
+    <p class="aviso" id="estado" role="status"></p>
+
+    <form id="form" hidden novalidate>
+      <h2 id="form-titulo">Producto nuevo</h2>
+      <p class="ayuda" id="form-codigo"></p>
+      <div class="campos">
+        <label class="f f-wide" for="c-nombre">Nombre del producto<input id="c-nombre" type="text" autocomplete="off" enterkeyhint="next" placeholder="Ej.: Arandela plana 8 mm"></label>
+        <label class="f" for="c-precio"><span id="c-precio-lbl">Precio ($)</span><input id="c-precio" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej.: 290"></label>
+        <label class="f" for="c-cantidad">Cantidad<input id="c-cantidad" type="text" inputmode="decimal" autocomplete="off" placeholder="1"></label>
+        <label class="f" for="c-estante">Estante<select id="c-estante"></select></label>
+        <label class="f" for="c-categoria">Categoría<input id="c-categoria" type="text" list="lista-cat" autocomplete="off" placeholder="Ej.: Bulonería"><small id="c-cat-ayuda"></small></label>
+        <div class="nuevo-estante f-wide" id="nuevo-estante" hidden>
+          <p class="ne-tit">Estante nuevo</p>
+          <div class="campos">
+            <label class="f" for="ne-codigo">Nombre<input id="ne-codigo" type="text" autocomplete="off" placeholder="Ej.: A-3"></label>
+            <label class="f" for="ne-categoria">Categoría<input id="ne-categoria" type="text" list="lista-cat" autocomplete="off" placeholder="Ej.: Sanitaria"></label>
+          </div>
+          <p class="err" id="ne-err" role="alert"></p>
+          <div class="botonera"><button class="btn verde" type="button" id="ne-crear">Crear estante</button><button class="btn" type="button" id="ne-cancelar">Cancelar</button></div>
+          <p class="ayuda">Se crea en el programa, con su categoría, al importar el Excel.</p>
+        </div>
+      </div>
+      <details class="mas" id="mas">
+        <summary>Más datos: moneda, costo, unidad, proveedor, mínimo</summary>
+        <div class="campos">
+          <label class="f" for="c-moneda">Moneda<select id="c-moneda"><option value="UYU">Pesos ($)</option><option value="USD">Dólares (U$S)</option></select></label>
+          <label class="f" for="c-costo"><span id="c-costo-lbl">Costo ($)</span><input id="c-costo" type="text" inputmode="decimal" autocomplete="off"></label>
+          <label class="f" for="c-unidad">Unidad
+            <select id="c-unidad"><option>unidad</option><option>kg</option><option>m</option><option>litro</option><option>caja</option><option>paquete</option><option>rollo</option><option>par</option></select>
+          </label>
+          <label class="f" for="c-minimo">Stock mínimo<input id="c-minimo" type="text" inputmode="decimal" autocomplete="off"></label>
+          <label class="f f-wide" for="c-proveedor">Proveedor<input id="c-proveedor" type="text" list="lista-prov" autocomplete="off"></label>
+        </div>
+      </details>
+      <p class="err" id="form-err" role="alert"></p>
+      <div class="botonera">
+        <button class="btn verde grande" type="submit" id="btn-guardar-imprimir">Guardar e imprimir etiqueta</button>
+        <button class="btn" type="button" id="btn-solo-guardar">Solo guardar</button>
+        <button class="btn" type="button" id="cancelar">Cancelar</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Lo que cargaste</h2>
+    <div class="resumen">
+      <div><div class="lbl">Productos</div><div class="val" id="r-prod">0</div></div>
+      <div><div class="lbl">Unidades</div><div class="val" id="r-unid">0</div></div>
+      <div><div class="lbl">Etiquetas</div><div class="val" id="r-etq">0</div></div>
+    </div>
+    <input id="buscar" type="search" placeholder="Buscar en la lista" aria-label="Buscar en la lista">
+    <ul class="lista" id="lista"></ul>
+    <button class="btn verde grande" type="button" id="descargar">Enviar el Excel para el programa</button>
+    <p class="ayuda">Mismo formato que el Cargador de productos: en el programa, <strong>Productos → Importar desde Excel</strong>. Se puede importar junto con la planilla del Cargador.</p>
+    <div class="botonera">
+      <label class="btn" for="catalogo">Cargar el inventario del programa<input type="file" id="catalogo" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>
+      <button class="btn danger" type="button" id="nueva">Empezar una lista nueva</button>
+    </div>
+    <p class="ayuda" id="catalogo-estado">Con el Excel de <strong>Inventario completo</strong> del programa (Reportes → Stock), la app reconoce lo que ya existe y usa los mismos estantes.</p>
+  </section>
+  <p class="pie" id="pie-version"></p>
+</main>
+
+<datalist id="lista-cat"></datalist>
+<datalist id="lista-prov"></datalist>
+
+<!-- Imprimir una etiqueta -->
+<dialog id="dlg-imprimir">
+  <h2 id="di-titulo">Etiqueta</h2>
+  <div class="vista"><canvas id="di-vista" aria-label="Vista previa de la etiqueta"></canvas></div>
+  <p class="aviso warn" id="di-aviso" style="margin-top:10px"></p>
+  <div class="botonera" style="margin:12px 0">
+    <span class="copias"><label for="di-copias"><strong>Copias</strong></label><input id="di-copias" type="number" min="1" max="500" inputmode="numeric" value="1"></span>
+  </div>
+  <p class="err" id="di-err" role="alert"></p>
+  <div class="botonera">
+    <button class="btn verde" type="button" id="di-imprimir">Imprimir</button>
+    <button class="btn" type="button" id="di-cerrar">Cerrar</button>
+  </div>
+</dialog>
+
+<!-- Elegir la impresora -->
+<dialog id="dlg-impresoras">
+  <h2>Elegir la etiquetadora</h2>
+  <p class="ayuda" id="dimp-ayuda">Primero emparejala en el Bluetooth del celular (Ajustes → Bluetooth → la impresora; la clave suele ser 0000 o 1234). Después elegila acá.</p>
+  <ul class="dispositivos" id="dimp-lista"></ul>
+  <p class="err" id="dimp-err" role="alert"></p>
+  <div class="botonera"><button class="btn" type="button" id="dimp-buscar">Volver a buscar</button><button class="btn" type="button" id="dimp-cerrar">Cerrar</button></div>
+</dialog>
+
+<!-- Ajustes -->
+<dialog id="dlg-ajustes">
+  <h2>Ajustes</h2>
+  <div class="campos">
+    <label class="f f-wide" for="aj-equipo">Nombre de este celular<input id="aj-equipo" type="text" maxlength="4" autocomplete="off" placeholder="Ej.: C1" style="text-transform:uppercase"><small>Va adelante de los códigos que crea este celular (C1-0001, C1-0002…). Cada celular tiene que tener uno distinto.</small></label>
+    <label class="f" for="aj-medida">Medida de la etiqueta<select id="aj-medida"></select></label>
+    <label class="f" for="aj-separacion">Espacio entre etiquetas (mm)<input id="aj-separacion" type="text" inputmode="decimal" placeholder="2"></label>
+    <label class="f aj-otra" for="aj-ancho" hidden>Ancho (mm)<input id="aj-ancho" type="number" min="20" max="108" inputmode="numeric"></label>
+    <label class="f aj-otra" for="aj-alto" hidden>Alto (mm)<input id="aj-alto" type="number" min="15" max="300" inputmode="numeric"></label>
+    <label class="f f-wide" for="aj-oscuridad">Oscuridad de la impresión: <span id="aj-osc-val">8</span><input id="aj-oscuridad" type="range" min="1" max="15" step="1"></label>
+  </div>
+  <p class="ayuda" style="margin:10px 0">La medida es la de UNA etiqueta del rollo, sin contar el espacio entre etiquetas. Si las etiquetas salen corridas, imprimí una de prueba y ajustá el espacio.</p>
+  <p class="err" id="aj-err" role="alert"></p>
+  <div class="botonera">
+    <button class="btn primary" type="button" id="aj-guardar">Guardar</button>
+    <button class="btn" type="button" id="aj-prueba">Imprimir etiqueta de prueba</button>
+    <button class="btn" type="button" id="aj-cerrar">Cerrar</button>
+  </div>
+</dialog>
+
+<dialog id="dlg"><p id="dlg-texto"></p><div class="botonera" style="justify-content:flex-end"><button class="btn" type="button" id="dlg-no">Cancelar</button><button class="btn primary" type="button" id="dlg-si">Aceptar</button></div></dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>__XLSX__</script>
+<script>__CODIGO_BARRAS__</script>
+<script>__ETIQUETA_TSPL__</script>
+<script>
+'use strict';
+/* Etiquetador (app Android de Grupo Muros): carga productos sueltos, les da un código propio de este celular
+ * (C1-0001…) e imprime su etiqueta en la etiquetadora por Bluetooth. Lo cargado sale en un Excel con el mismo
+ * formato que el Cargador de productos, para importarlo en el programa (Productos → Importar desde Excel). */
+const VERSION = '__VERSION__';
+const CLAVE = 'etiquetador-v1';
+const $ = (s) => document.querySelector(s);
+const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const plata = new Intl.NumberFormat('es-UY', { style: 'currency', currency: 'UYU', maximumFractionDigits: 2 });
+const plata2 = new Intl.NumberFormat('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const $m = (x, moneda) => (moneda === 'USD' ? `U$S ${plata2.format(x)}` : plata.format(x));
+const numero = new Intl.NumberFormat('es-UY', { maximumFractionDigits: 3 });
+const normal = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const hoy = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const leerMoneda = (t) => { const s = normal(t).replace(/\s+/g, ''); return /^(usd|us\$|u\$s|u\$|us|dolar|dolares|dol|u\$d)$/.test(s) ? 'USD' : /^(\$|uyu|\$u|pesos?|uy)$/.test(s) ? 'UYU' : ''; };
+function parseNum(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  let t = String(v ?? '').replace(/[^\d.,-]/g, '');
+  if (!/\d/.test(t)) return null;
+  if (t.includes(',') && t.includes('.')) t = t.lastIndexOf(',') > t.lastIndexOf('.') ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+  else if (t.includes(',')) t = t.replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+  const x = Number(t);
+  return Number.isFinite(x) ? x : null;
+}
+
+// ---------- Datos ----------
+const AJUSTES_BASE = { equipo: '', medida: [50, 25], separacion: 2, oscuridad: 8, impresora: null };
+let datos = { items: [], recordar: {}, catalogo: [], estantes: [], ultimoNum: 0, ajustes: { ...AJUSTES_BASE } };
+try { const g = JSON.parse(localStorage.getItem(CLAVE) || 'null'); if (g && Array.isArray(g.items)) datos = Object.assign(datos, g, { ajustes: { ...AJUSTES_BASE, ...(g.ajustes || {}) } }); } catch (e) { /* sin almacenamiento */ }
+const mapaCatalogo = (lista) => new Map(lista.flatMap((p) => [p.codigo].concat(p.barras || []).filter(Boolean).map((c) => [String(c).toUpperCase(), p])));
+let catalogo = mapaCatalogo(datos.catalogo || []);
+const productosCatalogo = () => datos.catalogo || [];
+function guardar() {
+  try { localStorage.setItem(CLAVE, JSON.stringify(datos)); } catch (e) { toast('No se pudo guardar en el celular. Enviá el Excel ahora.'); }
+}
+const aj = () => datos.ajustes;
+const medida = () => ({ ancho: aj().medida[0], alto: aj().medida[1] });
+
+/** El próximo código propio de este celular: C1-0001, C1-0002… (sin repetir los que ya usó ni los del programa). */
+function siguienteCodigo() {
+  const pre = aj().equipo;
+  const re = new RegExp(`^${pre.replace(/[^A-Z0-9]/g, '')}-(\\d+)$`);
+  const usados = datos.items.map((x) => x.codigo).concat(productosCatalogo().map((p) => p.codigo))
+    .map((c) => re.exec(String(c || '').toUpperCase())).filter(Boolean).map((m) => Number(m[1]));
+  const n = Math.max(datos.ultimoNum || 0, ...usados, 0) + 1;
+  return { codigo: `${pre}-${String(n).padStart(4, '0')}`, n };
+}
+
+// ---------- Estantes (los mismos que el programa, por el Excel del inventario) ----------
+const NUEVO = '__nuevo__';
+const claveEst = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7E]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+const estantes = () => (Array.isArray(datos.estantes) ? datos.estantes : []);
+function sumarEstantes(lista) {
+  const mapa = new Map(estantes().map((e) => [claveEst(e.codigo), e]));
+  for (const e of lista || []) {
+    const k = claveEst(e && e.codigo);
+    if (!k) continue;
+    const ya = mapa.get(k);
+    if (!ya) mapa.set(k, { codigo: String(e.codigo).trim(), categoria: String(e.categoria || '').trim(), propio: !!e.propio });
+    else if (!ya.categoria && e.categoria) ya.categoria = String(e.categoria).trim();
+  }
+  datos.estantes = [...mapa.values()].sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true }));
+}
+const estanteDe = (codigo) => estantes().find((e) => claveEst(e.codigo) === claveEst(codigo));
+function opcionesEstante(sel) {
+  const grupos = new Map();
+  estantes().forEach((e) => { const c = e.categoria || 'Sin categoría'; if (!grupos.has(c)) grupos.set(c, []); grupos.get(c).push(e); });
+  const orden = [...grupos.keys()].sort((a, b) => (a === 'Sin categoría') - (b === 'Sin categoría') || a.localeCompare(b, 'es'));
+  const elegido = sel && sel !== NUEVO ? (estanteDe(sel) || {}).codigo || '' : '';
+  $('#c-estante').innerHTML = `<option value="">Sin estante</option>`
+    + orden.map((c) => `<optgroup label="${esc(c)}">${grupos.get(c).map((e) => `<option value="${esc(e.codigo)}" ${e.codigo === elegido ? 'selected' : ''}>${esc(e.codigo)}${e.categoria ? ' · ' + esc(e.categoria) : ''}</option>`).join('')}</optgroup>`).join('')
+    + `<option value="${NUEVO}">+ Crear un estante nuevo…</option>`;
+}
+let estanteAnterior = '';
+function alElegirEstante(categoriaProducto = null) {
+  const v = $('#c-estante').value;
+  const cat = $('#c-categoria');
+  if (v === NUEVO) { abrirNuevoEstante(); return; }
+  estanteAnterior = v;
+  $('#nuevo-estante').hidden = true;
+  const e = v ? estanteDe(v) : null;
+  if (e && e.categoria) { cat.value = e.categoria; cat.readOnly = true; $('#c-cat-ayuda').textContent = `La del estante ${e.codigo}.`; }
+  else { cat.readOnly = false; if (categoriaProducto != null) cat.value = categoriaProducto; $('#c-cat-ayuda').textContent = ''; }
+}
+function abrirNuevoEstante() {
+  $('#nuevo-estante').hidden = false;
+  $('#c-categoria').value = ''; $('#c-categoria').readOnly = true;
+  $('#ne-codigo').value = ''; $('#ne-categoria').value = ''; $('#ne-err').textContent = '';
+  $('#ne-codigo').focus();
+}
+function cancelarNuevoEstante() { opcionesEstante(estanteAnterior); alElegirEstante(); }
+function crearEstante() {
+  const codigo = $('#ne-codigo').value.replace(/\s+/g, ' ').trim();
+  const categoria = $('#ne-categoria').value.replace(/\s+/g, ' ').trim();
+  const err = (t) => { $('#ne-err').textContent = t; };
+  if (!claveEst(codigo)) { err('Escribí el nombre del estante, por ejemplo A-3.'); return; }
+  if (!categoria) { err('Escribí la categoría del estante.'); return; }
+  const ya = estanteDe(codigo);
+  if (ya) { err(`Ya hay un estante ${ya.codigo}${ya.categoria ? ' (' + ya.categoria + ')' : ''}.`); return; }
+  sumarEstantes([{ codigo, categoria, propio: true }]);
+  guardar();
+  opcionesEstante(codigo);
+  alElegirEstante();
+  toast(`Estante ${codigo} · ${categoria} creado.`);
+}
+
+// ---------- Avisos ----------
+let tToast = 0;
+function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(tToast); tToast = setTimeout(() => { el.hidden = true; }, 3500); }
+function estado(t, tipo = 'info') { const el = $('#estado'); el.className = 'aviso ' + tipo; el.innerHTML = t; }
+function confirmar(texto, si = 'Aceptar', peligro = false) {
+  return new Promise((res) => {
+    const d = $('#dlg');
+    $('#dlg-texto').textContent = texto;
+    $('#dlg-si').textContent = si;
+    $('#dlg-si').className = 'btn ' + (peligro ? 'rojo' : 'primary');
+    let listo = false;
+    const fin = (v) => { if (listo) return; listo = true; d.close(); res(v); };
+    $('#dlg-si').onclick = () => fin(true);
+    $('#dlg-no').onclick = () => fin(false);
+    d.oncancel = () => fin(false);
+    d.showModal();
+  });
+}
+
+// ---------- Impresora (Bluetooth, solo en la app) ----------
+const BT = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ImpresoraBT) || null;
+let conectada = null; // { nombre, direccion }
+function pintarImpresora(texto) {
+  $('#imp-barra').classList.toggle('ok', !!conectada);
+  $('#imp-titulo').textContent = conectada ? `Impresora: ${conectada.nombre || conectada.direccion}` : 'Impresora sin conectar';
+  $('#imp-detalle').textContent = texto || (conectada ? `Etiqueta de ${aj().medida[0]} × ${aj().medida[1]} mm` : BT() ? 'Tocá «Conectar» para elegir la etiquetadora.' : 'Para imprimir hay que usar la app instalada en el celular.');
+  $('#btn-conectar').textContent = conectada ? 'Cambiar' : 'Conectar';
+}
+async function conectarA(d) {
+  pintarImpresora('Conectando…');
+  try {
+    const r = await BT().conectar({ direccion: d.direccion });
+    conectada = { nombre: r.nombre || d.nombre, direccion: d.direccion };
+    aj().impresora = conectada;
+    guardar();
+    pintarImpresora();
+    return true;
+  } catch (e) {
+    conectada = null;
+    pintarImpresora(e && e.message ? e.message : 'No se pudo conectar.');
+    return false;
+  }
+}
+async function abrirImpresoras() {
+  if (!BT()) { toast('La impresora se conecta desde la app instalada en el celular.'); return; }
+  $('#dimp-err').textContent = '';
+  $('#dimp-lista').innerHTML = '<li class="ayuda">Buscando…</li>';
+  if (!$('#dlg-impresoras').open) $('#dlg-impresoras').showModal();
+  try {
+    const r = await BT().listar();
+    const lista = r.dispositivos || [];
+    $('#dimp-lista').innerHTML = lista.length
+      ? lista.map((d, i) => `<li><button class="btn" type="button" data-imp="${i}"><span>${esc(d.nombre)}</span><span class="ayuda">${esc(d.direccion)}</span></button></li>`).join('')
+      : '<li class="ayuda">No hay ninguna impresora emparejada. Emparejala en el Bluetooth del celular y tocá «Volver a buscar».</li>';
+    $('#dimp-lista').onclick = async (e) => {
+      const b = e.target.closest('[data-imp]');
+      if (!b) return;
+      $('#dimp-err').textContent = '';
+      b.disabled = true;
+      if (await conectarA(lista[Number(b.dataset.imp)])) { $('#dlg-impresoras').close(); toast('Impresora conectada.'); }
+      else { b.disabled = false; $('#dimp-err').textContent = $('#imp-detalle').textContent; }
+    };
+  } catch (e) {
+    $('#dimp-lista').innerHTML = '';
+    $('#dimp-err').textContent = e && e.message ? e.message : 'No se pudo usar el Bluetooth.';
+  }
+}
+const aBase64 = (t) => { const b = new TextEncoder().encode(t); let s = ''; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]); return btoa(s); };
+/** Manda los comandos a la impresora; si se desconectó, intenta reconectar una vez a la última. */
+async function mandar(comandos) {
+  if (!BT()) throw new Error('Para imprimir hay que usar la app instalada en el celular.');
+  if (!conectada) {
+    if (aj().impresora && await conectarA(aj().impresora)) { /* reconectada */ } else throw new Error('Conectá la impresora primero (botón «Conectar» arriba).');
+  }
+  try { await BT().escribir({ datos: aBase64(comandos) }); }
+  catch (e) {
+    if (aj().impresora && await conectarA(aj().impresora)) { await BT().escribir({ datos: aBase64(comandos) }); return; }
+    conectada = null; pintarImpresora();
+    throw new Error(e && e.message ? e.message : 'No se pudo imprimir.');
+  }
+}
+
+// ---------- Etiqueta ----------
+let aImprimir = null;
+function abrirImprimir(item, copias) {
+  aImprimir = item;
+  const d = EtiquetaTSPL.disenoEtiqueta(item, medida());
+  EtiquetaTSPL.dibujar(d, $('#di-vista'), 1);
+  $('#di-vista').style.width = Math.min(d.puntos[0], 480) + 'px';
+  $('#di-titulo').textContent = item.nombre;
+  $('#di-aviso').textContent = d.aviso || '';
+  $('#di-aviso').hidden = !d.aviso;
+  $('#di-copias').value = copias || 1;
+  $('#di-err').textContent = '';
+  $('#dlg-imprimir').showModal();
+}
+async function imprimirElegida() {
+  const copias = Math.max(1, Math.min(500, Math.floor(Number($('#di-copias').value) || 1)));
+  const d = EtiquetaTSPL.disenoEtiqueta(aImprimir, medida());
+  $('#di-imprimir').disabled = true;
+  try {
+    await mandar(EtiquetaTSPL.tspl(d, { copias, separacion: aj().separacion, oscuridad: aj().oscuridad }));
+    const x = datos.items.find((i) => i.id === aImprimir.id);
+    if (x) { x.etiquetas = (x.etiquetas || 0) + copias; guardar(); pintar(); }
+    $('#dlg-imprimir').close();
+    toast(`${copias === 1 ? 'Etiqueta enviada' : `${copias} etiquetas enviadas`} a la impresora.`);
+  } catch (e) { $('#di-err').textContent = e.message; }
+  $('#di-imprimir').disabled = false;
+}
+
+// ---------- Buscar y cargar ----------
+let editando = null, ultimoId = null;
+function buscarProductos(texto) {
+  const q = normal(texto).trim();
+  if (q.length < 2) return [];
+  const pal = q.split(/\s+/);
+  const deLista = datos.items.map((x) => ({ ...x, deLista: true }));
+  return deLista.concat(productosCatalogo().filter((p) => !datos.items.some((x) => x.codigo === p.codigo)))
+    .filter((p) => { const t = normal(`${p.nombre} ${p.codigo} ${(p.barras || []).join(' ')} ${p.categoria || ''} ${p.ubicacion || ''}`); return pal.every((w) => t.includes(w)); })
+    .slice(0, 8);
+}
+function pintarBusqueda() {
+  const lista = buscarProductos($('#escanear').value);
+  $('#b-lista').innerHTML = $('#escanear').value.trim().length < 2 ? '' : lista.length
+    ? lista.map((p, i) => `<li><button type="button" class="btn" data-b="${i}"><span>${esc(p.nombre)} <span class="v-lista meta" style="display:inline">${esc(p.codigo)}${p.ubicacion ? ' · ' + esc(p.ubicacion) : ''}</span>${p.deLista ? ' <span class="chip ok">en la lista</span>' : ''}</span><strong>${p.precio != null && p.precio !== '' ? $m(p.precio, p.moneda) : ''}</strong></button></li>`).join('')
+    : `<li class="ayuda">No lo encuentro${productosCatalogo().length ? '' : ' (cargá el inventario del programa para buscar ahí)'}. Si viene suelto, tocá «Producto sin código».</li>`;
+  $('#b-lista').onclick = (e) => {
+    const b = e.target.closest('[data-b]');
+    if (!b) return;
+    const p = lista[Number(b.dataset.b)];
+    $('#escanear').value = ''; $('#b-lista').innerHTML = '';
+    if (p.deLista) { const x = datos.items.find((i) => i.id === p.id); abrirForm(x, x.id); }
+    else { abrirForm({ ...p, cantidad: '', existente: true }); estado(`<strong>${esc(p.nombre)}</strong> ya está en el programa${p.stock != null ? ` (hay ${numero.format(p.stock)})` : ''}. Poné cuántos hay y, si querés, imprimile la etiqueta.`, 'info'); }
+  };
+}
+function codigoEscrito(texto) {
+  const codigo = String(texto || '').trim().toUpperCase();
+  if (!codigo) return;
+  const ya = datos.items.find((x) => (x.codigo && x.codigo.toUpperCase() === codigo) || (x.barras || []).includes(codigo));
+  if (ya) { abrirForm(ya, ya.id); return; }
+  const p = catalogo.get(codigo);
+  if (p) { abrirForm({ ...p, barras: p.codigo !== codigo ? [codigo] : [], cantidad: '', existente: true }); estado(`<strong>${esc(p.nombre)}</strong> ya está en el programa. Poné cuántos hay.`, 'info'); return; }
+  // Un código de fábrica que no está: producto nuevo con ese código (no necesita código propio)
+  abrirForm({ codigo, cantidad: '' });
+  estado(`Código nuevo: <strong>${esc(codigo)}</strong>. Escribí el nombre y el precio.`, 'info');
+}
+
+function abrirForm(x, id = null) {
+  editando = id;
+  const r = datos.recordar || {};
+  $('#form').dataset.propio = x.propio ? '1' : '';
+  $('#form').dataset.codigo = x.codigo || '';
+  $('#form').dataset.existente = x.existente ? '1' : '';
+  formBarras = (x.barras || []).slice();
+  $('#form-titulo').textContent = id ? 'Corregir el producto' : x.existente ? 'Producto del programa' : x.propio ? 'Producto sin código' : 'Producto nuevo';
+  $('#form-codigo').innerHTML = x.codigo ? `Código: <span class="codigo-propio">${esc(x.codigo)}</span>${x.propio && !id ? ' (propio de este celular)' : ''}` : '';
+  $('#c-nombre').value = x.nombre || '';
+  $('#c-precio').value = x.precio === '' || x.precio == null ? '' : String(x.precio).replace('.', ',');
+  $('#c-moneda').value = x.moneda === 'USD' ? 'USD' : 'UYU';
+  rotulosMoneda();
+  $('#c-costo').value = x.costo === '' || x.costo == null || x.costo === 0 ? '' : String(x.costo).replace('.', ',');
+  $('#c-cantidad').value = x.cantidad === '' || x.cantidad == null ? '' : String(x.cantidad).replace('.', ',');
+  $('#c-minimo').value = x.minimo === '' || x.minimo == null || x.minimo === 0 ? '' : String(x.minimo).replace('.', ',');
+  const ubic = x.ubicacion || (id || x.existente ? '' : r.ubicacion || '');
+  if (ubic && !estanteDe(ubic)) sumarEstantes([{ codigo: ubic, categoria: x.categoria || '' }]);
+  opcionesEstante(ubic);
+  $('#c-categoria').value = '';
+  alElegirEstante(x.categoria || (id || x.existente ? '' : r.categoria || ''));
+  $('#c-unidad').value = x.unidad || (id ? 'unidad' : r.unidad || 'unidad');
+  $('#c-proveedor').value = x.proveedor || (id || x.existente ? '' : r.proveedor || '');
+  $('#form-err').textContent = '';
+  $('#form').hidden = false;
+  $('#form').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  setTimeout(() => ($('#c-nombre').value ? $('#c-cantidad') : $('#c-nombre')).focus(), 250);
+}
+let formBarras = [];
+function rotulosMoneda() {
+  const usd = $('#c-moneda').value === 'USD';
+  $('#c-precio-lbl').textContent = usd ? 'Precio (U$S)' : 'Precio ($)';
+  $('#c-costo-lbl').textContent = usd ? 'Costo (U$S)' : 'Costo ($)';
+}
+function cerrarForm() { $('#form').hidden = true; editando = null; estado(''); }
+
+function nuevoSinCodigo() {
+  if (!aj().equipo) { toast('Primero poné el nombre de este celular en Ajustes (por ejemplo C1).'); abrirAjustes(); return; }
+  const { codigo } = siguienteCodigo();
+  abrirForm({ codigo, propio: true, cantidad: '' });
+  estado(`Producto sin código: va a llevar el código <strong>${esc(codigo)}</strong>, que imprime la etiqueta. En el programa queda con ese mismo código.`, 'info');
+}
+
+/** Guarda el producto; devuelve el ítem guardado (o null si falta algo). */
+function guardarForm() {
+  const err = (t) => { $('#form-err').textContent = t; return null; };
+  const codigo = ($('#form').dataset.codigo || '').trim().toUpperCase();
+  const nombre = $('#c-nombre').value.trim();
+  const precio = parseNum($('#c-precio').value);
+  const cantidadTxt = $('#c-cantidad').value.trim();
+  const cantidad = cantidadTxt === '' ? 1 : parseNum(cantidadTxt);
+  const existente = $('#form').dataset.existente === '1';
+  if (!nombre) { $('#c-nombre').focus(); return err('Escribí el nombre del producto.'); }
+  if (cantidad == null || cantidad < 0 || cantidad > 99999) { $('#c-cantidad').focus(); return err('Revisá la cantidad.'); }
+  if ($('#c-estante').value === NUEVO) return err('Terminá de crear el estante (o tocá Cancelar en el estante nuevo).');
+  if (precio != null && precio < 0) return err('El precio no puede ser negativo.');
+  if (precio == null && !existente && !editando) return err('Poné el precio (en el programa se puede corregir después).');
+  if (codigo && datos.items.some((x) => x.id !== editando && x.codigo && x.codigo.toUpperCase() === codigo)) return err('Ese producto ya está en la lista: buscalo y tocá Editar.');
+  const item = {
+    codigo, nombre, precio, cantidad, moneda: $('#c-moneda').value === 'USD' ? 'USD' : 'UYU',
+    costo: parseNum($('#c-costo').value), minimo: parseNum($('#c-minimo').value),
+    categoria: $('#c-categoria').value.trim(), ubicacion: $('#c-estante').value === NUEVO ? '' : $('#c-estante').value,
+    unidad: $('#c-unidad').value, proveedor: $('#c-proveedor').value.trim(),
+    existente, propio: $('#form').dataset.propio === '1', barras: formBarras.filter((b) => b && b !== codigo), cambio: Date.now(),
+  };
+  let x;
+  if (editando) { x = datos.items.find((i) => i.id === editando); Object.assign(x, item); }
+  else {
+    x = { id: uid(), etiquetas: 0, ...item };
+    datos.items.push(x);
+    // El número propio queda usado aunque después se borre el producto: así nunca se repite un código ya impreso
+    const mm = /-(\d+)$/.exec(codigo);
+    if (item.propio && mm) datos.ultimoNum = Math.max(datos.ultimoNum || 0, Number(mm[1]));
+  }
+  ultimoId = x.id;
+  datos.recordar = { categoria: item.categoria, ubicacion: item.ubicacion, unidad: item.unidad, proveedor: item.proveedor };
+  guardar();
+  pintar();
+  cerrarForm();
+  return x;
+}
+
+// ---------- Lista ----------
+function pintar() {
+  const items = datos.items;
+  $('#r-prod').textContent = numero.format(items.length);
+  $('#r-unid').textContent = numero.format(items.reduce((s, x) => s + (Number(x.cantidad) || 0), 0));
+  $('#r-etq').textContent = numero.format(items.reduce((s, x) => s + (Number(x.etiquetas) || 0), 0));
+  $('#descargar').disabled = !items.length;
+  const q = normal($('#buscar').value.trim());
+  const lista = items.filter((x) => !q || normal(`${x.codigo} ${x.nombre} ${x.categoria} ${x.ubicacion}`).includes(q)).sort((a, b) => (b.cambio || 0) - (a.cambio || 0));
+  $('#lista').innerHTML = lista.length ? lista.map((x) => `
+    <li class="${x.id === ultimoId ? 'recien' : ''}">
+      <div class="fila1"><span class="nom">${esc(x.nombre)}</span><span class="cant">${numero.format(x.cantidad || 0)} ${esc(x.unidad || '')}</span></div>
+      <div class="meta"><span class="mono">${esc(x.codigo || 'sin código')}</span>${x.ubicacion ? ' · ' + esc(x.ubicacion) : ''} · ${x.precio == null || x.precio === '' ? (x.existente ? 'precio sin cambio' : '<span class="err">sin precio</span>') : $m(x.precio, x.moneda)}
+        ${x.existente ? ' · <span class="chip">ya en el programa</span>' : ''}${x.etiquetas ? ` · <span class="chip ok">${x.etiquetas} etiqueta${x.etiquetas === 1 ? '' : 's'}</span>` : ''}</div>
+      <div class="acc"><button class="btn sm verde" type="button" data-etq="${x.id}">Etiqueta</button><button class="btn sm" type="button" data-editar="${x.id}">Editar</button><button class="btn sm danger" type="button" data-borrar="${x.id}">Quitar</button></div>
+    </li>`).join('')
+    : `<li class="vacio">${items.length ? 'Nada coincide con la búsqueda.' : 'Todavía no cargaste nada.'}</li>`;
+  const cats = [...new Set(items.map((x) => x.categoria).concat(productosCatalogo().map((p) => p.categoria), estantes().map((e) => e.categoria)).filter(Boolean))].sort();
+  $('#lista-cat').innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join('');
+  const provs = [...new Set(items.map((x) => x.proveedor).concat(productosCatalogo().map((p) => p.proveedor)).filter(Boolean))].sort();
+  $('#lista-prov').innerHTML = provs.map((c) => `<option value="${esc(c)}">`).join('');
+  $('#sub-equipo').textContent = aj().equipo ? `Grupo Muros · celular ${aj().equipo}` : 'Grupo Muros · poné el nombre del celular en Ajustes';
+  if (productosCatalogo().length) $('#catalogo-estado').innerHTML = `Inventario del programa cargado: <strong>${numero.format(productosCatalogo().length)}</strong> productos y ${estantes().length} estantes.`;
+}
+
+// ---------- Excel (mismo formato que el Cargador de productos) ----------
+function libroExcel() {
+  const filas = datos.items.map((x) => ({
+    'Código': x.codigo, 'Códigos de barras': (x.barras || []).join(' '), 'Producto': x.nombre, 'Categoría': x.categoria, 'Unidad': x.unidad, 'Proveedor': x.proveedor, 'Ubicación': x.ubicacion,
+    'Stock': x.cantidad, 'Stock mínimo': x.minimo ?? '', 'Moneda': x.moneda === 'USD' ? 'USD' : 'UYU', 'Costo': x.costo ?? '', 'Precio': x.precio ?? '',
+    'Contado': 'Sí',
+  }));
+  const hoja = XLSX.utils.json_to_sheet(filas, { header: ['Código', 'Códigos de barras', 'Producto', 'Categoría', 'Unidad', 'Proveedor', 'Ubicación', 'Stock', 'Stock mínimo', 'Moneda', 'Costo', 'Precio', 'Contado'] });
+  filas.forEach((f, i) => { const c = hoja[XLSX.utils.encode_cell({ r: i + 1, c: 0 })]; if (c) { c.t = 's'; c.v = String(f['Código'] || ''); c.z = '@'; } });
+  hoja['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 42 }, { wch: 16 }, { wch: 9 }, { wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 9 }];
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, hoja, 'Productos');
+  return libro;
+}
+async function descargarExcel() {
+  if (!datos.items.length) return;
+  const nombre = `productos_celular_${aj().equipo || 'C'}_${hoy()}.xlsx`;
+  const libro = libroExcel();
+  const P = window.Capacitor && window.Capacitor.Plugins;
+  try {
+    if (P && P.Filesystem && P.Share) {
+      // En el celular: se guarda y se abre «Compartir» (WhatsApp, Gmail, Drive…) para mandarlo a la PC
+      const b64 = XLSX.write(libro, { bookType: 'xlsx', type: 'base64' });
+      const r = await P.Filesystem.writeFile({ path: nombre, data: b64, directory: 'CACHE' });
+      await P.Share.share({ title: nombre, text: `Productos cargados en el celular ${aj().equipo} (${datos.items.length})`, files: [r.uri], dialogTitle: 'Mandar el Excel a la PC' });
+    } else XLSX.writeFile(libro, nombre);
+    toast(`Excel listo con ${datos.items.length} productos.`);
+  } catch (e) {
+    if (e && /cancel/i.test(String(e.message || e))) return;
+    toast('No se pudo armar el Excel. Probá de nuevo.');
+  }
+}
+function cargarCatalogo(file) {
+  const lector = new FileReader();
+  lector.onload = () => {
+    try {
+      const libro = XLSX.read(new Uint8Array(lector.result), { type: 'array', codepage: 65001, raw: true });
+      const filas = XLSX.utils.sheet_to_json(libro.Sheets[libro.SheetNames[0]], { defval: '' });
+      const col = (f, ...nombres) => { for (const k of Object.keys(f)) if (nombres.includes(normal(k).trim())) return f[k]; return ''; };
+      const lista = [];
+      for (const f of filas) {
+        const codigo = String(col(f, 'codigo', 'cod')).trim().toUpperCase();
+        const nombre = String(col(f, 'producto', 'nombre', 'descripcion')).trim();
+        if (!codigo || !nombre) continue;
+        const barras = String(col(f, 'codigos de barras', 'codigo de barras', 'barras')).toUpperCase().split(/[\s,;]+/).filter(Boolean);
+        lista.push({ codigo, barras, nombre, categoria: String(col(f, 'categoria')).trim(), unidad: String(col(f, 'unidad')).trim(), proveedor: String(col(f, 'proveedor')).trim(),
+          ubicacion: String(col(f, 'ubicacion')).trim(), stock: parseNum(col(f, 'stock')), minimo: parseNum(col(f, 'stock minimo', 'minimo')), costo: parseNum(col(f, 'costo')), precio: parseNum(col(f, 'precio', 'precio de venta')), moneda: leerMoneda(col(f, 'moneda')) });
+      }
+      if (!lista.length) { toast('Esa planilla no tiene productos con Código y Producto.'); return; }
+      datos.catalogo = lista;
+      catalogo = mapaCatalogo(lista);
+      sumarEstantes(lista.filter((p) => p.ubicacion).map((p) => ({ codigo: p.ubicacion, categoria: p.categoria })));
+      guardar(); pintar();
+      toast(`Se cargaron ${lista.length} productos del programa.`);
+    } catch (e) { toast('No pude leer ese archivo. Tiene que ser el Excel del inventario.'); }
+  };
+  lector.readAsArrayBuffer(file);
+}
+
+// ---------- Ajustes ----------
+const MEDIDAS = [[50, 25], [40, 30], [50, 30], [58, 40], [60, 40], [100, 50], [100, 100], [100, 150]];
+function abrirAjustes() {
+  $('#aj-equipo').value = aj().equipo;
+  $('#aj-medida').innerHTML = MEDIDAS.map(([a, h]) => `<option value="${a}x${h}">${a} × ${h} mm</option>`).join('') + '<option value="otra">Otra medida…</option>';
+  const [a, h] = aj().medida;
+  if (MEDIDAS.some(([x, y]) => x === a && y === h)) $('#aj-medida').value = `${a}x${h}`; else { $('#aj-medida').value = 'otra'; $('#aj-ancho').value = a; $('#aj-alto').value = h; }
+  $('#aj-separacion').value = String(aj().separacion).replace('.', ',');
+  $('#aj-oscuridad').value = aj().oscuridad;
+  $('#aj-osc-val').textContent = aj().oscuridad;
+  $('#aj-err').textContent = '';
+  otraMedida();
+  $('#dlg-ajustes').showModal();
+}
+function otraMedida() { document.querySelectorAll('.aj-otra').forEach((x) => { x.hidden = $('#aj-medida').value !== 'otra'; }); }
+function leerAjustes() {
+  const err = (t) => { $('#aj-err').textContent = t; return null; };
+  const equipo = $('#aj-equipo').value.trim().toUpperCase();
+  if (!/^[A-Z][A-Z0-9]{0,3}$/.test(equipo)) return err('El nombre del celular: de 1 a 4 letras o números, empezando con letra (por ejemplo C1).');
+  if (/^P$/.test(equipo)) return err('«P» lo usa el programa para sus códigos: elegí otro (por ejemplo C1).');
+  let a, h;
+  if ($('#aj-medida').value === 'otra') { a = Math.round(Number($('#aj-ancho').value)); h = Math.round(Number($('#aj-alto').value)); }
+  else [a, h] = $('#aj-medida').value.split('x').map(Number);
+  if (!(a >= 20 && a <= 108 && h >= 15 && h <= 300)) return err('Revisá la medida: ancho de 20 a 108 mm y alto de 15 a 300 mm.');
+  const sep = parseNum($('#aj-separacion').value);
+  if (sep == null || sep < 0 || sep > 10) return err('El espacio entre etiquetas: de 0 a 10 mm (casi siempre 2 o 3).');
+  return { equipo, medida: [a, h], separacion: sep, oscuridad: Number($('#aj-oscuridad').value) || 8 };
+}
+async function guardarAjustes() {
+  const n = leerAjustes();
+  if (!n) return;
+  if (aj().equipo && n.equipo !== aj().equipo && datos.items.some((x) => x.propio)
+    && !(await confirmar(`Ya hay productos con códigos ${aj().equipo}-…; esos no cambian. Los nuevos van a empezar con ${n.equipo}-. ¿Seguir?`, 'Cambiar'))) return;
+  Object.assign(datos.ajustes, n);
+  guardar(); pintar(); pintarImpresora();
+  $('#dlg-ajustes').close();
+  toast('Ajustes guardados.');
+}
+async function imprimirPrueba() {
+  const n = leerAjustes();
+  if (!n) return;
+  try {
+    await mandar(EtiquetaTSPL.tsplPrueba({ ancho: n.medida[0], alto: n.medida[1] }, { separacion: n.separacion, oscuridad: n.oscuridad }));
+    toast('Etiqueta de prueba enviada: el recuadro tiene que quedar justo en el borde de la etiqueta.');
+  } catch (e) { $('#aj-err').textContent = e.message; }
+}
+
+// ---------- Eventos ----------
+$('#sin-codigo').addEventListener('click', nuevoSinCodigo);
+$('#escanear').addEventListener('input', pintarBusqueda);
+$('#escanear').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const v = $('#escanear').value.trim();
+  const una = buscarProductos(v);
+  // Con un lector Bluetooth o escribiendo el código: si es un código, se busca directo
+  if (/^[0-9A-Za-z.\-]{4,}$/.test(v) && /\d/.test(v)) { $('#escanear').value = ''; $('#b-lista').innerHTML = ''; codigoEscrito(v); }
+  else if (una.length === 1) document.querySelector('#b-lista [data-b="0"]').click();
+});
+$('#form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!$('#nuevo-estante').hidden && document.activeElement && document.activeElement.closest('#nuevo-estante')) { crearEstante(); return; }
+  const x = guardarForm();
+  if (!x) return;
+  toast(`Guardado: ${x.nombre}.`);
+  abrirImprimir(x, 1);
+});
+$('#btn-solo-guardar').addEventListener('click', () => { const x = guardarForm(); if (x) toast(`Guardado: ${x.nombre}.`); });
+$('#cancelar').addEventListener('click', cerrarForm);
+$('#c-estante').addEventListener('change', () => alElegirEstante(''));
+$('#c-moneda').addEventListener('change', rotulosMoneda);
+$('#ne-crear').addEventListener('click', crearEstante);
+$('#ne-cancelar').addEventListener('click', cancelarNuevoEstante);
+$('#c-nombre').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#c-precio').focus(); } });
+$('#lista').addEventListener('click', async (e) => {
+  const et = e.target.closest('[data-etq]');
+  if (et) { const x = datos.items.find((i) => i.id === et.dataset.etq); if (x) abrirImprimir(x, 1); return; }
+  const ed = e.target.closest('[data-editar]');
+  if (ed) { const x = datos.items.find((i) => i.id === ed.dataset.editar); if (x) abrirForm(x, x.id); return; }
+  const bo = e.target.closest('[data-borrar]');
+  if (bo) {
+    const x = datos.items.find((i) => i.id === bo.dataset.borrar);
+    if (!x || !(await confirmar(`¿Quitar «${x.nombre}» de la lista?${x.etiquetas ? ' Ya tiene etiquetas impresas: su código no se va a volver a usar.' : ''}`, 'Quitar', true))) return;
+    datos.items = datos.items.filter((i) => i.id !== x.id);
+    guardar(); pintar();
+  }
+});
+$('#buscar').addEventListener('input', pintar);
+$('#descargar').addEventListener('click', descargarExcel);
+$('#catalogo').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) cargarCatalogo(f); });
+$('#nueva').addEventListener('click', async () => {
+  if (!datos.items.length) return;
+  if (!(await confirmar(`¿Borrar la lista (${datos.items.length} productos) y empezar otra? Mandá el Excel antes si no lo hiciste. Los códigos ya usados no se repiten.`, 'Borrar la lista', true))) return;
+  datos.items = []; ultimoId = null;
+  guardar(); pintar(); estado('');
+});
+$('#btn-conectar').addEventListener('click', abrirImpresoras);
+$('#dimp-buscar').addEventListener('click', abrirImpresoras);
+$('#dimp-cerrar').addEventListener('click', () => $('#dlg-impresoras').close());
+$('#di-imprimir').addEventListener('click', imprimirElegida);
+$('#di-cerrar').addEventListener('click', () => $('#dlg-imprimir').close());
+$('#btn-ajustes').addEventListener('click', abrirAjustes);
+$('#aj-medida').addEventListener('change', otraMedida);
+$('#aj-oscuridad').addEventListener('input', () => { $('#aj-osc-val').textContent = $('#aj-oscuridad').value; });
+$('#aj-guardar').addEventListener('click', guardarAjustes);
+$('#aj-prueba').addEventListener('click', imprimirPrueba);
+$('#aj-cerrar').addEventListener('click', () => $('#dlg-ajustes').close());
+window.addEventListener('pagehide', guardar);
+
+$('#pie-version').textContent = `Etiquetador ${VERSION} · Grupo Muros`;
+pintar();
+pintarImpresora();
+// Al abrir: si ya había una impresora elegida, se reconecta sola
+if (BT() && aj().impresora) conectarA(aj().impresora);
+if (!aj().equipo) setTimeout(() => { toast('Para empezar, poné el nombre de este celular (por ejemplo C1).'); abrirAjustes(); }, 400);
+</script>
+</body>
+</html>

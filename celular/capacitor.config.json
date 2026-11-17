@@ -1,0 +1,6 @@
+{
+  "appId": "uy.grupomuros.etiquetador",
+  "appName": "Etiquetador",
+  "webDir": "www",
+  "android": { "allowMixedContent": false }
+}

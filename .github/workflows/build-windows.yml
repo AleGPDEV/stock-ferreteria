@@ -2,7 +2,7 @@
 # - El .exe queda como "artifact" descargable en la pestaña Actions.
 # - Además se publica en Releases con el tag vX.Y.Z, tomando la versión de package.json.
 #   Para sacar una versión nueva, subí el número de "version" en package.json.
-name: Instalador de Windows
+name: Instalador de Windows y app del celular
 
 on:
   push:
@@ -73,3 +73,76 @@ jobs:
             Windows puede mostrar "Windows protegió su PC" porque el programa no está firmado: tocá **Más información → Ejecutar de todas formas**.
 
             Al instalar una versión nueva encima de la anterior, los datos se conservan.
+
+  # App del celular (Etiquetador, Android): se arma después del instalador y se sube a la misma versión
+  android:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Leer versiones
+        id: ver
+        run: |
+          echo "v=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "app=$(node -p "require('./celular/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Armar la página de la app
+        run: node herramientas/armar.js
+
+      - name: Dependencias de la app
+        working-directory: celular
+        run: |
+          npm ci
+          npx cap sync android
+
+      - name: Llave de firma (si está cargada como secreto)
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > "$RUNNER_TEMP/grupomuros.jks"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/grupomuros.jks" >> "$GITHUB_ENV"
+          fi
+
+      - name: Armar el APK
+        working-directory: celular/android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          VERSION_NAME: ${{ steps.ver.outputs.app }}
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          chmod +x gradlew
+          SALIDA="../Etiquetador-Grupo-Muros-${{ steps.ver.outputs.app }}.apk"
+          if [ -n "$ANDROID_KEYSTORE_PATH" ]; then
+            ./gradlew assembleRelease --no-daemon --stacktrace
+            cp app/build/outputs/apk/release/app-release.apk "$SALIDA"
+          else
+            echo "::warning::Sin llave de firma: APK de prueba (para actualizarlo hay que desinstalar el anterior)"
+            ./gradlew assembleDebug --no-daemon --stacktrace
+            cp app/build/outputs/apk/debug/app-debug.apk "$SALIDA"
+          fi
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Etiquetador-Android
+          path: celular/Etiquetador-Grupo-Muros-*.apk
+          retention-days: 30
+
+      - name: Publicar en Releases
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.v }}
+          files: celular/Etiquetador-Grupo-Muros-*.apk
+
