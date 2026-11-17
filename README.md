@@ -188,3 +188,14 @@ tests/almacen.test.js     Pruebas de la base SQLite
 - En **Etiquetas → Impresora de etiquetas** se elige la **medida de la etiqueta del rollo**: 50 × 25, 40 × 30, 50 × 30, 58 × 40, 60 × 40, 100 × 50, 100 × 100, 100 × 150 mm u **Otra medida** (ancho de 20 a 108 mm). Sale una etiqueta por página, del tamaño elegido, y el contenido se agranda o achica con ella. Se recuerda la última medida.
 - Probado para impresoras térmicas de 4" y 203 dpi como la **Unnion LP4206D**. En Windows, en las *Preferencias de impresión* de la impresora, el tamaño de papel tiene que ser la misma medida, con etiquetas separadas por espacio (gap). Al imprimir: escala 100 % y sin márgenes.
 
+## App del celular: Etiquetador (Android)
+
+App aparte para cargar **productos sueltos** recorriendo el local e **imprimirles la etiqueta** en la etiquetadora por Bluetooth (Unnion LP4206D con Bluetooth, o cualquier impresora de etiquetas que entienda TSPL).
+
+- **Instalar**: bajar `Etiquetador-Grupo-Muros-….apk` de la versión en GitHub (Releases) en el celular Android y abrirlo (Android pide permitir «instalar apps de esta fuente» la primera vez).
+- **Primera vez**: en Ajustes, el **nombre del celular** (C1, C2…: uno distinto por celular), la **medida de la etiqueta** y el espacio entre etiquetas. Emparejar la impresora en el Bluetooth del celular y tocar **Conectar**. **Imprimir etiqueta de prueba** dibuja un recuadro en el borde: si sale corrido, se ajusta el espacio.
+- **Producto sin código**: la app le da un código propio del celular (**C1-0001**, C1-0002…; nunca repite uno ya usado) y con **Guardar e imprimir etiqueta** sale la etiqueta (nombre, código de barras, código y estante, igual que las del programa).
+- **Productos que ya existen**: con el Excel de **Inventario completo** del programa cargado, se buscan por nombre o código para imprimirles la etiqueta o contarlos. Usa los mismos estantes, y se pueden crear estantes nuevos con su categoría.
+- **Pasar lo cargado al programa**: **Enviar el Excel para el programa** abre «Compartir» (WhatsApp, Gmail, Drive…). La planilla tiene **el mismo formato que la del Cargador de productos**: en el programa, Productos → Importar desde Excel; se importan las dos (celular y Cargador) y se unen sin duplicar. Los estantes nuevos se crean con su categoría.
+- Fuentes: `herramientas/fuentes/etiquetador.html` (la app) y `herramientas/fuentes/etiqueta-tspl.js` (la etiqueta en TSPL); `celular/` es el proyecto Android (Capacitor) con el complemento propio de impresora Bluetooth (`ImpresoraBTPlugin.java`). GitHub arma el APK y lo prueba en un emulador de Android en cada versión.
+

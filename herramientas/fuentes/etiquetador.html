@@ -253,9 +253,9 @@ const CLAVE = 'etiquetador-v1';
 const $ = (s) => document.querySelector(s);
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-const plata = new Intl.NumberFormat('es-UY', { style: 'currency', currency: 'UYU', maximumFractionDigits: 2 });
 const plata2 = new Intl.NumberFormat('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const $m = (x, moneda) => (moneda === 'USD' ? `U$S ${plata2.format(x)}` : plata.format(x));
+// En Android el formato de moneda del sistema dice «UYU 5,00»: se arma a mano para que diga «$ 5,00»
+const $m = (x, moneda) => `${moneda === 'USD' ? 'U$S' : '$'} ${plata2.format(x)}`;
 const numero = new Intl.NumberFormat('es-UY', { maximumFractionDigits: 3 });
 const normal = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const hoy = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
