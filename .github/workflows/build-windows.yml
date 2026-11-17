@@ -140,6 +140,25 @@ jobs:
           unzip -l "$APK" | grep -E "assets/public/index.html|classes"
           for c in $(unzip -Z1 "$APK" | grep -E '^classes[0-9]*\.dex$'); do unzip -p "$APK" "$c" | grep -c -a "ImpresoraBT" || true; done
           unzip -p "$APK" assets/public/index.html | grep -c "EtiquetaTSPL"
+      - name: Habilitar KVM (emulador)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Probar la app en un emulador de Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb install -r $(ls celular/Etiquetador-Grupo-Muros-*.apk)
+            npm install --no-save --no-audit --no-fund playwright@1.64.1
+            node celular/prueba-emulador.js
+
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
