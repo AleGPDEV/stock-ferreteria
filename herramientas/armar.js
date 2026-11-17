@@ -22,6 +22,7 @@ const armar = (fuente, salida) => {
     .replace('<script>__CODIGO_BARRAS__</script>', () => `<script>\n${codigoBarras}</script>`)
     .replace('<script>__ETIQUETA_TSPL__</script>', () => `<script>\n${etiquetaTspl}</script>`)
     .replace('__VERSION__', versionCelular);
+  fs.mkdirSync(path.dirname(path.join(__dirname, salida)), { recursive: true }); // celular/www no está en el repositorio
   fs.writeFileSync(path.join(__dirname, salida), html);
   console.log('Listo:', path.relative(raiz, path.join(__dirname, salida)), Math.round(Buffer.byteLength(html) / 1024), 'KB');
 };
