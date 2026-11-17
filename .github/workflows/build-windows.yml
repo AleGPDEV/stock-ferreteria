@@ -132,6 +132,14 @@ jobs:
             cp app/build/outputs/apk/debug/app-debug.apk "$SALIDA"
           fi
 
+      - name: Revisar el APK
+        run: |
+          APK=$(ls celular/Etiquetador-Grupo-Muros-*.apk)
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
+          "$AAPT" dump badging "$APK" | grep -E "package:|sdkVersion|targetSdk|uses-permission|application-label"
+          unzip -l "$APK" | grep -E "assets/public/index.html|classes"
+          for c in $(unzip -Z1 "$APK" | grep -E '^classes[0-9]*\.dex$'); do unzip -p "$APK" "$c" | grep -c -a "ImpresoraBT" || true; done
+          unzip -p "$APK" assets/public/index.html | grep -c "EtiquetaTSPL"
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
