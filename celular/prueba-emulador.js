@@ -17,7 +17,8 @@ const espera = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.waitForSelector('#sin-codigo', { timeout: 30000 });
   console.log('Página cargada');
   const r = {};
-  r.plugins = await page.evaluate(() => Object.keys((window.Capacitor && window.Capacitor.Plugins) || {}).filter((k) => /Impresora|Filesystem|Share/.test(k)));
+  r.plugins = await page.evaluate(() => Object.keys((window.Capacitor && window.Capacitor.Plugins) || {}).filter((k) => /Impresora|Filesystem|Share|BarcodeScanner/.test(k)));
+  r.camara = await page.evaluate(async () => { try { return await window.Capacitor.Plugins.BarcodeScanner.isSupported(); } catch (e) { return 'error: ' + e.message; } });
   r.ajustesAbiertos = await page.evaluate(() => document.getElementById('dlg-ajustes').open);
   // Bluetooth: en el emulador no hay, pero el complemento tiene que contestar (no colgarse)
   r.listar = await page.evaluate(async () => { try { return await window.Capacitor.Plugins.ImpresoraBT.listar(); } catch (e) { return 'error: ' + e.message; } });
@@ -56,7 +57,7 @@ const espera = (ms) => new Promise((r) => setTimeout(r, ms));
   r.despuesDeReabrir = await page2.textContent('#lista');
   await device.screenshot({ path: 'celular/captura-emulador.png' });
   console.log(JSON.stringify(r, null, 2));
-  const ok = r.plugins.includes('ImpresoraBT') && /C1-0001/.test(r.codigo) && /Arandela/.test(r.despuesDeReabrir) && r.excel.tamano > 1000 && r.errorImprimir;
+  const ok = r.plugins.includes('ImpresoraBT') && r.plugins.includes('BarcodeScanner') && /C1-0001/.test(r.codigo) && /Arandela/.test(r.despuesDeReabrir) && r.excel.tamano > 1000 && r.errorImprimir;
   await device.close();
   if (!ok) { console.error('LA PRUEBA FALLÓ'); process.exit(1); }
   console.log('PRUEBA OK');

@@ -102,6 +102,8 @@ label.btn input { display: none; }
 .copias input { width: 90px; text-align: center; font-size: 20px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; min-height: 46px; }
 .dispositivos { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .dispositivos .btn { width: 100%; text-align: left; display: flex; justify-content: space-between; gap: 10px; font-weight: 400; }
+.seguir { display: flex; gap: 10px; align-items: center; font-size: 15px; min-height: 40px; }
+.seguir input { width: 22px; height: 22px; accent-color: var(--verde); }
 .pie { color: var(--muted); font-size: 13px; text-align: center; margin: 4px 0 0; }
 </style>
 </head>
@@ -122,11 +124,13 @@ label.btn input { display: none; }
 
   <section class="card">
     <div class="acciones">
+      <button class="btn verde grande" type="button" id="btn-camara">Escanear código con la cámara</button>
+      <label class="seguir"><input type="checkbox" id="seguir"> Seguir escaneando para contar (cada lectura suma 1)</label>
       <button class="btn primary grande" type="button" id="sin-codigo">+ Producto sin código</button>
       <input id="escanear" type="text" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="Código o nombre de un producto" aria-label="Código o nombre de un producto">
       <ul class="v-lista" id="b-lista"></ul>
     </div>
-    <p class="ayuda">Para lo que viene suelto, tocá <strong>Producto sin código</strong>: la app le da un código propio y le imprime la etiqueta. Para un producto que ya existe, buscalo por código o nombre.</p>
+    <p class="ayuda">Con código de barras: <strong>escanealo</strong> (con la cámara o con un lector Bluetooth en el cuadro de búsqueda), como en el Cargador; si ya está en la lista, cada lectura suma 1. Lo que viene suelto: <strong>Producto sin código</strong>, la app le da un código propio y le imprime la etiqueta.</p>
     <p class="aviso" id="estado" role="status"></p>
 
     <form id="form" hidden novalidate>
@@ -487,16 +491,54 @@ function pintarBusqueda() {
     else { abrirForm({ ...p, cantidad: '', existente: true }); estado(`<strong>${esc(p.nombre)}</strong> ya está en el programa${p.stock != null ? ` (hay ${numero.format(p.stock)})` : ''}. Poné cuántos hay y, si querés, imprimile la etiqueta.`, 'info'); }
   };
 }
+const avisar = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* nada */ } };
+/** Un código leído (cámara, lector o escrito). Igual que el Cargador: si ya está en la lista suma 1; si no, abre la ficha.
+ *  Devuelve 'sumado' cuando solo sumó (para seguir escaneando). */
 function codigoEscrito(texto) {
   const codigo = String(texto || '').trim().toUpperCase();
-  if (!codigo) return;
+  if (!codigo) return '';
   const ya = datos.items.find((x) => (x.codigo && x.codigo.toUpperCase() === codigo) || (x.barras || []).includes(codigo));
-  if (ya) { abrirForm(ya, ya.id); return; }
+  if (ya) {
+    if (!$('#form').hidden && editando === ya.id) { $('#c-cantidad').value = String((parseNum($('#c-cantidad').value) || 0) + 1).replace('.', ','); avisar(40); return 'sumado'; }
+    ya.cantidad = (Number(ya.cantidad) || 0) + 1;
+    ya.cambio = Date.now();
+    ultimoId = ya.id;
+    guardar(); pintar(); avisar(40);
+    estado(`<strong>${esc(ya.nombre)}</strong> ya estaba en la lista: ahora hay <strong>${numero.format(ya.cantidad)}</strong>. <button class="btn sm" type="button" data-editar="${ya.id}">Corregir</button>`, 'ok');
+    return 'sumado';
+  }
+  avisar([60, 60, 60]);
   const p = catalogo.get(codigo);
-  if (p) { abrirForm({ ...p, barras: p.codigo !== codigo ? [codigo] : [], cantidad: '', existente: true }); estado(`<strong>${esc(p.nombre)}</strong> ya está en el programa. Poné cuántos hay.`, 'info'); return; }
+  if (p) { abrirForm({ ...p, barras: p.codigo !== codigo ? [codigo] : [], cantidad: '', existente: true }); estado(`<strong>${esc(p.nombre)}</strong> ya está en el programa${p.stock != null ? ` (hay ${numero.format(p.stock)} según el programa)` : ''}. Poné cuántos hay ahora.`, 'info'); return 'ficha'; }
   // Un código de fábrica que no está: producto nuevo con ese código (no necesita código propio)
   abrirForm({ codigo, cantidad: '' });
   estado(`Código nuevo: <strong>${esc(codigo)}</strong>. Escribí el nombre y el precio.`, 'info');
+  return 'ficha';
+}
+
+// ---------- Cámara (lector de códigos de Google, sin internet una vez instalado) ----------
+const Camara = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BarcodeScanner) || null;
+async function escanearCamara() {
+  if (!Camara()) { toast('El escáner con la cámara funciona en la app instalada en el celular.'); return; }
+  try {
+    const m = await Camara().isGoogleBarcodeScannerModuleAvailable();
+    if (!m.available) {
+      await Camara().installGoogleBarcodeScannerModule();
+      toast('Se está bajando el lector de códigos de Google (una sola vez, necesita internet). Probá de nuevo en un minuto.');
+      return;
+    }
+    const r = await Camara().scan();
+    const b = r && r.barcodes && r.barcodes[0];
+    const codigo = b && (b.rawValue || b.displayValue);
+    if (!codigo) return;
+    const res = codigoEscrito(codigo);
+    // Modo contar: si solo sumó, vuelve a abrir la cámara para el siguiente
+    if (res === 'sumado' && $('#seguir').checked) setTimeout(escanearCamara, 700);
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    if (/cancel/i.test(msg)) return;
+    toast('No se pudo usar la cámara: ' + msg);
+  }
 }
 
 function abrirForm(x, id = null) {
@@ -714,6 +756,9 @@ async function imprimirPrueba() {
 
 // ---------- Eventos ----------
 $('#sin-codigo').addEventListener('click', nuevoSinCodigo);
+$('#btn-camara').addEventListener('click', escanearCamara);
+$('#seguir').checked = !!datos.seguir;
+$('#seguir').addEventListener('change', () => { datos.seguir = $('#seguir').checked; guardar(); });
 $('#escanear').addEventListener('input', pintarBusqueda);
 $('#escanear').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
@@ -732,7 +777,12 @@ $('#form').addEventListener('submit', async (e) => {
   toast(`Guardado: ${x.nombre}.`);
   abrirImprimir(x, 1);
 });
-$('#btn-solo-guardar').addEventListener('click', () => { const x = guardarForm(); if (x) toast(`Guardado: ${x.nombre}.`); });
+$('#btn-solo-guardar').addEventListener('click', () => {
+  const x = guardarForm();
+  if (!x) return;
+  toast(`Guardado: ${x.nombre}.`);
+  if ($('#seguir').checked && Camara()) setTimeout(escanearCamara, 700);
+});
 $('#cancelar').addEventListener('click', cerrarForm);
 $('#c-estante').addEventListener('change', () => alElegirEstante(''));
 $('#c-moneda').addEventListener('change', rotulosMoneda);
