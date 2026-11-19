@@ -35,7 +35,14 @@ const espera = (ms) => new Promise((r) => setTimeout(r, ms));
   r.lista = await page.textContent('#lista');
   // Imprimir sin impresora: tiene que avisar, no colgarse
   await page.click('[data-etq]');
-  await page.click('#di-imprimir');
+  await espera(500);
+  console.log('Diálogo:', JSON.stringify(await page.evaluate(() => {
+    const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; };
+    const b = document.querySelector('#di-imprimir').getBoundingClientRect();
+    const enCentro = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+    return { ventana: [innerWidth, innerHeight, devicePixelRatio], dialogo: r('#dlg-imprimir'), vista: r('#di-vista'), boton: r('#di-imprimir'), enCentro: enCentro && (enCentro.id || enCentro.tagName) };
+  })));
+  await page.click('#di-imprimir', { timeout: 8000 }).catch(async (e) => { console.log('click normal falló:', e.message.split('\n')[0]); await page.evaluate(() => document.querySelector('#di-imprimir').click()); });
   await espera(1500);
   r.errorImprimir = await page.textContent('#di-err');
   await page.click('#di-cerrar');
