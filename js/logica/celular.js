@@ -141,12 +141,6 @@ function conteoDesdeCelularEn(d, x) {
   if (cant != null) { const e = aplicarConteoCelular(d, p, cant, x.hace, id, usuario); if (e) return { error: e }; }
   return { producto: datosParaCelular(d, p), productoId: p.id };
 }
-/** Estante nuevo creado en el celular (con su categoría). */
-function estanteDesdeCelularEn(d, x) {
-  const r = guardarEstante(d, { codigo: String((x && x.codigo) || '').slice(0, 60), categoria: String((x && x.categoria) || '').slice(0, 60) });
-  if (r.error) return { error: r.error };
-  return { estante: { codigo: r.estante.codigo, categoria: r.estante.categoria || '' }, ...estantesCelular(d) };
-}
 /** Foto sacada con el celular: el archivo ya está en la carpeta Fotos (lo guardó el servidor); acá se le asigna al producto. */
 function fotoDesdeCelularEn(d, x) {
   x = x || {};
@@ -181,7 +175,6 @@ function guardarDesdeCelular(r, productoId) {
 }
 const productoDesdeCelular = (x) => (datosDanados ? SIN_DATOS_CELULAR : (() => { const r = altaDesdeCelularEn(db, x); return guardarDesdeCelular(r, r && r.productoId); })());
 const conteoDesdeCelular = (x) => (datosDanados ? SIN_DATOS_CELULAR : (() => { const r = conteoDesdeCelularEn(db, x); return guardarDesdeCelular(r, r && r.productoId); })());
-const estanteDesdeCelular = (x) => (datosDanados ? SIN_DATOS_CELULAR : guardarDesdeCelular(estanteDesdeCelularEn(db, x)));
 const fotoDesdeCelular = (x) => (datosDanados ? SIN_DATOS_CELULAR : (() => { const r = fotoDesdeCelularEn(db, x); return guardarDesdeCelular(r, r && r.productoId); })());
 const codigoLibreParaCelular = (equipo) => (datosDanados ? SIN_DATOS_CELULAR : codigoLibreCelular(db, equipo));
 function estadoParaCelular() { return datosDanados ? { ...SIN_DATOS_CELULAR, listo: false } : { listo: true, productos: db.productos.length }; }

@@ -226,16 +226,12 @@ test('celular: la hora del conteo es la de la PC (no importa el reloj del celula
   assert.equal(app.contadoElDesde(1e12, ahora), '2026-11-12T15:00:00.000Z'); // como mucho una semana
 });
 
-test('celular: código libre del celular y estante nuevo', () => {
+test('celular: código libre del celular', () => {
   const d = base();
   assert.deepEqual(app.codigoLibreCelular(d, 'c1'), { codigo: 'C1-0001' });
   d.productos.push({ id: 'z', codigo: 'C1-0007', nombre: 'x', stock: 0 });
   assert.deepEqual(app.codigoLibreCelular(d, 'C1'), { codigo: 'C1-0008' });
   assert.match(app.codigoLibreCelular(d, 'P').error, /nombre de este celular/);
-  const r = app.estanteDesdeCelularEn(d, { codigo: 'D-4', categoria: 'Sanitaria' });
-  assert.deepEqual(r.estante, { codigo: 'D-4', categoria: 'Sanitaria' });
-  assert.ok(r.estantes.some((e) => e.codigo === 'D-4'));
-  assert.ok(app.estanteDesdeCelularEn(d, { codigo: 'D-4', categoria: 'Sanitaria' }).error);
 });
 
 function mandar(puerto, ruta, token, cuerpo) {
@@ -254,7 +250,7 @@ function mandar(puerto, ruta, token, cuerpo) {
 test('servidor: el celular guarda en la PC (alta, conteo, estante) y los errores llegan con su motivo', async () => {
   const d = base();
   const P = {
-    productoDesdeCelular: (x) => app.altaDesdeCelularEn(d, x), conteoDesdeCelular: (x) => app.conteoDesdeCelularEn(d, x), estanteDesdeCelular: (x) => app.estanteDesdeCelularEn(d, x),
+    productoDesdeCelular: (x) => app.altaDesdeCelularEn(d, x), conteoDesdeCelular: (x) => app.conteoDesdeCelularEn(d, x),
     codigoLibreParaCelular: (e) => app.codigoLibreCelular(d, e), estadoParaCelular: () => ({ listo: true, productos: d.productos.length }),
   };
   const llamadas = [];
@@ -264,8 +260,12 @@ test('servidor: el celular guarda en la PC (alta, conteo, estante) y los errores
   try {
     const c = await pedir(s.puerto, '/api/codigo-libre?equipo=C2', 't');
     assert.deepEqual(c.data, { codigo: 'C2-0001' });
-    const e = await mandar(s.puerto, '/api/estantes', 't', { codigo: 'Z-1', categoria: 'Jardín' });
-    assert.equal(e.status, 200);
+    // Los estantes se crean solo en la PC: el celular ya no puede crearlos
+    const e = await mandar(s.puerto, '/api/estantes', 't', { codigo: 'Q-7', categoria: 'Otra' });
+    assert.equal(e.status, 404);
+    assert.ok(!app.estantesCelular(d).estantes.some((x) => x.codigo === 'Q-7'));
+    assert.equal(typeof app.estanteDesdeCelularEn, 'undefined');
+    app.guardarEstante(d, { codigo: 'Z-1', categoria: 'Jardín' }); // creado en la PC
     const a = await mandar(s.puerto, '/api/productos', 't', { idCelular: 'i1', equipo: 'C2', codigo: 'C2-0001', nombre: 'Manguera', precio: 300, cantidad: 2, ubicacion: 'Z-1', costo: 5 });
     assert.equal(a.status, 200);
     assert.equal(a.data.producto.categoria, 'Jardín');
