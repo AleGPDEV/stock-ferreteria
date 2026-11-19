@@ -1303,6 +1303,13 @@ test('celular: etiqueta TSPL para la etiquetadora (mismo código de barras que e
   assert.match(p, /DIRECTION 0\r\n/);
   assert.match(p, /BOX 44,0,500,308,3/);
   assert.match(E.tsplPrueba({ ancho: 50, alto: 25 }), /DIRECTION 1\r\n/);
+  // área del ancho del cabezal (72 mm) para poder correr el dibujo sin que dé la vuelta
+  assert.match(E.tsplPrueba({ ancho: 50, alto: 40 }, { cabezal: 72, correrX: 15 }), /SIZE 72 mm,40 mm[\s\S]*BOX 124,4,516,316,3/);
+  assert.match(E.tsplPrueba({ ancho: 100, alto: 50 }, { cabezal: 72 }), /SIZE 100 mm,50 mm/);
+  const regla = E.tsplRegla({ cabezal: 72, alto: 40, correrX: 9 });
+  assert.match(regla, /^SIZE 72 mm,40 mm/);
+  assert.match(regla, /TEXT 403,96,"2",0,1,1,"50"/);
+  assert.equal((regla.match(/^BAR /gm) || []).length, 74);
   const corrida = E.tspl(E.disenoEtiqueta({ nombre: 'X', codigo: '7790001234567' }, { ancho: 50, alto: 25 }), { correrX: -40 });
   assert.ok(!/-\d/.test(corrida.replace(/C1-|PRUEBA-/g, '')), 'sin coordenadas negativas');
 });

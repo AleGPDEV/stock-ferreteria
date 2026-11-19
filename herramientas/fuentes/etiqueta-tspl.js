@@ -92,7 +92,9 @@
   /**
    * Comandos TSPL para imprimir el dibujo. opc: { copias, separacion (mm entre etiquetas), oscuridad (1-15), velocidad,
    * correrX / correrY (mm, pueden ser negativos: corren todo el dibujo si la impresora no lo pone justo en la etiqueta),
-   * girar (true: lo imprime dado vuelta, DIRECTION 0) }.
+   * girar (true: lo imprime dado vuelta, DIRECTION 0),
+   * cabezal (mm de ancho que imprime la impresora: 48, 72 o 104; el área de impresión se hace de ese ancho
+   * para poder correr el dibujo hasta donde está la etiqueta sin que «dé la vuelta») }.
    */
   function tspl(d, opc = {}) {
     const copias = Math.max(1, Math.min(500, Math.floor(Number(opc.copias) || 1)));
@@ -101,7 +103,7 @@
     const dx = mm(opc.correrX), dy = mm(opc.correrY);
     const X = (x) => Math.max(0, Math.round(x + dx)), Y = (y) => Math.max(0, Math.round(y + dy));
     const l = [
-      `SIZE ${d.ancho} mm,${d.alto} mm`,
+      `SIZE ${Math.max(d.ancho, Number(opc.cabezal) || 0)} mm,${d.alto} mm`,
       `GAP ${gap} mm,0 mm`,
       `DENSITY ${Math.max(1, Math.min(15, Math.round(Number(opc.oscuridad) || 8)))}`,
       `SPEED ${Math.max(2, Math.min(6, Math.round(Number(opc.velocidad) || 4)))}`,
@@ -129,6 +131,23 @@
     return tspl(d, opc);
   }
 
+  /**
+   * Regla para calibrar: rayitas cada 1 mm y números cada 5 mm a lo ancho de todo el cabezal.
+   * El número que queda en el borde izquierdo de la etiqueta es lo que hay que poner en «Correr a los costados».
+   */
+  function tsplRegla(opc = {}) {
+    const cab = Math.max(20, Math.min(108, Number(opc.cabezal) || 72));
+    const alto = Math.max(15, Math.min(300, Number(opc.alto) || 25));
+    const d = { ancho: cab, alto, textos: [], barras: [] };
+    for (let mm = 0; mm <= cab; mm++) {
+      const h = mm % 10 === 0 ? 72 : mm % 5 === 0 ? 48 : 24;
+      d.barras.push({ x: Math.min(mm * PUNTOS_MM, cab * PUNTOS_MM - 2), y: 16, w: 2, h });
+      if (mm % 5 === 0 && mm < cab) d.textos.push({ x: mm * PUNTOS_MM + 3, y: 96, fuente: '2', texto: String(mm) });
+    }
+    d.barras.push({ x: 0, y: 14, w: cab * PUNTOS_MM, h: 2 });
+    return tspl(d, { ...opc, correrX: 0, correrY: 0, copias: 1 });
+  }
+
   /** Dibuja la vista previa en un canvas (tamaño real a 203 dpi, escalado con «escala»). */
   function dibujar(d, canvas, escala = 1) {
     const [W, H] = d.puntos;
@@ -152,7 +171,7 @@
     }
   }
 
-  const api = { ascii, renglones, disenoEtiqueta, tspl, tsplPrueba, dibujar, FUENTES, PUNTOS_MM };
+  const api = { ascii, renglones, disenoEtiqueta, tspl, tsplPrueba, tsplRegla, dibujar, FUENTES, PUNTOS_MM };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.EtiquetaTSPL = api;
 })(typeof window !== 'undefined' ? window : globalThis);
