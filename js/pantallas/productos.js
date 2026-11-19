@@ -41,13 +41,38 @@ function renderProductos() {
 
 let editandoProd = null;
 
+/* Otros códigos con que se reconoce el producto (p.barras): una línea chica debajo de «Código».
+ * Se editan acá (agregarCodigoExtra / quitarCodigoExtra) y se guardan con «Guardar». */
+let barrasEdit = [];
+function renderBarras() {
+  $('#p-barras-l').hidden = !barrasEdit.length;
+  $('#p-barras-l').innerHTML = barrasEdit.length
+    ? 'También se reconoce por: ' + barrasEdit.map((c) => `<span class="mono">${esc(c)}</span> <button type="button" class="btn sm ghost" data-quitar-barras="${esc(c)}" aria-label="Quitar el código ${esc(c)}">✕</button>`).join(' ')
+    : '';
+}
+function mostrarNuevoCodigo(abrir) {
+  $('#p-barras-nuevo').hidden = !abrir;
+  $('#p-barras-abrir').hidden = abrir;
+  $('#p-barras').value = '';
+  $('#p-barras-err').textContent = '';
+  if (abrir) $('#p-barras').focus();
+}
+function agregarCodigoFicha() {
+  const r = agregarCodigoExtra(db, barrasEdit, $('#p-barras').value, $('#p-codigo').value, editandoProd);
+  if (r.error) { $('#p-barras-err').textContent = r.error; $('#p-barras').select(); return; }
+  barrasEdit = r.lista;
+  renderBarras();
+  mostrarNuevoCodigo(false);
+  $('#p-barras-abrir').focus();
+}
+
 /* Códigos de proveedor en la ficha: se editan acá y se guardan con «Guardar» */
 let codprovEdit = [];
 function renderCodProv() {
   $('#p-codprov-l').innerHTML = codprovEdit.length
     ? codprovEdit.map((x, i) => `<li><span class="mono">${esc(x.codigo)}</span> <span>${esc(nombreProveedorDe(db, x.proveedorId) || 'proveedor borrado')}</span>${x.desc ? ` <span class="muted">«${esc(x.desc)}»</span>` : ''}
       <button type="button" class="btn sm ghost" data-quitar-codprov="${i}" aria-label="Quitar el código ${esc(x.codigo)}">Quitar</button></li>`).join('')
-    : '<li class="muted">Ninguno. Se agregan solos al importar facturas, o a mano acá abajo.</li>';
+    : '<li class="muted">Ninguno.</li>';
   $('#p-codprov-prov').innerHTML = '<option value="">Proveedor…</option>' + db.proveedores.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')).map((v) => `<option value="${v.id}">${esc(v.nombre)}</option>`).join('');
 }
 
@@ -60,7 +85,9 @@ function abrirProducto(id) {
   $('#p-foto-err').textContent = '';
   mostrarFotoForm(fotoUrl(p));
   $('#p-codigo').value = p.codigo;
-  $('#p-barras').value = (p.barras || []).join(' ');
+  barrasEdit = (p.barras || []).slice();
+  renderBarras();
+  mostrarNuevoCodigo(false);
   codprovEdit = codigosProvDe(p).map((x) => ({ ...x }));
   renderCodProv();
   $('#p-unir').hidden = !id || !esAdmin();
@@ -146,19 +173,20 @@ function iniciarProductos() {
   // Si falta el archivo de una foto, no se muestra el ícono de imagen rota
   document.addEventListener('error', (e) => { if (e.target.classList && e.target.classList.contains('foto')) e.target.hidden = true; }, true);
 
-  // Al entrar a «Códigos de barras» con algo escrito, se deja un espacio para que el próximo escaneo vaya aparte
-  $('#p-barras').addEventListener('focus', () => {
-    const el = $('#p-barras');
-    if (el.value.trim() && !/\s$/.test(el.value)) el.value = el.value.trim() + ' ';
-    const fin = el.value.length;
-    setTimeout(() => el.setSelectionRange(fin, fin), 0);
-  });
-  // El lector termina con Enter: en «Códigos de barras» eso agrega un espacio para el siguiente, no guarda
+  // Otros códigos del producto: «+ Agregar otro código» abre el campo; el lector termina con Enter, que agrega (no guarda la ficha)
+  $('#p-barras-abrir').addEventListener('click', () => mostrarNuevoCodigo(true));
+  $('#p-barras-agregar').addEventListener('click', agregarCodigoFicha);
   $('#p-barras').addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const v = $('#p-barras').value.trim();
-    $('#p-barras').value = v ? v + ' ' : '';
+    if (e.key === 'Enter') { e.preventDefault(); agregarCodigoFicha(); }
+    else if (e.key === 'Escape') { e.preventDefault(); mostrarNuevoCodigo(false); $('#p-barras-abrir').focus(); } // cierra el campo, no la ventana
+  });
+  $('#p-barras').addEventListener('input', () => { $('#p-barras-err').textContent = ''; });
+  $('#p-barras-l').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-quitar-barras]');
+    if (!b) return;
+    barrasEdit = quitarCodigoExtra(barrasEdit, b.dataset.quitarBarras);
+    renderBarras();
+    $(barrasEdit.length ? '#p-barras-l button' : '#p-barras-abrir').focus();
   });
 
   let guardandoProd = false;
@@ -185,12 +213,21 @@ function iniciarProductos() {
     if (!actual && !esAdmin()) datos.costo = 0;
     if (!(datos.precio > 0)) return err('Escribí el precio de venta (mayor a 0).');
     if (datos.costo < 0 || datos.minimo < 0) return err('El costo y el stock mínimo no pueden ser negativos.');
+    // Un código escrito en «Agregar otro código» sin tocar «Agregar» también se guarda
+    if (!$('#p-barras-nuevo').hidden && $('#p-barras').value.trim()) {
+      const r = agregarCodigoExtra(db, barrasEdit, $('#p-barras').value, datos.codigo, editandoProd);
+      if (r.error) { $('#p-barras-err').textContent = r.error; $('#p-barras').focus(); return err(r.error); }
+      barrasEdit = r.lista;
+      renderBarras();
+      mostrarNuevoCodigo(false);
+    }
     const usado = codigoUsado(db, datos.codigo, editandoProd);
     if (usado) return err(`El código ${datos.codigo} ya lo usa «${usado.nombre}».`);
-    datos.barras = [...new Set($('#p-barras').value.toUpperCase().split(/[\s,;]+/).filter(Boolean))].filter((b) => b !== datos.codigo);
+    // Si el «Código» pasó a ser uno de los otros códigos, ya no hace falta en la lista
+    datos.barras = [...new Set(barrasEdit.map(normCodigo).filter(Boolean))].filter((b) => b !== datos.codigo);
     for (const b of datos.barras) {
       const otro = codigoUsado(db, b, editandoProd);
-      if (otro) return err(`El código de barras ${b} ya es de «${otro.nombre}».`);
+      if (otro) return err(`El código ${b} ya es de «${otro.nombre}».`);
     }
     const cambioPrecio = !actual || actual.precio !== datos.precio || actual.costo !== datos.costo || (esUSD(actual) ? 'USD' : 'UYU') !== datos.moneda;
     if (esAdmin() && cambioPrecio && precioBajoCosto(datos)

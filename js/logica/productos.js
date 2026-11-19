@@ -101,6 +101,25 @@ function asignarBarras(d, p, texto) {
   p.barras = (Array.isArray(p.barras) ? p.barras : []).concat(c);
   return null;
 }
+
+/* Ficha del producto: además de «Código», el producto se reconoce por otros códigos (p.barras), que se agregan
+ * solos desde Vender y desde el celular. En la ficha se editan sobre una copia de la lista y se guardan con «Guardar». */
+/** Agrega un código a la lista. Devuelve { lista } (una lista nueva, con el código agregado) o { error }. */
+function agregarCodigoExtra(d, lista, texto, codigoPrincipal, exceptoId) {
+  const c = normCodigo(texto);
+  if (!c) return { error: 'Escaneá o escribí el código.' };
+  if (/\s/.test(c)) return { error: 'Un código no lleva espacios: agregalos de a uno.' };
+  if (c === normCodigo(codigoPrincipal)) return { error: `${c} ya es el código de este producto.` };
+  if (lista.some((x) => normCodigo(x) === c)) return { error: `${c} ya está en la lista.` };
+  const otro = codigoUsado(d, c, exceptoId);
+  if (otro) return { error: `El código ${c} ya es de «${otro.nombre}».` };
+  return { lista: lista.concat(c) };
+}
+/** Saca un código de la lista. Devuelve una lista nueva. */
+function quitarCodigoExtra(lista, codigo) {
+  const c = normCodigo(codigo);
+  return lista.filter((x) => normCodigo(x) !== c);
+}
 const proveedor = (id) => db.proveedores.find((p) => p.id === id);
 const nombreProv = (id) => (proveedor(id) || {}).nombre || '';
 

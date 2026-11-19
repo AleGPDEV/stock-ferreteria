@@ -562,18 +562,28 @@
       <div class="p-foto f-wide" id="p-foto-zona">
         <div class="p-foto-prev" id="p-foto-prev"><span>Sin foto</span></div>
         <div class="p-foto-acc">
-          <span class="p-foto-tit">Foto del producto (opcional)</span>
+          <span class="p-foto-tit">Foto del producto (opcional) <button type="button" class="ayuda-ico" data-ayuda="La foto pasada del teléfono a la computadora (JPG o PNG). También se puede arrastrar al recuadro. El programa la achica sola.">?</button></span>
           <div class="botonera">
             <label class="btn" for="p-foto-archivo" id="p-foto-elegir">Elegir foto</label>
             <input type="file" id="p-foto-archivo" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp,.heic" hidden>
             <button type="button" class="btn ghost" id="p-foto-quitar" hidden>Quitar foto</button>
           </div>
-          <small class="muted">La foto pasada del teléfono a la computadora. También se puede arrastrar acá. El programa la achica sola.</small>
           <p class="err" id="p-foto-err" role="alert"></p>
         </div>
       </div>
-      <label class="f" for="p-codigo">Código<input id="p-codigo" type="text" required autocomplete="off" placeholder="Ej.: TOR-0810 o código de barras"></label>
-      <label class="f" for="p-barras">Códigos de barras<input id="p-barras" type="text" autocomplete="off" spellcheck="false" placeholder="Hacé clic acá y escaneá el paquete"><small>Si el código de arriba es el del proveedor, acá va el del paquete. Puede haber más de uno, separados por espacio.</small></label>
+      <div class="f f-wide">
+        <label for="p-codigo">Código</label>
+        <input id="p-codigo" type="text" required autocomplete="off" spellcheck="false" placeholder="Escaneá o escribí el código">
+        <small id="p-barras-l" hidden></small>
+        <small><button type="button" class="link-btn" id="p-barras-abrir">+ Agregar otro código</button></small>
+        <div id="p-barras-nuevo" hidden>
+          <div class="codprov-nuevo">
+            <label class="visually-hidden" for="p-barras">Otro código</label><input id="p-barras" type="text" autocomplete="off" spellcheck="false" placeholder="Escaneá o escribí otro código">
+            <button type="button" class="btn sm" id="p-barras-agregar">Agregar</button>
+          </div>
+          <p class="err" id="p-barras-err" role="alert"></p>
+        </div>
+      </div>
       <label class="f f-wide" for="p-nombre">Nombre<input id="p-nombre" type="text" required placeholder="Ej.: Tornillo autoperforante 8 x 1&quot;"></label>
       <label class="f" for="p-categoria">Categoría<input id="p-categoria" type="text" list="lista-cat" placeholder="Ej.: Tornillería"></label>
       <label class="f" for="p-unidad">Unidad
@@ -584,14 +594,13 @@
       </label>
       <label class="f" for="p-proveedor">Proveedor<select id="p-proveedor"></select></label>
       <label class="f" for="p-ubicacion">Ubicación<input id="p-ubicacion" type="text" placeholder="Ej.: Estante A-01"></label>
-      <label class="f f-wide p-moneda" for="p-moneda">Moneda<select id="p-moneda"><option value="UYU">Pesos ($)</option><option value="USD">Dólares (U$S)</option></select><small class="muted" id="p-moneda-nota">El costo y el precio van en esta moneda. Los productos en dólares se cobran en dólares.</small></label>
+      <label class="f f-wide p-moneda" for="p-moneda"><span>Moneda <button type="button" class="ayuda-ico" data-ayuda="El costo y el precio van en esta moneda. Los productos en dólares se cobran en dólares.">?</button></span><select id="p-moneda"><option value="UYU">Pesos ($)</option><option value="USD">Dólares (U$S)</option></select></label>
       <label class="f solo-admin" for="p-costo"><span id="p-costo-lbl">Costo</span><input id="p-costo" type="number" step="any" min="0" inputmode="decimal"></label>
-      <label class="f" for="p-precio"><span id="p-precio-lbl">Precio de venta</span><input id="p-precio" type="number" step="any" min="0.01" inputmode="decimal"><small class="muted" id="p-margen"></small><small class="muted" id="p-precio-nota" hidden>Solo el administrador puede cambiar el precio.</small></label>
-      <label class="f" for="p-minimo">Stock mínimo<input id="p-minimo" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="f" for="p-precio"><span><span id="p-precio-lbl">Precio de venta</span> <button type="button" class="ayuda-ico" data-ayuda="Solo el administrador puede cambiar el precio." id="p-precio-nota" hidden>?</button></span><input id="p-precio" type="number" step="any" min="0.01" inputmode="decimal"><small class="muted" id="p-margen"></small></label>
+      <label class="f" for="p-minimo"><span>Stock mínimo <button type="button" class="ayuda-ico" data-ayuda="Para cambiar el stock usá la caja, una entrada o un ajuste por conteo. Así queda registrado en los movimientos." id="p-stock-nota" hidden>?</button></span><input id="p-minimo" type="number" step="any" min="0" inputmode="decimal"></label>
       <label class="f" for="p-stock" id="p-stock-wrap">Stock inicial<input id="p-stock" type="number" step="any" min="0" inputmode="decimal" placeholder="0"></label>
       <fieldset class="f-wide codprov solo-admin">
-        <legend>Códigos de los proveedores</legend>
-        <p class="muted">Cómo llama cada proveedor a este producto en sus facturas. Así, al importar, la factura encuentra este producto.</p>
+        <legend>Códigos de los proveedores <button type="button" class="ayuda-ico" data-ayuda="Cómo llama cada proveedor a este producto en sus facturas. Así, al importar, la factura encuentra este producto. Se agregan solos al importar facturas, o a mano acá.">?</button></legend>
         <ul class="codprov-l" id="p-codprov-l"></ul>
         <div class="codprov-nuevo">
           <label class="visually-hidden" for="p-codprov-prov">Proveedor</label><select id="p-codprov-prov"></select>
@@ -602,12 +611,13 @@
       </fieldset>
       <details class="f-wide unir solo-admin" id="p-unir" hidden>
         <summary>¿Está cargado dos veces? Unir con otro producto</summary>
-        <p class="muted">Por ejemplo, el mismo artículo que se compró a dos proveedores y quedó con dos fichas. Buscá la otra ficha: queda esta, con el stock y el historial de las dos.</p>
-        <label class="visually-hidden" for="p-unir-buscar">Buscar el otro producto</label>
-        <input id="p-unir-buscar" type="search" autocomplete="off" placeholder="Nombre o código del otro producto">
+        <div class="codprov-nuevo">
+          <label class="visually-hidden" for="p-unir-buscar">Buscar el otro producto</label>
+          <input id="p-unir-buscar" type="search" autocomplete="off" placeholder="Nombre o código del otro producto">
+          <button type="button" class="ayuda-ico" data-ayuda="Por ejemplo, el mismo artículo que se compró a dos proveedores y quedó con dos fichas. Buscá la otra ficha: queda esta, con el stock y el historial de las dos.">?</button>
+        </div>
         <ul class="unir-res" id="p-unir-res"></ul>
       </details>
-      <p class="muted f-wide nota-edit" id="p-stock-nota" hidden>Para cambiar el stock usá la caja, una entrada o un ajuste por conteo. Así queda registrado en los movimientos.</p>
     </div>
     <p class="err dlg-err" id="prod-err" role="alert"></p>
     <footer class="dlg-f">
