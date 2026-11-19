@@ -541,6 +541,12 @@
             </div>
           </div>
         </article>
+        <article class="card solo-escritorio" id="card-celular">
+          <header class="card-h">
+            <div><h2>Celular (Etiquetador)</h2><p class="sub" id="cel-card-estado">El celular puede consultar los productos y los estantes de esta PC por el WiFi del local.</p></div>
+            <button class="btn sm" type="button" id="btn-cel-abrir">Vincular celular</button>
+          </header>
+        </article>
       </div>
     </section>
 
@@ -613,6 +619,38 @@
   </form>
 </dialog>
 <datalist id="lista-cat"></datalist>
+
+<!-- Vincular el celular (app Etiquetador) por WiFi -->
+<dialog id="dlg-celular" class="dlg-chico" aria-labelledby="cel-titulo">
+  <header class="dlg-h"><h2 id="cel-titulo">Vincular un celular</h2><p class="sub">El celular consulta los productos y los estantes de esta PC por el WiFi del local, en el momento. Por ahora solo consulta: no cambia nada.</p></header>
+  <div class="dlg-b">
+    <p class="nota-edit" id="cel-no-admin" hidden>Solo un administrador puede vincular celulares. Entrá con un usuario administrador.</p>
+    <div id="cel-apagado" hidden>
+      <p>La conexión con el celular está <strong>apagada</strong>.</p>
+      <p class="sub">Al prenderla, Windows puede preguntar si deja que «Stock Ferretería» use la red: marcá <strong>Redes privadas</strong> y tocá <strong>Permitir</strong>. El WiFi del local tiene que estar como red <strong>privada</strong> en Windows.</p>
+    </div>
+    <div id="cel-prendido" class="cel-prendido" hidden>
+      <div class="cel-qr" id="cel-qr" role="img" aria-label="Código QR para vincular el celular"></div>
+      <div class="cel-pasos">
+        <ol>
+          <li>Conectá el celular al <strong>mismo WiFi</strong> que esta PC (no al de invitados).</li>
+          <li>En el celular abrí el <strong>Etiquetador</strong> y tocá <strong>Vincular</strong>, en la barra «PC».</li>
+          <li>Apuntá la cámara a este código.</li>
+        </ol>
+        <p class="sub">Direcciones de esta PC: <span class="mono" id="cel-ips"></span></p>
+        <p class="sub" id="cel-ultimo"></p>
+      </div>
+    </div>
+    <p class="err" id="cel-err" role="alert"></p>
+  </div>
+  <footer class="dlg-f">
+    <button type="button" class="btn danger" id="cel-nuevo" hidden title="Los celulares vinculados dejan de entrar hasta que escaneen el código nuevo">Desvincular todos</button>
+    <button type="button" class="btn" id="cel-apagar" hidden>Apagar la conexión</button>
+    <span class="sp"></span>
+    <button type="button" class="btn primary" id="cel-prender" hidden>Prender la conexión</button>
+    <button type="button" class="btn" data-cerrar>Cerrar</button>
+  </footer>
+</dialog>
 
 <!-- Clave de recuperación recién creada -->
 <dialog id="dlg-rec" class="dlg-chico" aria-labelledby="rec-titulo">
@@ -999,6 +1037,7 @@
 <script src="vendor/xlsx.full.min.js"></script>
 <script>window.XLSX_LEER = window.XLSX;</script>
 <script src="vendor/xlsx-estilo.min.js"></script>
+<script src="vendor/qrcode.js"></script>
 <script src="js/codigo-barras.js"></script>
 <script src="js/etiqueta-tspl.js"></script>
 <script src="js/app.js"></script>

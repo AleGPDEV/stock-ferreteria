@@ -4439,6 +4439,7 @@ function iniciar() {
   iniciarPrecios();
   iniciarNegocio();
   iniciarDeposito();
+  iniciarCelular();
   if (typeof window.print !== 'function' || window.SIN_IMPRESION) $$('[data-imprime]').forEach((b) => { b.hidden = true; });
   $('#venta-imprimir').addEventListener('click', () => { if (ultimaVenta) imprimir(htmlTicket(ultimaVenta)); });
   $('#dlg-venta').addEventListener('close', () => $('#caja-buscar').focus());
@@ -4590,6 +4591,112 @@ function productosParaHerramienta(texto) {
   return db.productos.filter((p) => { const t = normal(`${p.nombre} ${textoCodigos(p)} ${p.categoria || ''}`); return pal.every((w) => t.includes(w)); })
     .slice(0, 8).map(datosParaHerramienta);
 }
+/* ---------- App del celular (Etiquetador) por el WiFi del local ----------
+ * El servidor de la PC (electron/servidor-celular.js) le pregunta a la pantalla, que es la dueña de los datos.
+ * Por ahora el celular solo consulta. Nunca recibe costos (un empleado puede tener el celular) ni nada de ventas,
+ * caja o usuarios. Funciona aunque nadie haya entrado al programa: el celular se usa en el depósito mientras la PC
+ * del mostrador puede estar en la pantalla de ingreso. */
+function datosParaCelular(d, p) {
+  return { codigo: p.codigo, barras: codigosDe(p).filter((c) => c !== p.codigo), nombre: p.nombre, categoria: p.categoria || '', unidad: p.unidad || '',
+    proveedor: nombreProveedorDe(d, p.proveedorId), ubicacion: p.ubicacion || '', stock: p.stock, minimo: p.minimo, precio: p.precio, moneda: esUSD(p) ? 'USD' : 'UYU' };
+}
+/** Por código propio, de barras o de proveedor. { producto } (null si no está). */
+function productoCelular(d, codigo) {
+  const c = normCodigo(codigo);
+  if (!c) return { producto: null };
+  const p = buscarPorCodigo(d, c) || d.productos.find((x) => codigosProvDe(x).some((k) => normCodigo(k.codigo) === c));
+  return { producto: p ? datosParaCelular(d, p) : null };
+}
+/** Por nombre o código, todas las palabras en cualquier orden y sin importar tildes; primero los que empiezan con lo escrito. */
+function productosCelular(d, texto, max = 20) {
+  const q = normal(String(texto || '').trim());
+  const pal = q.split(/\s+/).filter(Boolean);
+  if (pal.join('').length < 2) return { productos: [] };
+  const lista = d.productos
+    .map((p) => ({ p, t: normal(`${p.nombre} ${textoCodigos(p)} ${p.categoria || ''} ${p.ubicacion || ''}`) }))
+    .filter((x) => pal.every((w) => x.t.includes(w)))
+    .sort((a, b) => (normal(b.p.nombre).startsWith(q) - normal(a.p.nombre).startsWith(q)) || ordenNatural(a.p.nombre, b.p.nombre));
+  return { productos: lista.slice(0, max).map((x) => datosParaCelular(d, x.p)), mas: Math.max(0, lista.length - max) };
+}
+const estantesCelular = (d) => ({ estantes: ubicacionesDe(d).map((u) => ({ codigo: u.ubicacion, categoria: u.categoria || '' })) });
+const SIN_DATOS_CELULAR = { error: 'Los datos del programa están dañados: hay que restaurar una copia en la PC.' };
+function estadoParaCelular() { return datosDanados ? { ...SIN_DATOS_CELULAR, listo: false } : { listo: true, productos: db.productos.length }; }
+const productoParaCelular = (codigo) => (datosDanados ? SIN_DATOS_CELULAR : productoCelular(db, codigo));
+const productosParaCelular = (texto) => (datosDanados ? SIN_DATOS_CELULAR : productosCelular(db, texto));
+const estantesParaCelular = () => (datosDanados ? SIN_DATOS_CELULAR : estantesCelular(db));
+
+/** Dibuja el QR de vinculación (SVG, para que se vea nítido con cualquier zoom). */
+function qrSvg(texto) {
+  if (typeof qrcode !== 'function') return '';
+  const q = qrcode(0, 'M');
+  q.addData(unescape(encodeURIComponent(texto))); // UTF-8
+  q.make();
+  return q.createSvgTag({ cellSize: 5, margin: 4, scalable: true });
+}
+
+let celularInfo = null;
+let celularTimer = 0;
+function pintarCelular() {
+  const i = celularInfo;
+  const admin = esAdmin();
+  $('#cel-no-admin').hidden = admin;
+  $('#cel-apagado').hidden = !admin || !i || i.activo;
+  $('#cel-prendido').hidden = !admin || !i || !i.activo;
+  $('#cel-prender').hidden = !admin || !i || i.activo;
+  $('#cel-apagar').hidden = !admin || !i || !i.activo;
+  $('#cel-nuevo').hidden = !admin || !i || !i.activo;
+  $('#cel-err').textContent = (i && i.error) || '';
+  if (i && !i.ips.length) $('#cel-err').textContent = 'Esta PC no está conectada a ninguna red. Conectala al WiFi o al cable del local.';
+  if (admin && i && i.activo) {
+    const texto = JSON.stringify(i.vinculo);
+    if ($('#cel-qr').dataset.texto !== texto) { $('#cel-qr').innerHTML = qrSvg(texto); $('#cel-qr').dataset.texto = texto; }
+    $('#cel-ips').textContent = i.ips.join(' · ') || '—';
+    const u = i.ultimoPedido;
+    const seg = u ? Math.round((Date.now() - Date.parse(u.fecha)) / 1000) : null;
+    $('#cel-ultimo').textContent = !u ? 'Todavía no se conectó ningún celular.'
+      : `Último pedido de un celular: ${seg < 60 ? `hace ${Math.max(seg, 0)} s` : seg < 3600 ? `hace ${Math.round(seg / 60)} min` : fechaHora(u.fecha)} (${u.ip}).`;
+  } else if (!admin) {
+    $('#cel-qr').innerHTML = ''; $('#cel-qr').dataset.texto = ''; // el QR lleva la clave: que no quede a la vista
+  }
+  $('#cel-card-estado').textContent = !i ? 'El celular puede consultar los productos y los estantes de esta PC por el WiFi del local.'
+    : i.activo ? `Conexión prendida${i.ultimoPedido ? ` · último pedido de un celular: ${fechaHora(i.ultimoPedido.fecha)}` : '.'}`
+      : 'Conexión apagada.';
+}
+async function refrescarCelular() {
+  if (!escritorio() || !window.almacen.celular) return;
+  try { celularInfo = await window.almacen.celular(); } catch (e) { celularInfo = null; }
+  pintarCelular();
+}
+async function abrirCelular() {
+  if (!escritorio() || !window.almacen.celular) return;
+  await refrescarCelular();
+  const d = $('#dlg-celular');
+  if (!d.open) d.showModal();
+  clearInterval(celularTimer);
+  celularTimer = setInterval(() => { if (d.open) refrescarCelular(); else clearInterval(celularTimer); }, 3000);
+}
+function iniciarCelular() {
+  if (!escritorio() || !window.almacen.celular) return;
+  window.almacen.alAbrirCelular(() => { if (sesion) abrirCelular(); else toast('Entrá al programa con un usuario administrador para vincular un celular.'); });
+  $('#btn-cel-abrir').addEventListener('click', abrirCelular);
+  const accion = async (b, fn) => {
+    b.disabled = true;
+    try { celularInfo = await fn(); } catch (e) { $('#cel-err').textContent = String((e && e.message) || e); }
+    b.disabled = false;
+    pintarCelular();
+  };
+  $('#cel-prender').addEventListener('click', (e) => { if (esAdmin()) accion(e.currentTarget, window.almacen.activarCelular); });
+  $('#cel-apagar').addEventListener('click', (e) => { if (esAdmin()) accion(e.currentTarget, window.almacen.desactivarCelular); });
+  $('#cel-nuevo').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    if (!esAdmin() || !(await confirmar('¿Desvincular todos los celulares? Dejan de consultar la PC hasta que escaneen el código QR nuevo.', 'Desvincular todos', true))) return;
+    await accion(b, window.almacen.nuevoCodigoCelular);
+    toast('Listo: los celulares tienen que volver a escanear el código.');
+  });
+  $('#dlg-celular').addEventListener('close', () => clearInterval(celularTimer));
+  refrescarCelular();
+}
+
 /** El Cargador crea un estante: queda guardado en el programa igual que si se creara en Depósito. */
 function nuevoEstanteDesdeHerramienta(x) {
   if (!sesion) return SIN_SESION_HERRAMIENTA;
@@ -5374,7 +5481,7 @@ function iniciarDeposito() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { tsplEtiquetas, itemEtiquetadora, medidaRollo, htmlEtiquetas, leerMoneda, enPesos, $m, sugerenciasDeposito, porHojaEtiquetas, medidaEtiquetaHoja, asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
+  module.exports = { datosParaCelular, productoCelular, productosCelular, estantesCelular, tsplEtiquetas, itemEtiquetadora, medidaRollo, htmlEtiquetas, leerMoneda, enPesos, $m, sugerenciasDeposito, porHojaEtiquetas, medidaEtiquetaHoja, asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

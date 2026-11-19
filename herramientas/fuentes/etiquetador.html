@@ -29,6 +29,8 @@ main { max-width: 640px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .f[hidden] { display: none; }
 .imp .punto { width: 12px; height: 12px; border-radius: 50%; background: #a0a8b0; flex: none; }
 .imp.ok .punto { background: var(--verde); }
+.imp.mal .punto { background: var(--rojo); }
+.imp.espera .punto { background: #d9a400; }
 .imp .txt { flex: 1; min-width: 0; font-size: 15px; }
 .imp .txt strong { display: block; }
 .imp .txt span { color: var(--muted); font-size: 13.5px; }
@@ -123,6 +125,12 @@ label.btn input { display: none; }
     <span class="punto" aria-hidden="true"></span>
     <div class="txt"><strong id="imp-titulo">Impresora sin conectar</strong><span id="imp-detalle">Tocá «Conectar» para elegir la etiquetadora.</span></div>
     <button class="btn sm" type="button" id="btn-conectar">Conectar</button>
+  </section>
+
+  <section class="card imp" id="pc-barra">
+    <span class="punto" aria-hidden="true"></span>
+    <div class="txt" role="status"><strong id="pc-titulo">PC sin vincular</strong><span id="pc-detalle">Vinculá el celular para ver en el momento lo que hay en el programa.</span></div>
+    <button class="btn sm" type="button" id="btn-pc">Vincular</button>
   </section>
 
   <section class="card">
@@ -246,6 +254,7 @@ label.btn input { display: none; }
     <button class="btn primary" type="button" id="aj-guardar">Guardar</button>
     <button class="btn" type="button" id="aj-regla">Imprimir regla</button>
     <button class="btn" type="button" id="aj-prueba">Imprimir etiqueta de prueba</button>
+    <button class="btn danger" type="button" id="aj-desvincular" hidden>Desvincular de la PC</button>
     <button class="btn" type="button" id="aj-cerrar">Cerrar</button>
   </div>
 </dialog>
@@ -447,6 +456,169 @@ async function mandar(comandos) {
   }
 }
 
+// ---------- PC (el programa) por el WiFi del local ----------
+/* El celular se vincula escaneando el QR de la PC (programa → Herramientas → Vincular celular): trae las direcciones de
+ * la PC, un código secreto y el pcId. Con la PC conectada, buscar un código o un nombre se consulta en el programa en
+ * el momento, y los estantes son los del programa. Sin conexión, la app sigue como antes (con el inventario en Excel).
+ * Las consultas van por la capa nativa (CapacitorHttp): el WebView bloquea los pedidos http:// desde https://localhost. */
+const Http = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp) || null;
+const CADA_CUANTO_PC = 5000;
+let pc = { estado: datos.pc ? 'conectando' : 'sin-vincular', detalle: '', productos: null, desde: 0 };
+const pcOk = () => pc.estado === 'ok';
+/** GET a la PC. Devuelve { status, data }; si no llega a la PC, tira un error. */
+async function pedirPC(ruta, url = datos.pc && datos.pc.url, ms = 4000) {
+  if (!datos.pc || !url) throw new Error('El celular no está vinculado con la PC.');
+  const headers = { Authorization: 'Bearer ' + datos.pc.token };
+  if (Http()) {
+    const r = await Http().get({ url: url + ruta, headers, connectTimeout: Math.min(ms, 3000), readTimeout: ms });
+    let d = r.data;
+    if (typeof d === 'string') { try { d = JSON.parse(d || 'null'); } catch (e) { d = null; } }
+    return { status: r.status, data: d };
+  }
+  // Fuera de la app (probando la página en la PC): fetch común
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(url + ruta, { headers, signal: ctl.signal, cache: 'no-store' });
+    return { status: r.status, data: await r.json().catch(() => null) };
+  } finally { clearTimeout(t); }
+}
+/** ¿Responde ESTA PC en esa dirección? 'ok' | 'token' (desvinculado) | 'otra' (otra PC) | 'no' (no llega). */
+async function probarPC(url) {
+  try {
+    const r = await pedirPC('/api/estado', url, 3000);
+    if (r.status === 401) return { res: 'token' };
+    if (r.status === 200 && r.data && r.data.pcId === datos.pc.pcId) return { res: 'ok', data: r.data };
+    if (r.status === 200 && r.data && r.data.pcId) return { res: 'otra' };
+    return { res: 'no' };
+  } catch (e) { return { res: 'no' }; }
+}
+function pintarPC() {
+  const b = $('#pc-barra');
+  b.classList.toggle('ok', pc.estado === 'ok');
+  b.classList.toggle('mal', ['sin-pc', 'token', 'otra', 'no-listo'].includes(pc.estado));
+  b.classList.toggle('espera', pc.estado === 'conectando');
+  const t = {
+    'sin-vincular': ['PC sin vincular', 'Vinculá el celular para ver en el momento lo que hay en el programa.'],
+    conectando: ['Buscando la PC…', ''],
+    ok: ['Conectado a la PC', pc.productos != null ? `${numero.format(pc.productos)} productos en el programa. Lo que buscás se consulta ahí.` : ''],
+    'no-listo': ['La PC responde, pero el programa no está listo', pc.detalle || 'Revisá el programa en la PC.'],
+    'sin-pc': ['Sin conexión con la PC', navigator.onLine === false ? 'Conectate al WiFi del local.' : 'No se encuentra la PC. ¿Está abierto el programa? Si cambió algo en la red, volvé a escanear el código QR.'],
+    token: ['Este celular ya no está vinculado', 'En la PC desvincularon los celulares: tocá «Vincular» y escaneá el código QR nuevo.'],
+    otra: ['Responde otra PC', 'En esa dirección hay otro programa. Tocá «Vincular» y escaneá el QR de la PC del local.'],
+  }[pc.estado] || ['', ''];
+  $('#pc-titulo').textContent = t[0];
+  $('#pc-detalle').textContent = t[1];
+  $('#btn-pc').textContent = datos.pc ? 'Volver a vincular' : 'Vincular';
+  $('#btn-pc').hidden = pc.estado === 'ok' || pc.estado === 'conectando';
+}
+let revisandoPC = false;
+/** Cada 5 s: ¿sigue respondiendo la PC? Si no responde en su dirección, prueba las otras del QR. */
+async function revisarPC() {
+  if (revisandoPC) return;
+  if (!datos.pc) { pc.estado = 'sin-vincular'; pintarPC(); return; }
+  revisandoPC = true;
+  const antes = pc.estado;
+  try {
+    const urls = [datos.pc.url].concat((datos.pc.urls || []).filter((u) => u !== datos.pc.url));
+    let r = { res: 'no' };
+    for (const u of urls) {
+      r = await probarPC(u);
+      if (r.res === 'ok') { if (u !== datos.pc.url) { datos.pc.url = u; guardar(); } break; }
+      if (r.res === 'token') break;
+    }
+    if (!datos.pc) return; // se desvinculó mientras tanto
+    if (r.res === 'ok' && r.data.listo === false) { pc.estado = 'no-listo'; pc.detalle = r.data.aviso || ''; }
+    else if (r.res === 'ok') { pc.estado = 'ok'; pc.productos = r.data.productos; }
+    else pc.estado = r.res === 'token' ? 'token' : r.res === 'otra' ? 'otra' : 'sin-pc';
+    if (pc.estado === 'ok' && antes !== 'ok') traerEstantesPC();
+  } finally {
+    revisandoPC = false;
+    pintarPC();
+  }
+}
+/** Los estantes del programa (con su categoría) pasan a la lista del celular. */
+async function traerEstantesPC() {
+  try {
+    const r = await pedirPC('/api/estantes');
+    if (r.status === 200 && r.data && Array.isArray(r.data.estantes)) { sumarEstantes(r.data.estantes); guardar(); if (!$('#form').hidden) opcionesEstante($('#c-estante').value); }
+  } catch (e) { /* se reintenta al reconectar */ }
+}
+/** Un producto del programa por código, en el momento. undefined si no se pudo preguntar (sin conexión). */
+async function productoDePC(codigo) {
+  if (!pcOk()) return undefined;
+  try {
+    const r = await pedirPC('/api/producto?codigo=' + encodeURIComponent(codigo));
+    if (r.status === 200 && r.data) return r.data.producto || null;
+    if (r.status === 401) { pc.estado = 'token'; pintarPC(); }
+  } catch (e) { pc.estado = 'sin-pc'; pintarPC(); }
+  return undefined;
+}
+/** Leer el QR de la PC (o pegar su texto, fuera de la app) y vincular este celular. */
+async function vincularPC() {
+  let texto = '';
+  if (Camara()) {
+    try {
+      const m = await Camara().isGoogleBarcodeScannerModuleAvailable();
+      if (!m.available) { await Camara().installGoogleBarcodeScannerModule(); toast('Se está bajando el lector de códigos de Google (una sola vez). Probá de nuevo en un minuto.'); return; }
+      const r = await Camara().scan();
+      const b = r && r.barcodes && r.barcodes[0];
+      texto = b && (b.rawValue || b.displayValue) || '';
+    } catch (e) { if (!/cancel/i.test(String((e && e.message) || e))) toast('No se pudo usar la cámara.'); return; }
+  } else {
+    texto = window.prompt('Pegá el texto del código QR de la PC:') || '';
+  }
+  if (!texto) return;
+  let v = null;
+  try { v = JSON.parse(texto); } catch (e) { /* no es el QR del programa */ }
+  if (!v || v.t !== 'stock-ferreteria' || !v.token || !v.pcId || !Array.isArray(v.urls) || !v.urls.length) {
+    toast('Ese no es el código del programa. En la PC: Herramientas → Vincular celular.');
+    return;
+  }
+  const anterior = datos.pc;
+  datos.pc = { urls: v.urls.filter((u) => /^http:\/\/[\d.]+:\d+$/.test(u)), url: '', token: String(v.token), pcId: String(v.pcId) };
+  pc.estado = 'conectando'; pintarPC();
+  let ok = null;
+  for (const u of datos.pc.urls) { const r = await probarPC(u); if (r.res === 'ok') { ok = u; break; } }
+  if (!ok) {
+    datos.pc = anterior; // si no llega a la PC, queda como estaba
+    pc.estado = anterior ? 'sin-pc' : 'sin-vincular';
+    pintarPC();
+    estado('No se pudo llegar a la PC. Revisá que el celular esté en el <strong>mismo WiFi</strong> que la PC (no en el de invitados) y que en Windows se haya permitido el programa en <strong>Redes privadas</strong>. Después volvé a tocar «Vincular».', 'warn');
+    return;
+  }
+  datos.pc.url = ok;
+  guardar();
+  pc.estado = 'conectando';
+  await revisarPC();
+  toast('Listo: el celular quedó vinculado con la PC.');
+}
+async function desvincularPC() {
+  if (!datos.pc || !(await confirmar('¿Desvincular este celular de la PC? Para volver a consultar el programa hay que escanear el código QR de nuevo.', 'Desvincular', true))) return;
+  delete datos.pc;
+  guardar();
+  pc = { estado: 'sin-vincular', detalle: '', productos: null };
+  pintarPC();
+  $('#aj-desvincular').hidden = true;
+  toast('El celular quedó desvinculado.');
+}
+// Resultados de la búsqueda por nombre en la PC: { q, lista }
+let resultadosPC = { q: '', lista: [] };
+let tBuscarPC = 0;
+function buscarEnPC(texto) {
+  clearTimeout(tBuscarPC);
+  const q = normal(texto).trim();
+  if (!pcOk() || q.length < 2 || resultadosPC.q === q) return;
+  tBuscarPC = setTimeout(async () => {
+    try {
+      const r = await pedirPC('/api/productos?q=' + encodeURIComponent(texto.trim()));
+      if (r.status !== 200 || !r.data || !Array.isArray(r.data.productos)) return;
+      resultadosPC = { q, lista: r.data.productos };
+      if (normal($('#escanear').value).trim() === q) pintarBusqueda();
+    } catch (e) { /* se ve la búsqueda del inventario en Excel */ }
+  }, 250);
+}
+
 // ---------- Etiqueta ----------
 let aImprimir = null;
 function abrirImprimir(item, copias) {
@@ -482,28 +654,33 @@ function buscarProductos(texto) {
   if (q.length < 2) return [];
   const pal = q.split(/\s+/);
   const deLista = datos.items.map((x) => ({ ...x, deLista: true }));
+  const delPrograma = pcOk() && resultadosPC.q === q ? resultadosPC.lista.map((p) => ({ ...p, dePC: true })) : null;
+  const filtro = (p) => { const t = normal(`${p.nombre} ${p.codigo} ${(p.barras || []).join(' ')} ${p.categoria || ''} ${p.ubicacion || ''}`); return pal.every((w) => t.includes(w)); };
+  // Con la PC conectada, lo del programa sale de la PC (en el momento); si no, del inventario en Excel
+  if (delPrograma) return deLista.filter(filtro).concat(delPrograma.filter((p) => !datos.items.some((x) => x.codigo === p.codigo))).slice(0, 8);
   return deLista.concat(productosCatalogo().filter((p) => !datos.items.some((x) => x.codigo === p.codigo)))
     .filter((p) => { const t = normal(`${p.nombre} ${p.codigo} ${(p.barras || []).join(' ')} ${p.categoria || ''} ${p.ubicacion || ''}`); return pal.every((w) => t.includes(w)); })
     .slice(0, 8);
 }
 function pintarBusqueda() {
+  buscarEnPC($('#escanear').value);
   const lista = buscarProductos($('#escanear').value);
   $('#b-lista').innerHTML = $('#escanear').value.trim().length < 2 ? '' : lista.length
     ? lista.map((p, i) => `<li><button type="button" class="btn" data-b="${i}"><span>${esc(p.nombre)} <span class="v-lista meta" style="display:inline">${esc(p.codigo)}${p.ubicacion ? ' · ' + esc(p.ubicacion) : ''}</span>${p.deLista ? ' <span class="chip ok">en la lista</span>' : ''}</span><strong>${p.precio != null && p.precio !== '' ? $m(p.precio, p.moneda) : ''}</strong></button></li>`).join('')
-    : `<li class="ayuda">No lo encuentro${productosCatalogo().length ? '' : ' (cargá el inventario del programa para buscar ahí)'}. Si viene suelto, tocá «Producto sin código».</li>`;
+    : `<li class="ayuda">No lo encuentro${pcOk() ? ' en la lista ni en el programa' : productosCatalogo().length ? '' : ' (vinculá la PC o cargá el inventario del programa para buscar ahí)'}. Si viene suelto, tocá «Producto sin código».</li>`;
   $('#b-lista').onclick = (e) => {
     const b = e.target.closest('[data-b]');
     if (!b) return;
     const p = lista[Number(b.dataset.b)];
     $('#escanear').value = ''; $('#b-lista').innerHTML = '';
     if (p.deLista) { const x = datos.items.find((i) => i.id === p.id); abrirForm(x, x.id); }
-    else { abrirForm({ ...p, cantidad: '', existente: true }); estado(`<strong>${esc(p.nombre)}</strong> ya está en el programa${p.stock != null ? ` (hay ${numero.format(p.stock)})` : ''}. Poné cuántos hay y, si querés, imprimile la etiqueta.`, 'info'); }
+    else { abrirForm({ ...p, cantidad: '', existente: true }); estado(`<strong>${esc(p.nombre)}</strong> ya está en el programa${p.stock != null ? ` (hay ${numero.format(p.stock)}${p.dePC ? ' ahora' : ''})` : ''}. Poné cuántos hay y, si querés, imprimile la etiqueta.`, 'info'); }
   };
 }
 const avisar = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* nada */ } };
 /** Un código leído (cámara, lector o escrito). Igual que el Cargador: si ya está en la lista suma 1; si no, abre la ficha.
  *  Devuelve 'sumado' cuando solo sumó (para seguir escaneando). */
-function codigoEscrito(texto) {
+async function codigoEscrito(texto) {
   const codigo = String(texto || '').trim().toUpperCase();
   if (!codigo) return '';
   const ya = datos.items.find((x) => (x.codigo && x.codigo.toUpperCase() === codigo) || (x.barras || []).includes(codigo));
@@ -517,8 +694,16 @@ function codigoEscrito(texto) {
     return 'sumado';
   }
   avisar([60, 60, 60]);
-  const p = catalogo.get(codigo);
-  if (p) { abrirForm({ ...p, barras: p.codigo !== codigo ? [codigo] : [], cantidad: '', existente: true }); estado(`<strong>${esc(p.nombre)}</strong> ya está en el programa${p.stock != null ? ` (hay ${numero.format(p.stock)} según el programa)` : ''}. Poné cuántos hay ahora.`, 'info'); return 'ficha'; }
+  // Con la PC conectada se pregunta al programa en el momento; si no responde, se usa el inventario en Excel
+  const enPC = await productoDePC(codigo);
+  const p = enPC !== undefined ? enPC : catalogo.get(codigo);
+  if (p) {
+    // El código leído ya es del producto (propio o de barras): no se agrega de nuevo como código de barras
+    const suyo = [p.codigo].concat(p.barras || []).some((c) => String(c).toUpperCase() === codigo);
+    abrirForm({ ...p, barras: suyo ? [] : [codigo], cantidad: '', existente: true });
+    estado(`<strong>${esc(p.nombre)}</strong> ya está en el programa${p.stock != null ? ` (hay ${numero.format(p.stock)} ${enPC ? 'ahora, según la PC' : 'según el último inventario cargado'})` : ''}. Poné cuántos hay ahora.`, 'info');
+    return 'ficha';
+  }
   // Un código de fábrica que no está: producto nuevo con ese código (no necesita código propio)
   abrirForm({ codigo, cantidad: '' });
   estado(`Código nuevo: <strong>${esc(codigo)}</strong>. Escribí el nombre y el precio.`, 'info');
@@ -540,7 +725,7 @@ async function escanearCamara() {
     const b = r && r.barcodes && r.barcodes[0];
     const codigo = b && (b.rawValue || b.displayValue);
     if (!codigo) return;
-    const res = codigoEscrito(codigo);
+    const res = await codigoEscrito(codigo);
     // Modo contar: si solo sumó, vuelve a abrir la cámara para el siguiente
     if (res === 'sumado' && $('#seguir').checked) setTimeout(escanearCamara, 700);
   } catch (e) {
@@ -732,6 +917,7 @@ function abrirAjustes() {
   $('#aj-girar').checked = !!aj().girar;
   $('#aj-cabezal').value = String(aj().cabezal || 0);
   $('#aj-err').textContent = '';
+  $('#aj-desvincular').hidden = !datos.pc;
   otraMedida();
   $('#dlg-ajustes').showModal();
 }
@@ -854,11 +1040,20 @@ $('#aj-oscuridad').addEventListener('input', () => { $('#aj-osc-val').textConten
 $('#aj-guardar').addEventListener('click', guardarAjustes);
 $('#aj-prueba').addEventListener('click', imprimirPrueba);
 $('#aj-cerrar').addEventListener('click', () => $('#dlg-ajustes').close());
+$('#aj-desvincular').addEventListener('click', desvincularPC);
+$('#btn-pc').addEventListener('click', vincularPC);
 window.addEventListener('pagehide', guardar);
 
 $('#pie-version').textContent = `Etiquetador ${VERSION} · Grupo Muros`;
 pintar();
 pintarImpresora();
+pintarPC();
+// La PC: se revisa al abrir, cada 5 s mientras la app está a la vista y al volver a ella
+revisarPC();
+setInterval(() => { if (document.visibilityState !== 'hidden') revisarPC(); }, CADA_CUANTO_PC);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') revisarPC(); });
+window.addEventListener('online', revisarPC);
+window.addEventListener('offline', () => { if (datos.pc) { pc.estado = 'sin-pc'; pintarPC(); } });
 // Al abrir: si ya había una impresora elegida, se reconecta sola
 if (BT() && aj().impresora) conectarA(aj().impresora);
 if (!aj().equipo) setTimeout(() => { toast('Para empezar, poné el nombre de este celular (por ejemplo C1).'); abrirAjustes(); }, 400);

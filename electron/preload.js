@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld('almacen', {
   impresoras: () => ipcRenderer.invoke('etiquetadora:impresoras'),
   imprimirEtiquetadora: (impresora, tspl) => ipcRenderer.invoke('etiquetadora:imprimir', impresora, tspl),
   abrirHerramienta: (nombre) => ipcRenderer.send('herramienta:abrir', nombre),
+  // App del celular por WiFi: estado, prender/apagar, código nuevo, y el menú Herramientas → Vincular celular
+  celular: () => ipcRenderer.invoke('celular:info'),
+  activarCelular: () => ipcRenderer.invoke('celular:activar'),
+  desactivarCelular: () => ipcRenderer.invoke('celular:desactivar'),
+  nuevoCodigoCelular: () => ipcRenderer.invoke('celular:nuevoCodigo'),
+  alAbrirCelular: (fn) => { ipcRenderer.on('celular:abrir', () => fn()); },
   reparar: () => ipcRenderer.sendSync('almacen:reparar'),
   marcarDanada: () => ipcRenderer.sendSync('almacen:marcarDanada'),
 });

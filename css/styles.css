@@ -927,3 +927,11 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 .etq-directo:not([hidden]) { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; align-items: end; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
 .etq-directo .etq-d-imp, .etq-directo .etq-d-girar { grid-column: 1 / -1; }
 .etq-directo .etq-d-prueba { justify-self: start; }
+
+/* Vincular el celular (QR) */
+.cel-prendido { display: grid; grid-template-columns: 220px 1fr; gap: 16px; align-items: start; }
+.cel-qr { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 6px; aspect-ratio: 1; }
+.cel-qr svg { display: block; width: 100%; height: 100%; }
+.cel-pasos ol { margin: 0 0 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 560px) { .cel-prendido { grid-template-columns: 1fr; } .cel-qr { max-width: 240px; } }
+dialog#dlg-celular { width: min(640px, calc(100vw / var(--zoom, 1) - 32px)); }

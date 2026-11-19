@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- La app consulta el programa de la PC por el WiFi del local con http:// (sin cifrar): la dirección de la PC
+     (192.168.x.x, 10.x.x.x…) cambia en cada local, y Android no permite poner rangos de direcciones acá.
+     La app no habla con ningún otro servidor, y la PC pide el código secreto del QR en cada consulta. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
