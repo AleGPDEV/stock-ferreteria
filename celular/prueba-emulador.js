@@ -3,9 +3,9 @@
 // los ajustes, cargar un producto y armar el Excel funcionen de verdad en Android.
 const { _android: android } = require('playwright');
 const { crearServidorCelular } = require('../electron/servidor-celular.js');
-const app = require('../js/app.js');
+const app = require('../js/cargar-en-node.js');
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
-// Una PC de prueba: el servidor de verdad y las funciones de verdad del programa (js/app.js), con datos de prueba.
+// Una PC de prueba: el servidor de verdad y las funciones de verdad del programa (js/, cargadas con js/cargar-en-node.js), con datos de prueba.
 // El emulador la ve en 10.0.2.2.
 const d = app.baseVacia();
 d.productos.push({ id: 'a', codigo: 'MAR-16', barras: ['7790001112223'], nombre: 'Martillo 16 oz', categoria: 'Herramientas', unidad: 'unidad', proveedorId: '', ubicacion: 'B-9', costo: 390, precio: 620, minimo: 2, stock: 7 });

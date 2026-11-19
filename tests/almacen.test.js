@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const app = require('../js/app.js');
+const app = require('../js/cargar-en-node.js');
 const { Almacen } = require('../electron/datos.js');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'stock-sqlite-'));

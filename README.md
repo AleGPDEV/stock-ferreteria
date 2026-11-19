@@ -153,7 +153,7 @@ Prueban la lógica de stock, cobro, descuentos, anulación, actualización de pr
 ```
 index.html                Pantallas y formularios
 css/styles.css            Estilos (tema claro y oscuro automático)
-js/app.js                 Lógica: stock, caja, reportes, exportación y respaldo
+js/                       El programa, un archivo por sección (ver «Mapa del código» abajo)
 js/codigo-barras.js       Código de barras Code 128 (etiquetas del Depósito), sin librerías
 css/fuentes/              Letras incluidas (Barlow, Barlow Semi Condensed, IBM Plex Mono; licencia OFL): se ven igual sin internet
 vendor/xlsx.full.min.js   SheetJS 0.20.3: lee las planillas que se importan (programa, herramientas y pruebas)
@@ -169,8 +169,43 @@ herramientas/fuentes/     Lector de facturas y Cargador de productos (fuente)
 herramientas/armar.js     npm run herramientas: arma los .html únicos de las herramientas (con SheetJS adentro)
 tests/logica.test.js      Pruebas automáticas de la lógica
 tests/herramientas.test.js  Pruebas del Lector de facturas y del Cargador
+tests/orden.test.js       Que index.html cargue los archivos de js/ en el orden de js/orden.json
 tests/almacen.test.js     Pruebas de la base SQLite (tests/correr-almacen.js las corre con el Node de Electron)
 ```
+
+### Mapa del código
+
+El programa (la pantalla) está repartido en un archivo por sección, de 40 a 550 líneas cada uno:
+
+- `js/base/`: lo que usa todo el programa (utilidades, usuarios y PIN, cargar y guardar los datos).
+- `js/logica/`: las reglas del negocio **sin pantalla** (cobrar, stock, caja, importar, reportes, depósito, celular). Es lo que prueban `tests/`.
+- `js/pantallas/`: lo que se dibuja y los botones de cada pantalla.
+- `js/arranque.js`: `iniciar()` conecta todas las pantallas al abrir el programa. Va último.
+
+| Si querés cambiar… | Lógica (sin pantalla) | Pantalla |
+| --- | --- | --- |
+| Vender, el ticket, el lector en Vender, alta rápida | `logica/ventas-y-stock.js` | `pantallas/caja.js`, `pantallas/ticket-e-impresion.js` |
+| Apertura, retiros y cierre de caja | `logica/caja.js` | `pantallas/cierre-de-caja.js` |
+| Productos, códigos, unir repetidos, precios | `logica/productos.js` | `pantallas/productos.js`, `pantallas/fotos.js` |
+| Cargar mercadería (entradas, salidas, ajustes) | `logica/ventas-y-stock.js` (`registrar`) | `pantallas/movimientos.js` |
+| Proveedores | — | `pantallas/proveedores.js` |
+| Importar desde Excel | `logica/importar-planilla.js` | `pantallas/importar-excel.js` |
+| Reportes y Tablero | `logica/reportes.js` | `pantallas/reportes.js`, `pantallas/reportes-tablero.js`, `pantallas/reportes-pestanas.js` |
+| Exportar a Excel | — | `pantallas/exportar-excel.js` |
+| Depósito y estantes | `logica/deposito.js` | `pantallas/deposito.js` |
+| Etiquetas (hoja y rollo) | `logica/etiquetas.js` | `pantallas/deposito.js` (ventana), `pantallas/etiquetadora.js` (impresión directa) |
+| App del celular | `logica/celular.js` (+ `electron/servidor-celular.js`) | `pantallas/celular.js` (QR para vincular) |
+| Cargador de productos (puente) | `logica/puente-cargador.js` | — |
+| Ingreso, usuarios, PIN, clave de recuperación | `base/usuarios-y-pin.js` | `pantallas/ingreso.js`, `pantallas/configuracion.js` |
+| Datos del negocio, actualizar precios | `logica/productos.js` | `pantallas/configuracion.js` |
+| Guardado, SQLite, datos dañados, copias | `base/datos-y-guardado.js` (+ `electron/datos.js`) | `pantallas/datos-danados.js`, `pantallas/respaldo.js` |
+| Avisos, cambiar de pantalla, alerta de stock | — | `pantallas/interfaz-general.js` |
+
+**Cómo se cargan.** No hay compilación: son `<script>` comunes que comparten las mismas variables globales (`db`, `sesion`, `$`, `guardar()`…). `index.html` los carga en el orden de `js/orden.json`, y las pruebas también (`js/cargar-en-node.js`). Una función puede usar otra de cualquier archivo. Lo que se ejecuta **al cargar** (por ejemplo `const X = algo()` fuera de una función) solo puede usar lo de archivos anteriores en ese orden. `tests/orden.test.js` revisa que `index.html` y `js/orden.json` coincidan.
+
+**Archivo nuevo.** Va en la carpeta que corresponda, empieza con un comentario que diga qué tiene y `'use strict';`, y se agrega a `js/orden.json` y a `index.html` (antes de `js/arranque.js`). Si tiene una pantalla, su `iniciarAlgo()` se llama desde `iniciar()` en `js/arranque.js`. Las funciones que se prueban se agregan al `module.exports` del final de `js/arranque.js`.
+
+**Trabajar en paralelo.** Para que dos personas (o dos chats) no se pisen, cada uno trabaja en una fila distinta de la tabla. Los archivos que tocan casi todos los cambios son `js/arranque.js` (al agregar un `iniciarAlgo()` o una función a `module.exports`), `index.html` y `css/styles.css`: ahí conviene cambiar poco y combinar seguido con `main`.
 
 ## Ideas para más adelante
 

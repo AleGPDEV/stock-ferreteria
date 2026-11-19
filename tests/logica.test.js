@@ -1,7 +1,7 @@
 // Pruebas de la lógica de stock, caja, precios e importación.  Correr con: npm test
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const app = require('../js/app.js');
+const app = require('../js/cargar-en-node.js');
 
 function base() {
   const d = app.baseVacia();

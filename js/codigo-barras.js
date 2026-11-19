@@ -1,7 +1,7 @@
 /* Código de barras Code 128 para las etiquetas (sin librerías: funciona sin internet).
  * Code 128 lo leen todos los lectores de código de barras y acepta letras, números y signos (P-0001, LH-5563, A-3).
  * Los números van en «código C» (dos dígitos por barra), así un EAN de 13 dígitos entra en una etiqueta chica.
- * Lo usa js/app.js (pantalla Depósito) y se prueba en tests/logica.test.js. */
+ * Lo usa js/logica/etiquetas.js (etiquetas de Depósito) y se prueba en tests/logica.test.js. */
 (function (global) {
   'use strict';
 

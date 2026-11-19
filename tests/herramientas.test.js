@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const zlib = require('node:zlib');
 const L = require('../herramientas/fuentes/lector-pdf.js');
-const app = require('../js/app.js');
+const app = require('../js/cargar-en-node.js');
 
 /** Arma un PDF chico como los de las e-facturas (Helvetica, texto con posiciones, contenido comprimido). */
 function pdfDePrueba(paginas) {
