@@ -1578,13 +1578,13 @@ function renderVentasHoy() {
 const puedeImprimir = () => typeof window !== 'undefined' && typeof window.print === 'function' && !window.SIN_IMPRESION;
 
 function encabezadoNegocio() {
-  const g = db.negocio || {};
+  const g = (db && db.negocio) || {};
   return `<div class="t-c"><strong class="t-neg">${esc(g.nombre || 'Ferretería')}</strong>
     ${g.direccion ? `<div>${esc(g.direccion)}</div>` : ''}${g.telefono ? `<div>Tel. ${esc(g.telefono)}</div>` : ''}${g.rut ? `<div>RUT ${esc(g.rut)}</div>` : ''}</div>`;
 }
 
 function htmlTicket(v) {
-  const g = db.negocio || {};
+  const g = (db && db.negocio) || {};
   const fila = (a, b, cls = '') => `<div class="t-fila ${cls}"><span>${a}</span><span>${b}</span></div>`;
   return `${encabezadoNegocio()}<hr>
     ${fila(`Venta N.º ${String(v.numero).padStart(4, '0')}`, fechaHora(v.fecha))}
@@ -1596,7 +1596,7 @@ function htmlTicket(v) {
     ${fila('TOTAL', $m(v.total, v.moneda), 't-total')}
     ${esUSD(v) ? '<div class="t-c t-chico">Importes en dólares estadounidenses (U$S)</div>' : ''}
     ${fila('Pago', esc(v.medio))}
-    ${v.recibido != null ? fila('Recibido', $u(v.recibido)) + fila('Vuelto', $u(v.vuelto)) : ''}<hr>
+    ${v.recibido != null ? fila('Recibido', $m(v.recibido, v.moneda)) + fila('Vuelto', $m(v.vuelto, v.moneda)) : ''}<hr>
     <div class="t-c">${esc(g.pie || '¡Gracias por su compra!')}</div>
     <div class="t-c t-chico">Comprobante interno. No válido como factura.</div>`;
 }
@@ -5247,7 +5247,7 @@ function iniciarDeposito() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { leerMoneda, enPesos, $m, sugerenciasDeposito, porHojaEtiquetas, medidaEtiquetaHoja, asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
+  module.exports = { htmlTicket, leerMoneda, enPesos, $m,sugerenciasDeposito, porHojaEtiquetas, medidaEtiquetaHoja, asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

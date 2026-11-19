@@ -1275,3 +1275,13 @@ test('dólares: la columna Moneda de la planilla', () => {
   app.aplicarImportacion(d, app.planImportacion(d, [{ 'Código': 'TAL', Producto: 'Taladro', Moneda: 'pesos', Precio: 4900 }]));
   assert.deepEqual([d.productos[0].moneda, d.productos[0].precio], [undefined, 4900]);
 });
+
+test('dólares: el ticket impreso muestra lo recibido y el vuelto en la moneda de la venta', () => {
+  const venta = { numero: 7, fecha: new Date().toISOString(), items: [{ nombre: 'Taladro', unidad: 'unidad', cantidad: 1, precio: 120, subtotal: 120 }],
+    subtotal: 120, total: 120, moneda: 'USD', cotizacion: 40, medio: 'Efectivo', recibido: 150, vuelto: 30 };
+  const html = app.htmlTicket(venta);
+  assert.match(html, /Recibido<\/span><span>U\$S 150,00/);
+  assert.match(html, /Vuelto<\/span><span>U\$S 30,00/);
+  const enPesos = app.htmlTicket({ ...venta, moneda: undefined, cotizacion: undefined });
+  assert.doesNotMatch(enPesos, /U\$S/);
+});
