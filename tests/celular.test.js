@@ -282,3 +282,53 @@ test('servidor: el celular guarda en la PC (alta, conteo, estante) y los errores
     assert.equal((await mandar(s.puerto, '/api/productos', 't', { nombre: 'x'.repeat(40000) })).status, 400);
   } finally { await s.detener(); }
 });
+
+/* ---------- Fotos sacadas con el celular ---------- */
+
+// Un JPEG mínimo de verdad (1×1 px)
+const JPEG = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
+
+test('celular: la foto se le asigna al producto (por código o por id) y avisa si reemplaza otra', () => {
+  const d = base();
+  const r = app.fotoDesdeCelularEn(d, { equipo: 'C1', codigo: '7790001112223', foto: 'cel-1-abc.jpg' });
+  assert.equal(r.error, undefined);
+  assert.equal(d.productos[0].foto, 'cel-1-abc.jpg');
+  assert.equal(r.producto.foto, true);
+  assert.equal(r.reemplazo, false);
+  assert.equal(app.fotoDesdeCelularEn(d, { equipo: 'C1', productoId: 'a', foto: 'cel-2-abc.jpg' }).reemplazo, true);
+  assert.match(app.fotoDesdeCelularEn(d, { equipo: 'C1', codigo: 'NADA', foto: 'x.jpg' }).error, /ya no está/);
+  assert.match(app.fotoDesdeCelularEn(d, { equipo: 'C1', codigo: 'MAR-16', foto: '../malo.jpg' }).error, /no es válida/);
+  assert.equal(app.productoCelular(d, 'CAB-25').producto.foto, false);
+});
+
+test('servidor: recibe la foto, la guarda y la asigna; si el producto no está, la borra', async () => {
+  const d = base();
+  const guardadas = new Map();
+  const borradas = [];
+  const P = { fotoDesdeCelular: (x) => app.fotoDesdeCelularEn(d, x) };
+  const preguntar = async (js) => Function(...Object.keys(P), `return ${js}`)(...Object.values(P));
+  const s = crearServidorCelular({
+    clave: () => ({ token: 't', pcId: 'p' }), preguntar, puerto: 0, host: '127.0.0.1',
+    guardarFoto: (nombre, bytes) => { guardadas.set(nombre, bytes); return { nombre }; },
+    borrarFoto: (nombre) => borradas.push(nombre),
+  });
+  await s.iniciar();
+  try {
+    const ok = await mandar(s.puerto, '/api/fotos', 't', { equipo: 'C1', codigo: 'MAR-16', imagen: JPEG.toString('base64') });
+    assert.equal(ok.status, 200);
+    const nombre = d.productos[0].foto;
+    assert.match(nombre, /^cel-\d+-[0-9a-f]{6}\.jpg$/);
+    assert.deepEqual(guardadas.get(nombre), JPEG);
+    // Con el encabezado data:… también
+    assert.equal((await mandar(s.puerto, '/api/fotos', 't', { equipo: 'C1', codigo: 'CAB-25', imagen: 'data:image/jpeg;base64,' + JPEG.toString('base64') })).status, 200);
+    // Producto que no existe: la foto no queda tirada
+    const no = await mandar(s.puerto, '/api/fotos', 't', { equipo: 'C1', codigo: 'NADA', imagen: JPEG.toString('base64') });
+    assert.equal(no.status, 422);
+    assert.equal(borradas.length, 1);
+    // Lo que no es un JPEG no se guarda
+    assert.equal((await mandar(s.puerto, '/api/fotos', 't', { equipo: 'C1', codigo: 'MAR-16', imagen: Buffer.from('<svg></svg>'.repeat(20)).toString('base64') })).status, 400);
+    assert.equal((await mandar(s.puerto, '/api/fotos', 't', { equipo: 'C1', codigo: 'MAR-16', imagen: 'no es base64 !!' })).status, 400);
+    assert.equal(guardadas.size, 3);
+    assert.equal((await mandar(s.puerto, '/api/fotos', 'otro', { imagen: JPEG.toString('base64') })).status, 401);
+  } finally { await s.detener(); }
+});

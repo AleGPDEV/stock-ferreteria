@@ -337,8 +337,8 @@ ipcMain.on('almacen:info', (e) => {
   const r = rutas();
   e.returnValue = { datos: r.datos, respaldos: r.respaldos, fotos: r.fotos, fotosUrl: pathToFileURL(r.fotos).href + '/', version: app.getVersion(), ...infoRespaldos() };
 });
-// Guarda una foto ya achicada por la pantalla (JPEG). Devuelve el nombre del archivo o { error }.
-ipcMain.handle('fotos:guardar', async (e, nombre, bytes) => {
+/** Guarda una foto ya achicada (JPEG) en la carpeta Fotos. Devuelve { nombre } o { error }. */
+function guardarFotoEnDisco(nombre, bytes) {
   try {
     if (!NOMBRE_FOTO.test(String(nombre))) return { error: 'Nombre de foto no válido.' };
     const datos = Buffer.from(bytes);
@@ -351,7 +351,13 @@ ipcMain.handle('fotos:guardar', async (e, nombre, bytes) => {
   } catch (err) {
     return { error: String(err.message || err) };
   }
-});
+}
+/** Borra una foto que no se llegó a usar (el celular la mandó pero el producto no se encontró). */
+function borrarFotoSinUso(nombre) {
+  try { if (NOMBRE_FOTO.test(String(nombre))) fs.unlinkSync(path.join(rutas().fotos, nombre)); } catch (e) { /* nada */ }
+}
+// Guarda una foto ya achicada por la pantalla (JPEG). Devuelve el nombre del archivo o { error }.
+ipcMain.handle('fotos:guardar', async (e, nombre, bytes) => guardarFotoEnDisco(nombre, bytes));
 ipcMain.handle('almacen:abrirRespaldos', async () => {
   const { respaldos } = rutas();
   fs.mkdirSync(respaldos, { recursive: true });
@@ -456,7 +462,7 @@ function infoCelular() {
   };
 }
 async function prenderCelular() {
-  if (!servidorCelular) servidorCelular = crearServidorCelular({ clave: claveCelular, preguntar: preguntarAlPrograma, version: app.getVersion() });
+  if (!servidorCelular) servidorCelular = crearServidorCelular({ clave: claveCelular, preguntar: preguntarAlPrograma, version: app.getVersion(), guardarFoto: guardarFotoEnDisco, borrarFoto: borrarFotoSinUso });
   errorCelular = await servidorCelular.iniciar();
   return infoCelular();
 }

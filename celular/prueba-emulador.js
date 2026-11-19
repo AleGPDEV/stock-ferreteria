@@ -13,9 +13,11 @@ app.guardarEstante(d, { codigo: 'B-9', categoria: 'Herramientas' });
 const pantalla = {
   estadoParaCelular: () => ({ listo: true, productos: d.productos.length }), productoParaCelular: (c) => app.productoCelular(d, c), productosParaCelular: (q) => app.productosCelular(d, q), estantesParaCelular: () => app.estantesCelular(d),
   productoDesdeCelular: (x) => app.altaDesdeCelularEn(d, x), conteoDesdeCelular: (x) => app.conteoDesdeCelularEn(d, x), estanteDesdeCelular: (x) => app.estanteDesdeCelularEn(d, x), codigoLibreParaCelular: (e) => app.codigoLibreCelular(d, e),
+  fotoDesdeCelular: (x) => app.fotoDesdeCelularEn(d, x),
 };
+const fotosRecibidas = new Map();
 const pantallaDePrueba = async (js) => Function(...Object.keys(pantalla), `return ${js}`)(...Object.values(pantalla));
-const pcDePrueba = crearServidorCelular({ clave: () => ({ token: 'token-de-prueba', pcId: 'pc-de-prueba' }), preguntar: pantallaDePrueba, version: 'prueba' });
+const pcDePrueba = crearServidorCelular({ clave: () => ({ token: 'token-de-prueba', pcId: 'pc-de-prueba' }), preguntar: pantallaDePrueba, version: 'prueba', guardarFoto: (nombre, bytes) => { fotosRecibidas.set(nombre, bytes.length); return { nombre }; } });
 (async () => {
   const errPC = await pcDePrueba.iniciar();
   if (errPC) throw new Error(errPC);
@@ -78,6 +80,18 @@ const pcDePrueba = crearServidorCelular({ clave: () => ({ token: 'token-de-prueb
   await tocar('#btn-solo-guardar');
   await page.waitForFunction(() => document.getElementById('form').hidden, null, { timeout: 15000 });
   r.martilloEnLaPC = d.productos.find((p) => p.codigo === 'MAR-16').stock;
+  // Foto: se achica en el celular y se manda a la PC (la cámara no se puede usar en la prueba: la foto se dibuja)
+  r.foto = await page.evaluate(async () => {
+    const c = document.createElement('canvas'); c.width = 2400; c.height = 1600;
+    const g = c.getContext('2d'); g.fillStyle = '#c84'; g.fillRect(0, 0, 2400, 1600); g.fillStyle = '#123'; g.fillRect(300, 300, 900, 600);
+    const original = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.95));
+    const chica = await achicarFoto(original);
+    const x = datos.items.find((i) => i.codigo === 'MAR-16');
+    const err = await subirFoto(x, chica);
+    return { err, tam: chica.size, chip: document.getElementById('lista').textContent.includes('con foto') };
+  });
+  const fotoMartillo = d.productos.find((p) => p.codigo === 'MAR-16').foto;
+  r.fotoEnLaPC = fotoMartillo ? fotosRecibidas.get(fotoMartillo) : 0;
   r.sinToken = await page.evaluate(async () => { datos.pc.token = 'viejo'; await revisarPC(); const e = pc.estado; datos.pc.token = 'token-de-prueba'; return e; });
   // Lo cargado queda guardado al cerrar y volver a abrir la app
   await device.shell('am force-stop uy.grupomuros.etiquetador');
@@ -92,7 +106,8 @@ const pcDePrueba = crearServidorCelular({ clave: () => ({ token: 'token-de-prueb
   await pcDePrueba.detener();
   const okPC = (r.http === 200 || r.http === 401) && r.bloqueadoSinPC && r.pc.estado === 'ok' && r.pc.url === 'http://10.0.2.2:8765' && r.pc.estantes.includes('B-9') && r.pc.habilitado
     && r.enLaPC && r.enLaPC.stock === 12 && r.enLaPC.revisar === true && r.enLaPC.creadoPor === 'Celular C1'
-    && /Producto del programa/.test(r.existente) && /solo lectura: true/.test(r.existente) && r.martilloEnLaPC === 3 && r.sinToken === 'token';
+    && /Producto del programa/.test(r.existente) && /solo lectura: true/.test(r.existente) && r.martilloEnLaPC === 3 && r.sinToken === 'token'
+    && r.foto.err === null && r.foto.chip && r.fotoEnLaPC > 1000 && r.fotoEnLaPC < 400000;
   const ok = okPC && r.plugins.includes('ImpresoraBT') && r.plugins.includes('BarcodeScanner') && /C1-0001/.test(r.codigo) && /Arandela/.test(r.despuesDeReabrir) && r.errorImprimir;
   await device.close();
   if (!ok) { console.error('LA PRUEBA FALLÓ'); process.exit(1); }

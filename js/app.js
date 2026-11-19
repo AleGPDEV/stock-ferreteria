@@ -4600,7 +4600,7 @@ function productosParaHerramienta(texto) {
  * del mostrador puede estar en la pantalla de ingreso. */
 function datosParaCelular(d, p) {
   return { codigo: p.codigo, barras: codigosDe(p).filter((c) => c !== p.codigo), nombre: p.nombre, categoria: p.categoria || '', unidad: p.unidad || '',
-    proveedor: nombreProveedorDe(d, p.proveedorId), ubicacion: p.ubicacion || '', stock: p.stock, minimo: p.minimo, precio: p.precio, moneda: esUSD(p) ? 'USD' : 'UYU' };
+    proveedor: nombreProveedorDe(d, p.proveedorId), ubicacion: p.ubicacion || '', stock: p.stock, minimo: p.minimo, precio: p.precio, moneda: esUSD(p) ? 'USD' : 'UYU', foto: !!(p.foto || p.fotoData) };
 }
 /** Por código propio, de barras o de proveedor. { producto } (null si no está). */
 function productoCelular(d, codigo) {
@@ -4737,6 +4737,18 @@ function estanteDesdeCelularEn(d, x) {
   if (r.error) return { error: r.error };
   return { estante: { codigo: r.estante.codigo, categoria: r.estante.categoria || '' }, ...estantesCelular(d) };
 }
+/** Foto sacada con el celular: el archivo ya está en la carpeta Fotos (lo guardó el servidor); acá se le asigna al producto. */
+function fotoDesdeCelularEn(d, x) {
+  x = x || {};
+  if (!equipoCelular(x.equipo)) return { error: 'Falta el nombre del celular (Ajustes).' };
+  if (!/^[\w-]{1,80}\.jpg$/.test(String(x.foto || ''))) return { error: 'La foto no es válida.' };
+  const p = (x.productoId && d.productos.find((q) => q.id === x.productoId)) || buscarPorCodigo(d, x.codigo);
+  if (!p) return { error: 'Ese producto ya no está en el programa.' };
+  const anterior = p.foto || '';
+  p.foto = x.foto;
+  delete p.fotoData;
+  return { producto: datosParaCelular(d, p), productoId: p.id, reemplazo: !!anterior };
+}
 /** Próximo código libre para un producto sin código de ese celular: C1-0001, C1-0002… */
 function codigoLibreCelular(d, equipo) {
   const pre = equipoCelular(equipo);
@@ -4760,6 +4772,7 @@ function guardarDesdeCelular(r, productoId) {
 const productoDesdeCelular = (x) => (datosDanados ? SIN_DATOS_CELULAR : (() => { const r = altaDesdeCelularEn(db, x); return guardarDesdeCelular(r, r && r.productoId); })());
 const conteoDesdeCelular = (x) => (datosDanados ? SIN_DATOS_CELULAR : (() => { const r = conteoDesdeCelularEn(db, x); return guardarDesdeCelular(r, r && r.productoId); })());
 const estanteDesdeCelular = (x) => (datosDanados ? SIN_DATOS_CELULAR : guardarDesdeCelular(estanteDesdeCelularEn(db, x)));
+const fotoDesdeCelular = (x) => (datosDanados ? SIN_DATOS_CELULAR : (() => { const r = fotoDesdeCelularEn(db, x); return guardarDesdeCelular(r, r && r.productoId); })());
 const codigoLibreParaCelular = (equipo) => (datosDanados ? SIN_DATOS_CELULAR : codigoLibreCelular(db, equipo));
 function estadoParaCelular() { return datosDanados ? { ...SIN_DATOS_CELULAR, listo: false } : { listo: true, productos: db.productos.length }; }
 const productoParaCelular = (codigo) => (datosDanados ? SIN_DATOS_CELULAR : productoCelular(db, codigo));
@@ -5622,7 +5635,7 @@ function iniciarDeposito() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { stockDesdeConteo, altaDesdeCelularEn, conteoDesdeCelularEn, estanteDesdeCelularEn, codigoLibreCelular, contadoElDesde, htmlTicket, datosParaCelular, productoCelular, productosCelular, estantesCelular, tsplEtiquetas, itemEtiquetadora, medidaRollo, htmlEtiquetas, leerMoneda, enPesos, $m, sugerenciasDeposito, porHojaEtiquetas, medidaEtiquetaHoja, asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
+  module.exports = { fotoDesdeCelularEn, stockDesdeConteo, altaDesdeCelularEn, conteoDesdeCelularEn, estanteDesdeCelularEn, codigoLibreCelular, contadoElDesde, htmlTicket, datosParaCelular, productoCelular, productosCelular, estantesCelular, tsplEtiquetas, itemEtiquetadora, medidaRollo, htmlEtiquetas, leerMoneda, enPesos, $m, sugerenciasDeposito, porHojaEtiquetas, medidaEtiquetaHoja, asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

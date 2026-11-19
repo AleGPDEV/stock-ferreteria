@@ -110,6 +110,11 @@ label.btn input { display: none; }
 .seguir { display: flex; gap: 10px; align-items: center; font-size: 15px; min-height: 40px; }
 .seguir input { width: 22px; height: 22px; accent-color: var(--verde); }
 .pie { color: var(--muted); font-size: 13px; text-align: center; margin: 4px 0 0; }
+.foto-campo { display: flex; gap: 12px; align-items: center; }
+.foto-prev { width: 84px; height: 84px; flex: none; border-radius: 10px; border: 1px dashed #b9b9b9; background: #f6f6f4; display: grid; place-items: center; overflow: hidden; font-size: 12px; color: #777; text-align: center; }
+.foto-prev img { width: 100%; height: 100%; object-fit: cover; }
+.foto-campo .ayuda { margin: 6px 0 0; }
+.visualmente-oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 </style>
 </head>
 <body>
@@ -127,6 +132,7 @@ label.btn input { display: none; }
     <button class="btn sm" type="button" id="btn-conectar">Conectar</button>
   </section>
 
+  <input id="foto-lista" class="visualmente-oculto" type="file" accept="image/*" capture="environment" aria-hidden="true" tabindex="-1">
   <section class="card imp" id="pc-barra">
     <span class="punto" aria-hidden="true"></span>
     <div class="txt" role="status"><strong id="pc-titulo">PC sin vincular</strong><span id="pc-detalle">Vinculá el celular para ver en el momento lo que hay en el programa.</span></div>
@@ -148,6 +154,15 @@ label.btn input { display: none; }
     <form id="form" hidden novalidate>
       <h2 id="form-titulo">Producto nuevo</h2>
       <p class="ayuda" id="form-codigo"></p>
+      <div class="foto-campo">
+        <div class="foto-prev" id="c-foto-prev"><span>Sin foto</span></div>
+        <div>
+          <label class="btn" for="c-foto" id="c-foto-btn">📷 Sacar foto</label>
+          <input id="c-foto" class="visualmente-oculto" type="file" accept="image/*" capture="environment">
+          <button class="btn sm ghost" type="button" id="c-foto-quitar" hidden>No usar esta foto</button>
+          <p class="ayuda" id="c-foto-ayuda">Opcional. Se guarda en la PC junto con el producto.</p>
+        </div>
+      </div>
       <div class="campos">
         <label class="f f-wide" for="c-nombre">Nombre del producto<input id="c-nombre" type="text" autocomplete="off" enterkeyhint="next" placeholder="Ej.: Arandela plana 8 mm"></label>
         <label class="f" for="c-precio"><span id="c-precio-lbl">Precio ($)</span><input id="c-precio" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej.: 290"></label>
@@ -756,6 +771,9 @@ async function escanearCamara() {
 
 function abrirForm(x, id = null) {
   editando = id;
+  limpiarFotoForm();
+  $('#form').dataset.foto = x.foto ? '1' : '';
+  pintarFotoForm(!!x.foto);
   const r = datos.recordar || {};
   $('#form').dataset.propio = x.propio ? '1' : '';
   $('#form').dataset.codigo = x.codigo || '';
@@ -799,7 +817,7 @@ function rotulosMoneda() {
   const usd = $('#c-moneda').value === 'USD';
   $('#c-precio-lbl').textContent = usd ? 'Precio (U$S)' : 'Precio ($)';
 }
-function cerrarForm() { $('#form').hidden = true; editando = null; estado(''); }
+function cerrarForm() { $('#form').hidden = true; editando = null; limpiarFotoForm(); estado(''); }
 
 async function nuevoSinCodigo() {
   if (!aj().equipo) { toast('Primero poné el nombre de este celular en Ajustes (por ejemplo C1).'); abrirAjustes(); return; }
@@ -836,6 +854,68 @@ async function enviarAhora(x) {
   if (r.status !== 200 || !r.data) return { error: errorDePC(r), data: r.data };
   return { data: r.data };
 }
+// ---------- Fotos ----------
+/* La foto se achica en el celular (900 px, JPEG) y se manda a la PC, que la guarda en su carpeta Fotos y se la
+ * asigna al producto: queda igual que una foto cargada a mano en el programa (con sus copias de seguridad). */
+let fotoForm = null; // { blob, url } de la foto sacada en la ficha, todavía sin mandar
+async function achicarFoto(file, max = 900, calidad = 0.82) {
+  if (!file) throw new Error('No se sacó la foto.');
+  let img;
+  try { img = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch (e) { throw new Error('No se pudo abrir la foto. Probá sacarla de nuevo.'); }
+  const f = Math.min(1, max / Math.max(img.width, img.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(img.width * f)); c.height = Math.max(1, Math.round(img.height * f));
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(img, 0, 0, c.width, c.height);
+  if (img.close) img.close();
+  const blob = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', calidad));
+  if (!blob) throw new Error('No se pudo preparar la foto.');
+  return blob;
+}
+const base64De = (blob) => new Promise((ok, mal) => { const r = new FileReader(); r.onload = () => ok(String(r.result).replace(/^data:[^,]*,/, '')); r.onerror = mal; r.readAsDataURL(blob); });
+/** Manda la foto a la PC para ese producto. Devuelve null si salió bien, o el texto del problema. */
+async function subirFoto(x, blob) {
+  if (!pcOk()) return textoSinPC();
+  try {
+    const r = await pedirPC('/api/fotos', undefined, 25000, { equipo: aj().equipo, codigo: x.codigo, productoId: x.productoId, imagen: await base64De(blob) });
+    if (r.status !== 200) return errorDePC(r);
+    x.foto = true;
+    guardar(); pintar();
+    return null;
+  } catch (e) { sinPC(); return 'No se pudo llegar a la PC con la foto. Probá de nuevo con el botón «Foto» de la lista.'; }
+}
+function pintarFotoForm(yaTiene) {
+  const u = fotoForm && fotoForm.url;
+  $('#c-foto-prev').innerHTML = u ? `<img src="${u}" alt="Foto del producto">` : `<span>${yaTiene ? 'Ya tiene foto en la PC' : 'Sin foto'}</span>`;
+  $('#c-foto-btn').textContent = u ? '📷 Sacar otra' : yaTiene ? '📷 Reemplazar la foto' : '📷 Sacar foto';
+  $('#c-foto-quitar').hidden = !u;
+  $('#c-foto-ayuda').textContent = u ? 'Se manda a la PC al guardar.' : yaTiene ? 'Si sacás otra, reemplaza la que tiene en el programa.' : 'Opcional. Se guarda en la PC junto con el producto.';
+}
+function limpiarFotoForm() { if (fotoForm && fotoForm.url) URL.revokeObjectURL(fotoForm.url); fotoForm = null; }
+async function alSacarFotoForm(file) {
+  try {
+    const blob = await achicarFoto(file);
+    limpiarFotoForm();
+    fotoForm = { blob, url: URL.createObjectURL(blob) };
+  } catch (e) { $('#form-err').textContent = e.message; }
+  pintarFotoForm($('#form').dataset.foto === '1');
+}
+// Desde la lista: sacar la foto y mandarla en el momento
+let fotoParaItem = null;
+async function alSacarFotoLista(file) {
+  const x = datos.items.find((i) => i.id === fotoParaItem);
+  fotoParaItem = null;
+  if (!x || !file) return;
+  estado(`Mandando la foto de <strong>${esc(x.nombre)}</strong> a la PC…`, 'info');
+  let blob;
+  try { blob = await achicarFoto(file); } catch (e) { estado(esc(e.message), 'warn'); return; }
+  const err = await subirFoto(x, blob);
+  if (err) estado(`La foto de <strong>${esc(x.nombre)}</strong> no se guardó: ${esc(err)}`, 'warn');
+  else estado(`Foto de <strong>${esc(x.nombre)}</strong> guardada en la PC.`, 'ok');
+}
+
 let guardando = false;
 /** Guarda el producto en la PC y en la lista; devuelve el ítem guardado (o null si falta algo o la PC no lo aceptó). */
 async function guardarForm() {
@@ -880,6 +960,8 @@ async function guardarForm() {
   Object.assign(item, { codigo: p.codigo || item.codigo, barras: Array.isArray(p.barras) ? p.barras : item.barras, barraNueva: '', nombre: p.nombre || item.nombre, precio: p.precio, moneda: p.moneda, ubicacion: p.ubicacion, categoria: p.categoria, stock: p.stock, productoId: r.data.productoId, cambio: Date.now(), revisado: !!r.data.revisado });
   let x;
   if (anterior) { x = Object.assign(anterior, item); } else { x = item; datos.items.push(x); }
+  x.foto = !!p.foto || !!(anterior && anterior.foto);
+  const foto = fotoForm && fotoForm.blob;
   const mm = /-(\d+)$/.exec(codigo);
   if (item.propio && mm) datos.ultimoNum = Math.max(datos.ultimoNum || 0, Number(mm[1]));
   ultimoId = x.id;
@@ -887,6 +969,12 @@ async function guardarForm() {
   guardar();
   pintar();
   cerrarForm();
+  // La foto va después del producto (si falla, el producto ya quedó guardado y la foto se puede volver a sacar)
+  if (foto) {
+    estado(`Mandando la foto de <strong>${esc(x.nombre)}</strong> a la PC…`, 'info');
+    const ef = await subirFoto(x, foto);
+    estado(ef ? `<strong>${esc(x.nombre)}</strong> se guardó, pero la foto no: ${esc(ef)}` : `<strong>${esc(x.nombre)}</strong> y su foto quedaron guardados en la PC.`, ef ? 'warn' : 'ok');
+  }
   if (r.data.revisado && !existente && anterior) toast('En la PC ya lo revisaron: solo se guardó la cantidad.');
   else if (existente && cambioCantidad && cantidad !== '') estado(`<strong>${esc(x.nombre)}</strong>: contados ${numero.format(cantidad)}. En la PC el stock quedó en <strong>${numero.format(p.stock)}</strong> (lo contado más lo que se vendió o llegó mientras tanto).`, 'ok');
   return x;
@@ -904,8 +992,8 @@ function pintar() {
     <li class="${x.id === ultimoId ? 'recien' : ''}">
       <div class="fila1"><span class="nom">${esc(x.nombre)}</span><span class="cant">${x.cantidad === '' || x.cantidad == null ? 'sin contar' : `${numero.format(x.cantidad)} ${esc(x.unidad || '')}`}</span></div>
       <div class="meta"><span class="mono">${esc(x.codigo || 'sin código')}</span>${x.ubicacion ? ' · ' + esc(x.ubicacion) : ''}${x.precio == null || x.precio === '' ? '' : ' · ' + $m(x.precio, x.moneda)}
-        ${x.existente ? ' · <span class="chip">contado</span>' : ' · <span class="chip">nuevo</span>'} · <span class="chip ok">en la PC</span>${x.etiquetas ? ` · <span class="chip ok">${x.etiquetas} etiqueta${x.etiquetas === 1 ? '' : 's'}</span>` : ''}</div>
-      <div class="acc"><button class="btn sm verde" type="button" data-etq="${x.id}">Etiqueta</button><button class="btn sm" type="button" data-editar="${x.id}">Editar</button><button class="btn sm danger" type="button" data-borrar="${x.id}">Quitar</button></div>
+        ${x.existente ? ' · <span class="chip">contado</span>' : ' · <span class="chip">nuevo</span>'} · <span class="chip ok">en la PC</span>${x.foto ? ' · <span class="chip ok">con foto</span>' : ''}${x.etiquetas ? ` · <span class="chip ok">${x.etiquetas} etiqueta${x.etiquetas === 1 ? '' : 's'}</span>` : ''}</div>
+      <div class="acc"><button class="btn sm verde" type="button" data-etq="${x.id}">Etiqueta</button><button class="btn sm" type="button" data-foto="${x.id}">${x.foto ? 'Otra foto' : 'Foto'}</button><button class="btn sm" type="button" data-editar="${x.id}">Editar</button><button class="btn sm danger" type="button" data-borrar="${x.id}">Quitar</button></div>
     </li>`).join('')
     : `<li class="vacio">${items.length ? 'Nada coincide con la búsqueda.' : 'Todavía no cargaste nada.'}</li>`;
   const cats = [...new Set(items.map((x) => x.categoria).concat(estantes().map((e) => e.categoria)).filter(Boolean))].sort();
@@ -1010,6 +1098,9 @@ $('#btn-solo-guardar').addEventListener('click', async () => {
   if ($('#seguir').checked && Camara()) setTimeout(escanearCamara, 700);
 });
 $('#cancelar').addEventListener('click', cerrarForm);
+$('#c-foto').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) alSacarFotoForm(f); });
+$('#c-foto-quitar').addEventListener('click', () => { limpiarFotoForm(); pintarFotoForm($('#form').dataset.foto === '1'); });
+$('#foto-lista').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; alSacarFotoLista(f); });
 $('#c-estante').addEventListener('change', () => alElegirEstante(''));
 $('#c-moneda').addEventListener('change', rotulosMoneda);
 $('#ne-crear').addEventListener('click', crearEstante);
@@ -1018,6 +1109,13 @@ $('#c-nombre').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.p
 $('#lista').addEventListener('click', async (e) => {
   const et = e.target.closest('[data-etq]');
   if (et) { const x = datos.items.find((i) => i.id === et.dataset.etq); if (x) abrirImprimir(x, 1); return; }
+  const fo = e.target.closest('[data-foto]');
+  if (fo) {
+    if (!pcOk()) { estado(esc(textoSinPC()), 'warn'); return; }
+    fotoParaItem = fo.dataset.foto;
+    $('#foto-lista').click();
+    return;
+  }
   const ed = e.target.closest('[data-editar]');
   if (ed) { const x = datos.items.find((i) => i.id === ed.dataset.editar); if (x) abrirForm(x, x.id); return; }
   const bo = e.target.closest('[data-borrar]');
