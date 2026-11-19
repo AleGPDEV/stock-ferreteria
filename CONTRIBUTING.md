@@ -34,26 +34,27 @@ trabajo de otro y para que **nunca se pierdan datos de los clientes**.
 
 ## Secciones
 
-Mientras `js/app.js` sea un solo archivo, cada sección trabaja **solo dentro de sus bloques** (cada bloque empieza
-con un comentario `/* ---------- Nombre ---------- */`). El primer paso de la organización es partir `app.js` en
-archivos por sección; ese pull request se hace **solo**, sin otros trabajos abiertos sobre `app.js` al mismo tiempo.
+El programa está repartido en un archivo por sección (ver **«Mapa del código»** en el README, con qué archivo
+tocar para cada cosa y cómo se cargan). Cada chat trabaja en **una** sección:
 
-| Sección | Qué abarca | Dónde está hoy |
-|---|---|---|
-| **Base y guardado** | Formato de los datos, guardado por diferencias, SQLite, respaldos, datos dañados | `electron/datos.js`, `electron/main.js` (respaldos, fotos), bloques *Datos*, *Guardado*, *Respaldo*, *Datos dañados*, *Arranque* de `app.js` |
-| **Caja y ventas** | Vender, ticket, cobro, dólares, apertura y cierre de caja | Bloques *Caja*, *Impresión de ticket y cierre*, *Apertura y cierre de caja*, *Pantallas de apertura, movimientos y cierre de caja* |
-| **Productos y stock** | Productos, fotos, movimientos, proveedores, precios | Bloques *Productos*, *Fotos de los productos*, *Movimientos*, *Proveedores*, *Actualizar precios*, *Historial de cambios de precio*, *Alerta de stock* |
-| **Importar y exportar** | Excel de entrada y de salida | Bloques *Importar productos desde una planilla*, *Importar desde Excel*, *Exportar a Excel* |
-| **Reportes** | Tablero, ventas, ganancias, gráficos, resumen del día | Bloques *Reportes* … *Resumen de un día* |
-| **Depósito y etiquetas** | Estantes, ubicación, etiquetas, etiquetadora (TSPL) | Bloques *Depósito*, *Pantalla Depósito*, *Impresión directa a la etiquetadora*; `js/etiqueta-tspl.js`, `js/codigo-barras.js`, `electron/etiquetadora.js` |
-| **Celular** | Conexión por WiFi y app Etiquetador | `electron/servidor-celular.js`, bloques *App del celular* y *Lo que guarda el celular en la PC* de `app.js`, `herramientas/fuentes/etiquetador.html`, `celular/` |
-| **Herramientas** | Cargador de productos y Lector de facturas | `herramientas/fuentes/cargador.html`, `herramientas/fuentes/lector.html`, `herramientas/armar.js` |
-| **Usuarios e ingreso** | Usuarios, PIN, ingreso, datos del negocio | Bloques *Usuarios y PIN*, *Ingreso*, *Usuarios (solo administrador)*, *Datos del negocio* |
-| **Interfaz general** | Navegación, estilos, panel | `index.html` (estructura general), `css/styles.css`, bloques *Interfaz general* y *Panel* |
-| **Publicación** | Instaladores, CI, versiones | `.github/`, `build/`, `package.json` (scripts y versión): **solo el líder** |
+| Sección | Archivos |
+|---|---|
+| **Base y guardado** | `js/base/datos-y-guardado.js`, `js/pantallas/datos-danados.js`, `js/pantallas/respaldo.js`, `electron/datos.js`, `electron/main.js` (respaldos y fotos) |
+| **Caja y ventas** | `js/logica/ventas-y-stock.js`, `js/logica/caja.js`, `js/pantallas/caja.js`, `js/pantallas/ticket-e-impresion.js`, `js/pantallas/cierre-de-caja.js` |
+| **Productos y stock** | `js/logica/productos.js`, `js/pantallas/productos.js`, `js/pantallas/fotos.js`, `js/pantallas/movimientos.js`, `js/pantallas/proveedores.js` |
+| **Importar y exportar** | `js/logica/importar-planilla.js`, `js/pantallas/importar-excel.js`, `js/pantallas/exportar-excel.js` |
+| **Reportes** | `js/logica/reportes.js`, `js/pantallas/reportes.js`, `js/pantallas/reportes-tablero.js`, `js/pantallas/reportes-pestanas.js` |
+| **Depósito y etiquetas** | `js/logica/deposito.js`, `js/logica/etiquetas.js`, `js/pantallas/deposito.js`, `js/pantallas/etiquetadora.js`, `js/etiqueta-tspl.js`, `js/codigo-barras.js`, `electron/etiquetadora.js` |
+| **Celular** | `js/logica/celular.js`, `js/pantallas/celular.js`, `electron/servidor-celular.js`, `herramientas/fuentes/etiquetador.html`, `celular/` |
+| **Herramientas** | `js/logica/puente-cargador.js`, `herramientas/fuentes/cargador.html`, `herramientas/fuentes/lector*`, `herramientas/armar.js` |
+| **Usuarios e ingreso** | `js/base/usuarios-y-pin.js`, `js/pantallas/ingreso.js`, `js/pantallas/configuracion.js` |
+| **Interfaz general** | `js/base/utilidades.js`, `js/pantallas/interfaz-general.js`, `js/pantallas/panel.js`, `css/styles.css` (estilos generales) |
+| **Publicación** | `.github/`, `build/`, `package.json` (scripts y versión): **solo el líder** |
 
-`index.html` y `css/styles.css` los usan todas las secciones: cada una toca solo el marcado y los estilos de
-su pantalla.
+**Archivos compartidos:** `index.html`, `css/styles.css`, `js/arranque.js` (al sumar un `iniciarAlgo()` o una
+función a `module.exports`) y `js/orden.json` los tocan casi todos. Ahí cada sección cambia solo lo suyo (el
+marcado y los estilos de su pantalla, su línea en `arranque.js`), lo más chico posible, y trae lo último de `main`
+seguido.
 
 ## Lo que no se puede romper
 
