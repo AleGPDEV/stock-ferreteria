@@ -817,7 +817,18 @@
           <label class="f" for="etq-rollo-ancho">Ancho (mm)<input id="etq-rollo-ancho" type="number" min="20" max="108" step="1" inputmode="numeric"></label>
           <label class="f" for="etq-rollo-alto">Alto (mm)<input id="etq-rollo-alto" type="number" min="15" max="300" step="1" inputmode="numeric"></label>
         </span>
-        <small>Elegí la medida de UNA etiqueta del rollo (sin contar el espacio entre etiquetas). La misma medida va en las preferencias de la impresora en Windows.</small>
+        <small>Elegí la medida de UNA etiqueta del rollo (sin contar el espacio entre etiquetas).</small>
+        <label class="check" id="etq-directo-op" hidden><input type="checkbox" id="etq-directo"> <span><strong>Mandar directo a la etiquetadora</strong> (recomendado: sale igual que desde el celular y no hay que configurar el papel en Windows)</span></label>
+        <div class="etq-directo" id="etq-directo-campos" hidden>
+          <label class="f etq-d-imp" for="etq-impresora">Impresora<select id="etq-impresora"></select></label>
+          <label class="f" for="etq-sep">Espacio entre etiquetas (mm)<input id="etq-sep" type="number" min="0" max="10" step="0.5" inputmode="decimal"></label>
+          <label class="f" for="etq-osc">Oscuridad (1 a 15)<input id="etq-osc" type="number" min="1" max="15" step="1" inputmode="numeric"></label>
+          <label class="f" for="etq-cx">Correr a los costados (mm)<input id="etq-cx" type="number" min="-40" max="40" step="1" inputmode="numeric"></label>
+          <label class="f" for="etq-cy">Correr arriba o abajo (mm)<input id="etq-cy" type="number" min="-40" max="40" step="1" inputmode="numeric"></label>
+          <label class="check etq-d-girar"><input type="checkbox" id="etq-girar"> <span>Imprimir dado vuelta (girado 180°)</span></label>
+          <button class="btn sm etq-d-prueba" type="button" id="etq-prueba">Imprimir una de prueba</button>
+        </div>
+        <small id="etq-driver-nota">Si no usás «Mandar directo», la misma medida va en las preferencias de la impresora en Windows.</small>
       </div>
       <label class="f etq-saltear" id="etq-saltear-campo" for="etq-saltear">Stickers ya usados en la hoja<input id="etq-saltear" type="number" min="0" max="23" step="1" value="0" inputmode="numeric"><small>Si la hoja ya tiene stickers despegados, poné cuántos: se empieza después.</small></label>
     </fieldset>
@@ -989,6 +1000,7 @@
 <script>window.XLSX_LEER = window.XLSX;</script>
 <script src="vendor/xlsx-estilo.min.js"></script>
 <script src="js/codigo-barras.js"></script>
+<script src="js/etiqueta-tspl.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

@@ -924,3 +924,6 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 .etq-rollo { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px 28px; }
 .etq-rollo-otra:not([hidden]) { display: flex; gap: 10px; }
 .etq-rollo small { color: var(--muted); font-size: 13px; }
+.etq-directo:not([hidden]) { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; align-items: end; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.etq-directo .etq-d-imp, .etq-directo .etq-d-girar { grid-column: 1 / -1; }
+.etq-directo .etq-d-prueba { justify-self: start; }

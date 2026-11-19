@@ -9,6 +9,7 @@ const { promisify } = require('util');
 const { pathToFileURL } = require('url');
 const { Almacen } = require('./datos');
 const { fotosEnUso, planLimpiezaFotos } = require('./fotos');
+const { imprimirCrudo } = require('./etiquetadora');
 
 const RESPALDOS_A_CONSERVAR = 60;
 const PATRON_RESPALDO = /^respaldo_\d{4}-\d{2}-\d{2}\.json(\.gz)?$/;
@@ -347,6 +348,12 @@ ipcMain.handle('almacen:quitarCarpetaExtra', async () => {
   return infoRespaldos();
 });
 ipcMain.handle('almacen:respaldarAhora', async () => hacerRespaldo(true));
+
+// Impresora de etiquetas directa (TSPL en crudo): la lista de impresoras de Windows y el envío
+ipcMain.handle('etiquetadora:impresoras', async (e) => {
+  try { return (await e.sender.getPrintersAsync()).map((p) => ({ nombre: p.name, nombreVisible: p.displayName || p.name, predeterminada: !!p.isDefault })); } catch (err) { return []; }
+});
+ipcMain.handle('etiquetadora:imprimir', async (e, impresora, tspl) => imprimirCrudo(impresora, tspl));
 
 /* ---------- Ventana ---------- */
 

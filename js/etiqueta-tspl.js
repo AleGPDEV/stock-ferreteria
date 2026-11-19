@@ -2,10 +2,10 @@
  * Arma el dibujo de una etiqueta (nombre, código de barras Code 128, código y estante: lo mismo que imprime el programa)
  * y lo pasa a comandos TSPL. El código de barras se dibuja barra por barra con el mismo armado que el programa
  * (js/codigo-barras.js), así sale igual en la vista previa, en la impresora y en las etiquetas de la PC.
- * Lo usa la app del celular (herramientas/fuentes/etiquetador.html) y se prueba en tests/logica.test.js. */
+ * Lo usan la app del celular (herramientas/fuentes/etiquetador.html) y el programa (impresión directa a la etiquetadora) y se prueba en tests/logica.test.js. */
 (function (global) {
   'use strict';
-  const CB = global.CodigoBarras || (typeof require === 'function' ? require('../../js/codigo-barras.js') : null);
+  const CB = global.CodigoBarras || (typeof require === 'function' ? require('./codigo-barras.js') : null);
   const PUNTOS_MM = 8;
   // Letras de la impresora: ancho y alto de cada letra, en puntos
   const FUENTES = { 1: [8, 12], 2: [12, 20], 3: [16, 24], 4: [24, 32], 5: [32, 48] };

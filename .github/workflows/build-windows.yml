@@ -32,6 +32,16 @@ jobs:
       - name: Pruebas de la base de datos (SQLite)
         run: npm run test:almacen
 
+      - name: Probar el envío directo a la etiquetadora (Windows)
+        shell: bash
+        run: |
+          node -e "
+            const { imprimirCrudo } = require('./electron/etiquetadora.js');
+            imprimirCrudo('Impresora que no existe 123', 'SIZE 50 mm,40 mm\r\n').then((r) => {
+              console.log('Respuesta:', r);
+              if (!/No se encontr/.test(String(r))) { console.error('Se esperaba «No se encontró la impresora»'); process.exit(1); }
+            });"
+
       - name: Leer versión
         id: ver
         shell: bash

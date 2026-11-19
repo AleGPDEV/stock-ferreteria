@@ -185,8 +185,9 @@ tests/almacen.test.js     Pruebas de la base SQLite
 
 ## Impresora de etiquetas (rollo)
 
-- En **Etiquetas → Impresora de etiquetas** se elige la **medida de la etiqueta del rollo**: 50 × 25, 40 × 30, 50 × 30, 58 × 40, 60 × 40, 100 × 50, 100 × 100, 100 × 150 mm u **Otra medida** (ancho de 20 a 108 mm). Sale una etiqueta por página, del tamaño elegido, y el contenido se agranda o achica con ella. Se recuerda la última medida.
-- Probado para impresoras térmicas de 4" y 203 dpi como la **Unnion LP4206D**. En Windows, en las *Preferencias de impresión* de la impresora, el tamaño de papel tiene que ser la misma medida, con etiquetas separadas por espacio (gap). Al imprimir: escala 100 % y sin márgenes.
+- En **Etiquetas → Impresora de etiquetas** se elige la **medida de la etiqueta del rollo**: 50 × 40, 50 × 25, 40 × 30, 50 × 30, 58 × 40, 60 × 40, 100 × 50, 100 × 100, 100 × 150 mm u **Otra medida** (ancho de 20 a 108 mm). Sale una etiqueta por página, del tamaño elegido, y el contenido se agranda o achica con ella. Se recuerda la última medida.
+- **Mandar directo a la etiquetadora** (recomendado, viene marcado): el programa le manda a la impresora sus propios comandos (TSPL), igual que la app del celular, a través de la cola de impresión de Windows y sin pasar por el driver. No hay que configurar el tamaño de papel en Windows. Se elige la **impresora** (la lista de Windows; propone la que parece de etiquetas, como Xprinter o Unnion), el **espacio entre etiquetas**, la **oscuridad**, **correr** el dibujo a los costados o arriba/abajo (en mm) y si sale **dado vuelta**. **Imprimir una de prueba** saca un recuadro del tamaño de la etiqueta: tiene que quedar justo en el borde. Se recuerda todo. Probado con la **Xprinter XP-P323B** (72 mm, 203 dpi) y rollo de 50 × 40 mm.
+- Sin «Mandar directo», se imprime como una página común: en las *Preferencias de impresión* de la impresora en Windows el tamaño de papel tiene que ser la misma medida, con etiquetas separadas por espacio (gap), escala 100 % y sin márgenes.
 
 ## App del celular: Etiquetador (Android)
 

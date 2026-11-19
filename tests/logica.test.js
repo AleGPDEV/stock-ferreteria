@@ -1277,7 +1277,7 @@ test('dólares: la columna Moneda de la planilla', () => {
 });
 
 test('celular: etiqueta TSPL para la etiquetadora (mismo código de barras que el programa)', () => {
-  const E = require('../herramientas/fuentes/etiqueta-tspl.js');
+  const E = require('../js/etiqueta-tspl.js');
   const CB = require('../js/codigo-barras.js');
   assert.equal(E.ascii('Caño ½" PVC — 3ª'), "Cano 1/2' PVC 3");
   for (const [a, h] of [[50, 25], [40, 30], [60, 40], [100, 50], [100, 150]]) {
@@ -1335,4 +1335,24 @@ test('celular + Cargador: las dos planillas se importan juntas sin duplicar', ()
   assert.deepEqual(app.estantesDe(d).map((e) => [e.codigo, e.categoria]).sort(), [['B-2', 'Bulonería'], ['V-1', 'Herramientas']]);
   // Lo del celular se puede escanear con la etiqueta que imprimió
   assert.equal(app.dondeEsta(d, 'C1-0001').producto.nombre, 'Arandela plana 8 mm');
+});
+
+test('PC: etiquetas directo a la etiquetadora (TSPL, igual que el celular)', () => {
+  global.EtiquetaTSPL = require('../js/etiqueta-tspl.js');
+  try {
+    const p = { id: 'x', codigo: 'P-0007', barras: ['7791293049632'], nombre: 'Desodorante', ubicacion: 'A-01' };
+    const it = app.itemEtiquetadora({ producto: p });
+    assert.equal(it.nombre, 'Desodorante');
+    assert.equal(it.ubicacion, 'A-01');
+    assert.ok(it.codigo);
+    const u = app.itemEtiquetadora({ ubicacion: { ubicacion: 'A-02', categoria: 'Pinturas', corto: 'U2', clave: 'a-02', productos: [] } });
+    assert.deepEqual(u, { nombre: 'Pinturas: A-02', codigo: 'U2', ubicacion: 'A-02' });
+    const t = app.tsplEtiquetas([{ producto: p, copias: 3 }, { producto: p, copias: 0 }, { ubicacion: { ubicacion: 'A-02', corto: 'U2', clave: 'a-02', productos: [] }, copias: 1 }],
+      { ancho: 50, alto: 40 }, { separacion: 2, oscuridad: 9, correrX: 1 });
+    assert.equal((t.match(/^SIZE 50 mm,40 mm/gm) || []).length, 2);
+    assert.match(t, /PRINT 1,3\r\n/);
+    assert.match(t, /PRINT 1,1\r\n$/);
+    assert.match(t, /DENSITY 9/);
+    assert.match(t, /"Ubicacion A-02"/);
+  } finally { delete global.EtiquetaTSPL; }
 });

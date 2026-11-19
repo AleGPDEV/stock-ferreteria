@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('almacen', {
   quitarCarpetaExtra: () => ipcRenderer.invoke('almacen:quitarCarpetaExtra'),
   respaldarAhora: () => ipcRenderer.invoke('almacen:respaldarAhora'),
   guardarFoto: (nombre, bytes) => ipcRenderer.invoke('fotos:guardar', nombre, bytes),
+  impresoras: () => ipcRenderer.invoke('etiquetadora:impresoras'),
+  imprimirEtiquetadora: (impresora, tspl) => ipcRenderer.invoke('etiquetadora:imprimir', impresora, tspl),
   abrirHerramienta: (nombre) => ipcRenderer.send('herramienta:abrir', nombre),
   reparar: () => ipcRenderer.sendSync('almacen:reparar'),
   marcarDanada: () => ipcRenderer.sendSync('almacen:marcarDanada'),

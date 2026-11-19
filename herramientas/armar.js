@@ -10,7 +10,7 @@ const lectorPdf = leer(__dirname, 'fuentes', 'lector-pdf.js');
 const lectorProductos = leer(__dirname, 'fuentes', 'lector-productos.js');
 for (const [n, t] of [['xlsx', xlsx], ['lector-pdf', lectorPdf], ['lector-productos', lectorProductos]]) if (/<\/script/i.test(t)) throw new Error(`${n} tiene </script>: no se puede incrustar.`);
 const codigoBarras = leer(raiz, 'js', 'codigo-barras.js');
-const etiquetaTspl = leer(__dirname, 'fuentes', 'etiqueta-tspl.js');
+const etiquetaTspl = leer(__dirname, '..', 'js', 'etiqueta-tspl.js');
 const versionCelular = JSON.parse(leer(raiz, 'celular', 'package.json')).version;
 const logo = 'data:image/png;base64,' + fs.readFileSync(path.join(raiz, 'img', 'logo.png')).toString('base64');
 const armar = (fuente, salida) => {
