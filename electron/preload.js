@@ -1,5 +1,5 @@
 // Puente seguro entre la página y el disco. La página solo ve window.almacen.
-const { contextBridge, ipcRenderer, webFrame } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('almacen', {
   escritorio: true,

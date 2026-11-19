@@ -146,7 +146,7 @@ Para sacar una versión nueva, subí ese número (por ejemplo de `1.1.0` a `1.2.
 npm test
 ```
 
-Prueban la lógica de stock, cobro, descuentos, anulación, actualización de precios, importación, usuarios, clave de recuperación y caja (`tests/logica.test.js`), y la base SQLite, incluida la detección y reparación de datos dañados (`tests/almacen.test.js`).
+Prueban la lógica de stock, cobro, descuentos, anulación, actualización de precios, importación, usuarios, clave de recuperación, caja, dólares y el ticket impreso (`tests/logica.test.js`), el Lector de facturas y el Cargador de productos (`tests/herramientas.test.js`), y la base SQLite, incluida la detección y reparación de datos dañados (`tests/almacen.test.js`, con `npm run test:almacen`).
 
 ### Estructura
 
@@ -161,11 +161,15 @@ vendor/xlsx-estilo.min.js SheetJS con estilos (xlsx-js-style): solo para escribi
 electron/main.js          Ventana de escritorio, respaldos diarios y carpeta extra
 electron/datos.js         Base SQLite: guarda solo lo que cambió
 electron/preload.js       Puente entre la página y el disco
+electron/fotos.js         Qué fotos ya no usa ningún producto y cuándo se pueden borrar
+electron/herramientas-preload.js  Puente de las herramientas: solo estantes y búsqueda de productos
 build/icon.*              Ícono del programa (logo de Grupo Muros Prontos)
 img/logo.png              Logo que se ve en la barra y en el ingreso
-herramientas/fuentes/      Lector de facturas y Cargador de productos (fuente); npm run herramientas arma los archivos únicos
+herramientas/fuentes/     Lector de facturas y Cargador de productos (fuente)
+herramientas/armar.js     npm run herramientas: arma los .html únicos de las herramientas (con SheetJS adentro)
 tests/logica.test.js      Pruebas automáticas de la lógica
-tests/almacen.test.js     Pruebas de la base SQLite
+tests/herramientas.test.js  Pruebas del Lector de facturas y del Cargador
+tests/almacen.test.js     Pruebas de la base SQLite (tests/correr-almacen.js las corre con el Node de Electron)
 ```
 
 ## Ideas para más adelante
