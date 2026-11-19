@@ -14,6 +14,8 @@ const espera = (ms) => new Promise((r) => setTimeout(r, ms));
   const webview = await device.webView({ pkg: 'uy.grupomuros.etiquetador' }, { timeout: 60000 });
   console.log('WebView encontrada');
   const page = await webview.page();
+  // En el emulador, el toque de Playwright cae unos píxeles más arriba: los botones se aprietan directo.
+  const tocar = (sel) => page.$eval(sel, (b) => b.click());
   await page.waitForSelector('#sin-codigo', { timeout: 30000 });
   console.log('Página cargada');
   const r = {};
@@ -25,27 +27,20 @@ const espera = (ms) => new Promise((r) => setTimeout(r, ms));
   r.estado = await page.evaluate(async () => window.Capacitor.Plugins.ImpresoraBT.estado());
   // Ajustes y un producto sin código
   await page.fill('#aj-equipo', 'c1');
-  await page.click('#aj-guardar');
-  await page.click('#sin-codigo');
+  await tocar('#aj-guardar');
+  await tocar('#sin-codigo');
   await espera(500);
   r.codigo = await page.textContent('#form-codigo');
   await page.fill('#c-nombre', 'Arandela plana 8 mm');
   await page.fill('#c-precio', '5');
-  await page.click('#btn-solo-guardar');
+  await tocar('#btn-solo-guardar');
   r.lista = await page.textContent('#lista');
   // Imprimir sin impresora: tiene que avisar, no colgarse
-  await page.click('[data-etq]');
-  await espera(500);
-  console.log('Diálogo:', JSON.stringify(await page.evaluate(() => {
-    const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; };
-    const b = document.querySelector('#di-imprimir').getBoundingClientRect();
-    const enCentro = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
-    return { ventana: [innerWidth, innerHeight, devicePixelRatio], dialogo: r('#dlg-imprimir'), vista: r('#di-vista'), boton: r('#di-imprimir'), enCentro: enCentro && (enCentro.id || enCentro.tagName) };
-  })));
-  await page.click('#di-imprimir', { timeout: 8000 }).catch(async (e) => { console.log('click normal falló:', e.message.split('\n')[0]); await page.evaluate(() => document.querySelector('#di-imprimir').click()); });
+  await tocar('[data-etq]');
+  await tocar('#di-imprimir');
   await espera(1500);
   r.errorImprimir = await page.textContent('#di-err');
-  await page.click('#di-cerrar');
+  await tocar('#di-cerrar');
   // Excel: se arma y se guarda en el celular (el «Compartir» de Android no se puede tocar acá)
   r.excel = await page.evaluate(async () => {
     const P = window.Capacitor.Plugins;
