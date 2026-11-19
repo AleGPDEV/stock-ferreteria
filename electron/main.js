@@ -9,6 +9,8 @@ const { promisify } = require('util');
 const { pathToFileURL } = require('url');
 const { Almacen } = require('./datos');
 const { fotosEnUso, planLimpiezaFotos } = require('./fotos');
+const { imprimirCrudo } = require('./etiquetadora');
+const { crearServidorCelular, datosVinculo, ipsLocales, nuevoToken, nuevoPcId } = require('./servidor-celular');
 
 const RESPALDOS_A_CONSERVAR = 60;
 const PATRON_RESPALDO = /^respaldo_\d{4}-\d{2}-\d{2}\.json(\.gz)?$/;
@@ -248,6 +250,28 @@ function apartarDanada() {
   return destino;
 }
 
+/* Un guardado «completo» vacía todas las tablas y las vuelve a escribir (restaurar una copia, unir productos,
+ * reintentar después de un error). Si un error en la pantalla mandara menos ventas o movimientos de los que hay,
+ * se perdería historia sin aviso: por eso, antes de cada uno, se guarda una copia exacta de la base. */
+const COPIAS_ANTES_DE_REEMPLAZAR = 10;
+let ultimaCopiaReemplazo = 0;
+function copiaAntesDeReemplazar() {
+  if (!almacen || almacen.vacia()) return null;
+  // Varios seguidos (por ejemplo, «Reintentar» varias veces) no llenan el disco: una copia por minuto alcanza
+  if (Date.now() - ultimaCopiaReemplazo < 60 * 1000) return null;
+  const carpeta = path.join(rutas().base, 'Copias antes de reemplazar');
+  fs.mkdirSync(carpeta, { recursive: true });
+  const sello = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const destino = path.join(carpeta, `datos-${sello}.sqlite`);
+  almacen.copiarA(destino);
+  ultimaCopiaReemplazo = Date.now();
+  const viejas = fs.readdirSync(carpeta).filter((f) => /^datos-[\dT-]+\.sqlite$/.test(f)).sort();
+  viejas.slice(0, Math.max(0, viejas.length - COPIAS_ANTES_DE_REEMPLAZAR)).forEach((f) => {
+    try { fs.unlinkSync(path.join(carpeta, f)); } catch (e) { /* nada */ }
+  });
+  return destino;
+}
+
 ipcMain.on('almacen:leer', (e) => {
   try {
     const malas = almacen.revisar();
@@ -295,6 +319,9 @@ ipcMain.on('almacen:cambios', (e, cambios) => {
         apartarDanada();
       }
       danada = null;
+    } else if (cambios && cambios.completo) {
+      // Si la copia no se puede hacer (disco lleno…), se guarda igual: no se puede dejar la caja sin cobrar
+      try { copiaAntesDeReemplazar(); } catch (err) { console.error('No se pudo copiar la base antes de reemplazarla:', err); }
     }
     almacen.aplicar(cambios);
     e.returnValue = null;
@@ -348,6 +375,12 @@ ipcMain.handle('almacen:quitarCarpetaExtra', async () => {
 });
 ipcMain.handle('almacen:respaldarAhora', async () => hacerRespaldo(true));
 
+// Impresora de etiquetas directa (TSPL en crudo): la lista de impresoras de Windows y el envío
+ipcMain.handle('etiquetadora:impresoras', async (e) => {
+  try { return (await e.sender.getPrintersAsync()).map((p) => ({ nombre: p.name, nombreVisible: p.displayName || p.name, predeterminada: !!p.isDefault })); } catch (err) { return []; }
+});
+ipcMain.handle('etiquetadora:imprimir', async (e, impresora, tspl) => imprimirCrudo(impresora, tspl));
+
 /* ---------- Ventana ---------- */
 
 /* ---------- Herramientas aparte (Cargador de productos y Lector de facturas) ----------
@@ -392,6 +425,64 @@ ipcMain.handle('herramienta:nuevoEstante', (e, x) => {
   if (!esHerramienta(e)) return { error: 'No permitido.' };
   const datos = { codigo: String((x && x.codigo) || '').slice(0, 60), categoria: String((x && x.categoria) || '').slice(0, 60) };
   return preguntarAlPrograma(`nuevoEstanteDesdeHerramienta(${JSON.stringify(datos)})`);
+});
+
+/* ---------- App del celular (Etiquetador) por el WiFi del local ----------
+ * La PC abre el puerto 8765 solo después de que el administrador lo activa en «Vincular celular» (así a quien no
+ * usa el celular Windows nunca le pregunta por el firewall). El celular se vincula escaneando un QR con las
+ * direcciones de esta PC, un código secreto (token) y el pcId, que identifica a esta PC aunque otra quede con su IP.
+ * Token y pcId van en «ajustes» (de esta PC): restaurar una copia de los datos no los cambia. */
+let servidorCelular = null;
+let errorCelular = null;
+function claveCelular() {
+  let c = almacen && almacen.ajuste('celular');
+  if (!c || !c.token || !c.pcId) {
+    c = { activo: false, ...(c || {}), token: (c && c.token) || nuevoToken(), pcId: (c && c.pcId) || nuevoPcId() };
+    if (almacen) almacen.ponerAjuste('celular', c);
+  }
+  return c;
+}
+function infoCelular() {
+  const c = claveCelular();
+  const ips = ipsLocales();
+  return {
+    activo: !!(servidorCelular && servidorCelular.activo),
+    quiereActivo: !!c.activo,
+    error: errorCelular,
+    puerto: servidorCelular ? servidorCelular.puerto : null,
+    ips,
+    vinculo: datosVinculo(c, ips),
+    ultimoPedido: servidorCelular ? servidorCelular.ultimoPedido : null,
+  };
+}
+async function prenderCelular() {
+  if (!servidorCelular) servidorCelular = crearServidorCelular({ clave: claveCelular, preguntar: preguntarAlPrograma, version: app.getVersion() });
+  errorCelular = await servidorCelular.iniciar();
+  return infoCelular();
+}
+async function apagarCelular() {
+  if (servidorCelular) await servidorCelular.detener();
+  errorCelular = null;
+}
+// Solo la ventana del programa (no las herramientas) maneja la vinculación; y la pantalla solo deja al administrador
+const esVentana = (e) => ventana && !ventana.isDestroyed() && e.sender === ventana.webContents;
+ipcMain.handle('celular:info', (e) => (esVentana(e) ? infoCelular() : null));
+ipcMain.handle('celular:activar', async (e) => {
+  if (!esVentana(e)) return null;
+  almacen.ponerAjuste('celular', { ...claveCelular(), activo: true });
+  return prenderCelular();
+});
+ipcMain.handle('celular:desactivar', async (e) => {
+  if (!esVentana(e)) return null;
+  almacen.ponerAjuste('celular', { ...claveCelular(), activo: false });
+  await apagarCelular();
+  return infoCelular();
+});
+// Código nuevo: los celulares vinculados dejan de entrar hasta que escaneen el QR nuevo
+ipcMain.handle('celular:nuevoCodigo', (e) => {
+  if (!esVentana(e)) return null;
+  almacen.ponerAjuste('celular', { ...claveCelular(), token: nuevoToken() });
+  return infoCelular();
 });
 
 /* Tamaño de la pantalla (Ver → Agrandar / Achicar), recordado en esta PC */
@@ -490,6 +581,8 @@ if (!app.requestSingleInstanceLock()) {
         submenu: [
           { label: 'Lector de facturas (PDF → Excel)', click: () => abrirHerramienta('lector') },
           { label: 'Cargador de productos (con el lector de códigos)', click: () => abrirHerramienta('cargador') },
+          { type: 'separator' },
+          { label: 'Vincular celular (Etiquetador)…', click: () => { if (ventana && !ventana.isDestroyed()) ventana.webContents.send('celular:abrir'); } },
         ],
       },
       {
@@ -507,10 +600,12 @@ if (!app.requestSingleInstanceLock()) {
     // Fotos que falten en esta PC y estén en Respaldos\Fotos o en la carpeta extra (PC nueva)
     try { traerFotosQueFaltan(); } catch (e) { /* nada */ }
     crearVentana();
+    // Si el celular ya estaba vinculado, la PC lo vuelve a atender sola al abrir el programa
+    try { if (claveCelular().activo) prenderCelular(); } catch (e) { console.error('No se pudo prender la conexión del celular:', e); }
     // Respaldo del día unos segundos después de abrir, sin demorar el arranque
     setTimeout(() => hacerRespaldo(), 8000);
   });
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', respaldoAlCerrar);
-  app.on('will-quit', () => { if (almacen) { try { almacen.cerrar(); } catch (e) { /* nada */ } almacen = null; } });
+  app.on('will-quit', () => { if (servidorCelular) servidorCelular.detener(); if (almacen) { try { almacen.cerrar(); } catch (e) { /* nada */ } almacen = null; } });
 }

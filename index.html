@@ -541,6 +541,12 @@
             </div>
           </div>
         </article>
+        <article class="card solo-escritorio" id="card-celular">
+          <header class="card-h">
+            <div><h2>Celular (Etiquetador)</h2><p class="sub" id="cel-card-estado">El celular puede consultar los productos y los estantes de esta PC por el WiFi del local.</p></div>
+            <button class="btn sm" type="button" id="btn-cel-abrir">Vincular celular</button>
+          </header>
+        </article>
       </div>
     </section>
 
@@ -613,6 +619,38 @@
   </form>
 </dialog>
 <datalist id="lista-cat"></datalist>
+
+<!-- Vincular el celular (app Etiquetador) por WiFi -->
+<dialog id="dlg-celular" class="dlg-chico" aria-labelledby="cel-titulo">
+  <header class="dlg-h"><h2 id="cel-titulo">Vincular un celular</h2><p class="sub">El celular consulta los productos y los estantes de esta PC por el WiFi del local, en el momento. Por ahora solo consulta: no cambia nada.</p></header>
+  <div class="dlg-b">
+    <p class="nota-edit" id="cel-no-admin" hidden>Solo un administrador puede vincular celulares. Entrá con un usuario administrador.</p>
+    <div id="cel-apagado" hidden>
+      <p>La conexión con el celular está <strong>apagada</strong>.</p>
+      <p class="sub">Al prenderla, Windows puede preguntar si deja que «Stock Ferretería» use la red: marcá <strong>Redes privadas</strong> y tocá <strong>Permitir</strong>. El WiFi del local tiene que estar como red <strong>privada</strong> en Windows.</p>
+    </div>
+    <div id="cel-prendido" class="cel-prendido" hidden>
+      <div class="cel-qr" id="cel-qr" role="img" aria-label="Código QR para vincular el celular"></div>
+      <div class="cel-pasos">
+        <ol>
+          <li>Conectá el celular al <strong>mismo WiFi</strong> que esta PC (no al de invitados).</li>
+          <li>En el celular abrí el <strong>Etiquetador</strong> y tocá <strong>Vincular</strong>, en la barra «PC».</li>
+          <li>Apuntá la cámara a este código.</li>
+        </ol>
+        <p class="sub">Direcciones de esta PC: <span class="mono" id="cel-ips"></span></p>
+        <p class="sub" id="cel-ultimo"></p>
+      </div>
+    </div>
+    <p class="err" id="cel-err" role="alert"></p>
+  </div>
+  <footer class="dlg-f">
+    <button type="button" class="btn danger" id="cel-nuevo" hidden title="Los celulares vinculados dejan de entrar hasta que escaneen el código nuevo">Desvincular todos</button>
+    <button type="button" class="btn" id="cel-apagar" hidden>Apagar la conexión</button>
+    <span class="sp"></span>
+    <button type="button" class="btn primary" id="cel-prender" hidden>Prender la conexión</button>
+    <button type="button" class="btn" data-cerrar>Cerrar</button>
+  </footer>
+</dialog>
 
 <!-- Clave de recuperación recién creada -->
 <dialog id="dlg-rec" class="dlg-chico" aria-labelledby="rec-titulo">
@@ -810,7 +848,26 @@
       <label class="check"><input type="radio" name="etq-formato" value="hoja"> <span><strong>Hoja A4 común</strong> (se recortan; el tamaño se ajusta a cuántas van por hoja)</span></label>
       <label class="f etq-porhoja" id="etq-porhoja-campo" for="etq-porhoja" hidden>Etiquetas por hoja<select id="etq-porhoja"></select><small id="etq-porhoja-ayuda"></small></label>
       <label class="check"><input type="radio" name="etq-formato" value="a4" checked> <span><strong>Hoja A4 de stickers</strong> (24 por hoja, de 70 × 37 mm)</span></label>
-      <label class="check"><input type="radio" name="etq-formato" value="rollo"> <span><strong>Impresora de etiquetas</strong> (rollo de 50 × 25 mm, una por etiqueta)</span></label>
+      <label class="check"><input type="radio" name="etq-formato" value="rollo"> <span><strong>Impresora de etiquetas</strong> (rollo, una por etiqueta)</span></label>
+      <div class="etq-rollo" id="etq-rollo-campo" hidden>
+        <label class="f" for="etq-rollo">Medida de la etiqueta del rollo<select id="etq-rollo"></select></label>
+        <span class="etq-rollo-otra" id="etq-rollo-otra" hidden>
+          <label class="f" for="etq-rollo-ancho">Ancho (mm)<input id="etq-rollo-ancho" type="number" min="20" max="108" step="1" inputmode="numeric"></label>
+          <label class="f" for="etq-rollo-alto">Alto (mm)<input id="etq-rollo-alto" type="number" min="15" max="300" step="1" inputmode="numeric"></label>
+        </span>
+        <small>Elegí la medida de UNA etiqueta del rollo (sin contar el espacio entre etiquetas).</small>
+        <label class="check" id="etq-directo-op" hidden><input type="checkbox" id="etq-directo"> <span><strong>Mandar directo a la etiquetadora</strong> (recomendado: sale igual que desde el celular y no hay que configurar el papel en Windows)</span></label>
+        <div class="etq-directo" id="etq-directo-campos" hidden>
+          <label class="f etq-d-imp" for="etq-impresora">Impresora<select id="etq-impresora"></select></label>
+          <label class="f" for="etq-sep">Espacio entre etiquetas (mm)<input id="etq-sep" type="number" min="0" max="10" step="0.5" inputmode="decimal"></label>
+          <label class="f" for="etq-osc">Oscuridad (1 a 15)<input id="etq-osc" type="number" min="1" max="15" step="1" inputmode="numeric"></label>
+          <label class="f" for="etq-cx">Correr a los costados (mm)<input id="etq-cx" type="number" min="-40" max="40" step="1" inputmode="numeric"></label>
+          <label class="f" for="etq-cy">Correr arriba o abajo (mm)<input id="etq-cy" type="number" min="-40" max="40" step="1" inputmode="numeric"></label>
+          <label class="check etq-d-girar"><input type="checkbox" id="etq-girar"> <span>Imprimir dado vuelta (girado 180°)</span></label>
+          <button class="btn sm etq-d-prueba" type="button" id="etq-prueba">Imprimir una de prueba</button>
+        </div>
+        <small id="etq-driver-nota">Si no usás «Mandar directo», la misma medida va en las preferencias de la impresora en Windows.</small>
+      </div>
       <label class="f etq-saltear" id="etq-saltear-campo" for="etq-saltear">Stickers ya usados en la hoja<input id="etq-saltear" type="number" min="0" max="23" step="1" value="0" inputmode="numeric"><small>Si la hoja ya tiene stickers despegados, poné cuántos: se empieza después.</small></label>
     </fieldset>
     <div class="etq-filtros">
@@ -980,7 +1037,9 @@
 <script src="vendor/xlsx.full.min.js"></script>
 <script>window.XLSX_LEER = window.XLSX;</script>
 <script src="vendor/xlsx-estilo.min.js"></script>
+<script src="vendor/qrcode.js"></script>
 <script src="js/codigo-barras.js"></script>
+<script src="js/etiqueta-tspl.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

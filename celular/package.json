@@ -1,0 +1,20 @@
+{
+  "name": "etiquetador-celular",
+  "version": "1.4.0",
+  "private": true,
+  "description": "App Android para cargar productos sueltos e imprimir sus etiquetas por Bluetooth (Grupo Muros)",
+  "scripts": {
+    "armar": "node ../herramientas/armar.js",
+    "sync": "npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor-mlkit/barcode-scanning": "8.2.2",
+    "@capacitor/android": "8.6.0",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.0"
+  }
+}

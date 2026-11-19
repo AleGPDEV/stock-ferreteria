@@ -4439,6 +4439,7 @@ function iniciar() {
   iniciarPrecios();
   iniciarNegocio();
   iniciarDeposito();
+  iniciarCelular();
   if (typeof window.print !== 'function' || window.SIN_IMPRESION) $$('[data-imprime]').forEach((b) => { b.hidden = true; });
   $('#venta-imprimir').addEventListener('click', () => { if (ultimaVenta) imprimir(htmlTicket(ultimaVenta)); });
   $('#dlg-venta').addEventListener('close', () => $('#caja-buscar').focus());
@@ -4590,6 +4591,112 @@ function productosParaHerramienta(texto) {
   return db.productos.filter((p) => { const t = normal(`${p.nombre} ${textoCodigos(p)} ${p.categoria || ''}`); return pal.every((w) => t.includes(w)); })
     .slice(0, 8).map(datosParaHerramienta);
 }
+/* ---------- App del celular (Etiquetador) por el WiFi del local ----------
+ * El servidor de la PC (electron/servidor-celular.js) le pregunta a la pantalla, que es la dueña de los datos.
+ * Por ahora el celular solo consulta. Nunca recibe costos (un empleado puede tener el celular) ni nada de ventas,
+ * caja o usuarios. Funciona aunque nadie haya entrado al programa: el celular se usa en el depósito mientras la PC
+ * del mostrador puede estar en la pantalla de ingreso. */
+function datosParaCelular(d, p) {
+  return { codigo: p.codigo, barras: codigosDe(p).filter((c) => c !== p.codigo), nombre: p.nombre, categoria: p.categoria || '', unidad: p.unidad || '',
+    proveedor: nombreProveedorDe(d, p.proveedorId), ubicacion: p.ubicacion || '', stock: p.stock, minimo: p.minimo, precio: p.precio, moneda: esUSD(p) ? 'USD' : 'UYU' };
+}
+/** Por código propio, de barras o de proveedor. { producto } (null si no está). */
+function productoCelular(d, codigo) {
+  const c = normCodigo(codigo);
+  if (!c) return { producto: null };
+  const p = buscarPorCodigo(d, c) || d.productos.find((x) => codigosProvDe(x).some((k) => normCodigo(k.codigo) === c));
+  return { producto: p ? datosParaCelular(d, p) : null };
+}
+/** Por nombre o código, todas las palabras en cualquier orden y sin importar tildes; primero los que empiezan con lo escrito. */
+function productosCelular(d, texto, max = 20) {
+  const q = normal(String(texto || '').trim());
+  const pal = q.split(/\s+/).filter(Boolean);
+  if (pal.join('').length < 2) return { productos: [] };
+  const lista = d.productos
+    .map((p) => ({ p, t: normal(`${p.nombre} ${textoCodigos(p)} ${p.categoria || ''} ${p.ubicacion || ''}`) }))
+    .filter((x) => pal.every((w) => x.t.includes(w)))
+    .sort((a, b) => (normal(b.p.nombre).startsWith(q) - normal(a.p.nombre).startsWith(q)) || ordenNatural(a.p.nombre, b.p.nombre));
+  return { productos: lista.slice(0, max).map((x) => datosParaCelular(d, x.p)), mas: Math.max(0, lista.length - max) };
+}
+const estantesCelular = (d) => ({ estantes: ubicacionesDe(d).map((u) => ({ codigo: u.ubicacion, categoria: u.categoria || '' })) });
+const SIN_DATOS_CELULAR = { error: 'Los datos del programa están dañados: hay que restaurar una copia en la PC.' };
+function estadoParaCelular() { return datosDanados ? { ...SIN_DATOS_CELULAR, listo: false } : { listo: true, productos: db.productos.length }; }
+const productoParaCelular = (codigo) => (datosDanados ? SIN_DATOS_CELULAR : productoCelular(db, codigo));
+const productosParaCelular = (texto) => (datosDanados ? SIN_DATOS_CELULAR : productosCelular(db, texto));
+const estantesParaCelular = () => (datosDanados ? SIN_DATOS_CELULAR : estantesCelular(db));
+
+/** Dibuja el QR de vinculación (SVG, para que se vea nítido con cualquier zoom). */
+function qrSvg(texto) {
+  if (typeof qrcode !== 'function') return '';
+  const q = qrcode(0, 'M');
+  q.addData(unescape(encodeURIComponent(texto))); // UTF-8
+  q.make();
+  return q.createSvgTag({ cellSize: 5, margin: 4, scalable: true });
+}
+
+let celularInfo = null;
+let celularTimer = 0;
+function pintarCelular() {
+  const i = celularInfo;
+  const admin = esAdmin();
+  $('#cel-no-admin').hidden = admin;
+  $('#cel-apagado').hidden = !admin || !i || i.activo;
+  $('#cel-prendido').hidden = !admin || !i || !i.activo;
+  $('#cel-prender').hidden = !admin || !i || i.activo;
+  $('#cel-apagar').hidden = !admin || !i || !i.activo;
+  $('#cel-nuevo').hidden = !admin || !i || !i.activo;
+  $('#cel-err').textContent = (i && i.error) || '';
+  if (i && !i.ips.length) $('#cel-err').textContent = 'Esta PC no está conectada a ninguna red. Conectala al WiFi o al cable del local.';
+  if (admin && i && i.activo) {
+    const texto = JSON.stringify(i.vinculo);
+    if ($('#cel-qr').dataset.texto !== texto) { $('#cel-qr').innerHTML = qrSvg(texto); $('#cel-qr').dataset.texto = texto; }
+    $('#cel-ips').textContent = i.ips.join(' · ') || '—';
+    const u = i.ultimoPedido;
+    const seg = u ? Math.round((Date.now() - Date.parse(u.fecha)) / 1000) : null;
+    $('#cel-ultimo').textContent = !u ? 'Todavía no se conectó ningún celular.'
+      : `Último pedido de un celular: ${seg < 60 ? `hace ${Math.max(seg, 0)} s` : seg < 3600 ? `hace ${Math.round(seg / 60)} min` : fechaHora(u.fecha)} (${u.ip}).`;
+  } else if (!admin) {
+    $('#cel-qr').innerHTML = ''; $('#cel-qr').dataset.texto = ''; // el QR lleva la clave: que no quede a la vista
+  }
+  $('#cel-card-estado').textContent = !i ? 'El celular puede consultar los productos y los estantes de esta PC por el WiFi del local.'
+    : i.activo ? `Conexión prendida${i.ultimoPedido ? ` · último pedido de un celular: ${fechaHora(i.ultimoPedido.fecha)}` : '.'}`
+      : 'Conexión apagada.';
+}
+async function refrescarCelular() {
+  if (!escritorio() || !window.almacen.celular) return;
+  try { celularInfo = await window.almacen.celular(); } catch (e) { celularInfo = null; }
+  pintarCelular();
+}
+async function abrirCelular() {
+  if (!escritorio() || !window.almacen.celular) return;
+  await refrescarCelular();
+  const d = $('#dlg-celular');
+  if (!d.open) d.showModal();
+  clearInterval(celularTimer);
+  celularTimer = setInterval(() => { if (d.open) refrescarCelular(); else clearInterval(celularTimer); }, 3000);
+}
+function iniciarCelular() {
+  if (!escritorio() || !window.almacen.celular) return;
+  window.almacen.alAbrirCelular(() => { if (sesion) abrirCelular(); else toast('Entrá al programa con un usuario administrador para vincular un celular.'); });
+  $('#btn-cel-abrir').addEventListener('click', abrirCelular);
+  const accion = async (b, fn) => {
+    b.disabled = true;
+    try { celularInfo = await fn(); } catch (e) { $('#cel-err').textContent = String((e && e.message) || e); }
+    b.disabled = false;
+    pintarCelular();
+  };
+  $('#cel-prender').addEventListener('click', (e) => { if (esAdmin()) accion(e.currentTarget, window.almacen.activarCelular); });
+  $('#cel-apagar').addEventListener('click', (e) => { if (esAdmin()) accion(e.currentTarget, window.almacen.desactivarCelular); });
+  $('#cel-nuevo').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    if (!esAdmin() || !(await confirmar('¿Desvincular todos los celulares? Dejan de consultar la PC hasta que escaneen el código QR nuevo.', 'Desvincular todos', true))) return;
+    await accion(b, window.almacen.nuevoCodigoCelular);
+    toast('Listo: los celulares tienen que volver a escanear el código.');
+  });
+  $('#dlg-celular').addEventListener('close', () => clearInterval(celularTimer));
+  refrescarCelular();
+}
+
 /** El Cargador crea un estante: queda guardado en el programa igual que si se creara en Depósito. */
 function nuevoEstanteDesdeHerramienta(x) {
   if (!sesion) return SIN_SESION_HERRAMIENTA;
@@ -4729,7 +4836,7 @@ function sugerenciasDeposito(d, texto, max = 8) {
 const FORMATOS_ETIQUETA = {
   hoja: { nombre: 'Hoja A4 común: el tamaño se ajusta a cuántas van por hoja', porHoja: 0, pagina: '@page { size: A4; margin: 0; }' },
   a4: { nombre: 'Hoja A4 de stickers (24 por hoja, 70 × 37 mm)', porHoja: 24, pagina: '@page { size: A4; margin: 0; }' },
-  rollo: { nombre: 'Impresora de etiquetas (50 × 25 mm)', porHoja: 1, pagina: '@page { size: 50mm 25mm; margin: 0; }' },
+  rollo: { nombre: 'Impresora de etiquetas (rollo)', porHoja: 1, pagina: '@page { size: 50mm 25mm; margin: 0; }' },
 };
 
 /* Hoja A4 común: cuántas etiquetas por hoja y en qué grilla (columnas × filas). Con pocas, cada una sale más grande. */
@@ -4752,6 +4859,26 @@ function medidaEtiquetaHoja(porHoja) {
   const k = Math.min(ancho / 70, alto / 37);
   const r = (x) => Math.floor(x * 10) / 10;
   return { cols, filas, celdaAncho: r(celdaAncho), celdaAlto: r(celdaAlto), ancho: r(ancho), alto: r(alto), k: Math.round(k * 100) / 100 };
+}
+/* Medidas de rollo de las impresoras de etiquetas (ancho × alto de una etiqueta, en mm). 50 × 25 es la de siempre. */
+const MEDIDAS_ROLLO = [[50, 40], [50, 25], [40, 30], [50, 30], [58, 40], [60, 40], [100, 50], [100, 100], [100, 150]];
+/** Medida válida de rollo (ancho hasta 108 mm, el máximo de las impresoras de 4 pulgadas). */
+function medidaRollo(ancho, alto) {
+  const a = Math.round(Number(ancho)), h = Math.round(Number(alto));
+  if (!(a >= 20 && a <= 108 && h >= 15 && h <= 300)) return null;
+  return { ancho: a, alto: h };
+}
+/** Etiquetas de rollo de otra medida: cada una ocupa su etiqueta y el contenido se agranda o achica con ella. */
+function htmlEtiquetasRollo(items, m) {
+  const k = Math.round(Math.min((m.ancho - 2) / 70, (m.alto - 2) / 37) * 100) / 100;
+  const celdas = [];
+  for (const it of items) {
+    const copias = Math.max(0, Math.min(500, Math.floor(Number(it.copias) || 0)));
+    const una = `<div class="pagina hoja rollo-m" style="--k:${k};width:${m.ancho}mm;height:${m.alto}mm">${htmlEtiqueta(it, 'hoja')}</div>`;
+    for (let i = 0; i < copias; i++) celdas.push(una);
+  }
+  return { html: celdas.join(''), etiquetas: celdas.length, hojas: celdas.length, medida: m, k,
+    pagina: `@page { size: ${m.ancho}mm ${m.alto}mm; margin: 0; }` };
 }
 /** Una etiqueta (HTML). item: { producto } o { ubicacion } (de ubicacionesDe). */
 function htmlEtiqueta(item, formato) {
@@ -4778,9 +4905,10 @@ function htmlEtiqueta(item, formato) {
  * saltear: en la hoja A4, cuántos stickers ya se usaron (se dejan en blanco al principio).
  * Devuelve { html, etiquetas, hojas }.
  */
-function htmlEtiquetas(items, formato = 'a4', saltear = 0, porHojaElegido = 0) {
+function htmlEtiquetas(items, formato = 'a4', saltear = 0, porHojaElegido = 0, rollo = null) {
   const f = FORMATOS_ETIQUETA[formato] || FORMATOS_ETIQUETA.a4;
   if (formato === 'hoja') return htmlEtiquetasHoja(items, porHojaElegido);
+  if (formato === 'rollo' && rollo && !(rollo.ancho === 50 && rollo.alto === 25)) return htmlEtiquetasRollo(items, rollo);
   const celdas = [];
   if (formato === 'a4') for (let i = 0; i < Math.min(Math.max(0, Math.floor(saltear) || 0), f.porHoja - 1); i++) celdas.push('<div class="et et-vacia"></div>');
   let etiquetas = 0;
@@ -4952,8 +5080,12 @@ function renderEtiquetas() {
   const formato = $('#etq-dlg [name=etq-formato]:checked').value;
   $('#etq-saltear-campo').hidden = formato !== 'a4';
   $('#etq-porhoja-campo').hidden = formato !== 'hoja';
+  $('#etq-rollo-campo').hidden = formato !== 'rollo';
+  $('#etq-rollo-otra').hidden = $('#etq-rollo').value !== 'otra';
+  prepararEtiquetadora(formato);
+  const rollo = formato === 'rollo' ? rolloElegido() : null;
   const sel = todos.filter((x) => etq.copias.get(x.id) > 0).map((x) => ({ ...x, copias: etq.copias.get(x.id) }));
-  const r = htmlEtiquetas(sel, formato, Number($('#etq-saltear').value), Number($('#etq-porhoja').value));
+  const r = htmlEtiquetas(sel, formato, Number($('#etq-saltear').value), Number($('#etq-porhoja').value), rollo);
   if (formato === 'hoja') {
     const ph = porHojaEtiquetas(Number($('#etq-porhoja').value), r.etiquetas);
     const m = medidaEtiquetaHoja(ph);
@@ -4966,7 +5098,9 @@ function renderEtiquetas() {
   // Muestra: en la hoja común, la primera hoja entera en chico; si no, la primera etiqueta en su tamaño
   const primera = sel[0];
   $('#etq-muestra').className = `etq-muestra ${formato}`;
-  $('#etq-muestra').innerHTML = !primera ? '' : formato === 'hoja' ? r.html.split('<div class="pagina hoja"').slice(0, 2).join('<div class="pagina hoja"') : htmlEtiqueta(primera, formato);
+  $('#etq-muestra').className = `etq-muestra ${formato}${r.medida && formato === 'rollo' ? ' rollo-m' : ''}`;
+  $('#etq-muestra').innerHTML = !primera ? '' : formato === 'hoja' ? r.html.split('<div class="pagina hoja"').slice(0, 2).join('<div class="pagina hoja"')
+    : formato === 'rollo' && r.medida ? r.html.split('<div class="pagina hoja rollo-m"').slice(0, 2).join('<div class="pagina hoja rollo-m"') : htmlEtiqueta(primera, formato);
 }
 
 function abrirEtiquetas(tipo, marcar = [], opciones = {}) {
@@ -4982,15 +5116,95 @@ function abrirEtiquetas(tipo, marcar = [], opciones = {}) {
   $('#etq-dlg').showModal();
 }
 
+/* ---------- Impresión directa a la etiquetadora (TSPL, igual que la app del celular) ---------- */
+const AJUSTES_ETIQUETADORA = { directo: true, impresora: '', separacion: 2, oscuridad: 8, correrX: 0, correrY: 0, girar: false };
+const puedeEtiquetadora = () => typeof window !== 'undefined' && !!(window.almacen && window.almacen.imprimirEtiquetadora) && typeof EtiquetaTSPL !== 'undefined';
+function ajustesEtiquetadora() {
+  try { return { ...AJUSTES_ETIQUETADORA, ...(JSON.parse(localStorage.getItem('etiquetadora') || 'null') || {}) }; } catch { return { ...AJUSTES_ETIQUETADORA }; }
+}
+/** Lo que va impreso en la etiqueta térmica: { nombre, codigo, ubicacion } (el mismo dibujo que el celular). */
+function itemEtiquetadora(x) {
+  if (x.producto) return { nombre: x.producto.nombre, codigo: codigoEtiqueta(x.producto), ubicacion: x.producto.ubicacion || '' };
+  const u = x.ubicacion;
+  return { nombre: u.categoria ? `${u.categoria}: ${u.ubicacion}` : `Ubicación ${u.ubicacion}`, codigo: u.corto || PREFIJO_UBIC + u.clave, ubicacion: u.ubicacion };
+}
+/** Comandos TSPL de todas las etiquetas elegidas. sel: [{ producto | ubicacion, copias }]. */
+function tsplEtiquetas(sel, medida, opc) {
+  return sel.filter((x) => x.copias > 0)
+    .map((x) => EtiquetaTSPL.tspl(EtiquetaTSPL.disenoEtiqueta(itemEtiquetadora(x), medida), { ...opc, copias: x.copias })).join('');
+}
+function leerAjustesEtiquetadora() {
+  const num = (sel, def, min, max) => { const v = Number(String($(sel).value).replace(',', '.')); return Number.isFinite(v) && $(sel).value !== '' ? Math.max(min, Math.min(max, v)) : def; };
+  return { directo: $('#etq-directo').checked, impresora: $('#etq-impresora').value, separacion: num('#etq-sep', 2, 0, 10), oscuridad: Math.round(num('#etq-osc', 8, 1, 15)),
+    correrX: num('#etq-cx', 0, -40, 40), correrY: num('#etq-cy', 0, -40, 40), girar: $('#etq-girar').checked };
+}
+function guardarAjustesEtiquetadora() { try { localStorage.setItem('etiquetadora', JSON.stringify(leerAjustesEtiquetadora())); } catch { /* nada */ } }
+let impresorasCargadas = false;
+async function cargarImpresoras() {
+  const a = ajustesEtiquetadora();
+  let lista = [];
+  try { lista = await window.almacen.impresoras(); } catch { /* sin lista */ }
+  // Primero la que se usó la otra vez; si no, una que parezca de etiquetas (Xprinter, Unnion, label, TSC…)
+  const pareceEtiquetas = (n) => /xprinter|xp-|unnion|label|etiq|tsc|zebra|tspl|lp\d/i.test(n);
+  const elegida = lista.find((p) => p.nombre === a.impresora) || lista.find((p) => pareceEtiquetas(p.nombre)) || lista.find((p) => p.predeterminada) || lista[0];
+  $('#etq-impresora').innerHTML = lista.length ? lista.map((p) => `<option value="${esc(p.nombre)}">${esc(p.nombreVisible)}${p.predeterminada ? ' (predeterminada)' : ''}</option>`).join('')
+    : '<option value="">No encontré impresoras instaladas en Windows</option>';
+  if (elegida) $('#etq-impresora').value = elegida.nombre;
+  impresorasCargadas = true;
+}
+function prepararEtiquetadora(formato) {
+  const ok = puedeEtiquetadora() && formato === 'rollo';
+  $('#etq-directo-op').hidden = !ok;
+  $('#etq-directo-campos').hidden = !ok || !$('#etq-directo').checked;
+  $('#etq-driver-nota').hidden = ok && $('#etq-directo').checked;
+  if (ok && !impresorasCargadas) cargarImpresoras();
+}
+async function mandarEtiquetadora(tspl, mensajeOk) {
+  const a = leerAjustesEtiquetadora();
+  if (!a.impresora) { aviso('Elegí la impresora de etiquetas. Si no aparece, instalá el driver que vino con la impresora y conectala.'); return false; }
+  guardarAjustesEtiquetadora();
+  const b = $('#etq-imprimir'); b.disabled = true;
+  try {
+    const err = await window.almacen.imprimirEtiquetadora(a.impresora, tspl);
+    if (err) { aviso(`No se pudo imprimir en «${a.impresora}»: ${err}`); return false; }
+    toast(mensajeOk);
+    return true;
+  } finally { b.disabled = false; }
+}
+async function imprimirPruebaEtiquetadora() {
+  const m = rolloElegido();
+  if (!m) { aviso('Revisá la medida de la etiqueta: ancho de 20 a 108 mm y alto de 15 a 300 mm.'); return; }
+  await mandarEtiquetadora(EtiquetaTSPL.tsplPrueba(m, leerAjustesEtiquetadora()), 'Etiqueta de prueba enviada: el recuadro tiene que quedar justo en el borde de la etiqueta.');
+}
+
+/** La medida de rollo elegida en la ventana de etiquetas (null si «Otra medida» está mal escrita). */
+function rolloElegido() {
+  const v = $('#etq-rollo').value;
+  if (v === 'otra') return medidaRollo($('#etq-rollo-ancho').value, $('#etq-rollo-alto').value);
+  const [a, h] = v.split('x').map(Number);
+  return medidaRollo(a, h);
+}
 function imprimirEtiquetas() {
   const formato = $('#etq-dlg [name=etq-formato]:checked').value;
   const sel = itemsEtiquetas().filter((x) => etq.copias.get(x.id) > 0).map((x) => ({ ...x, copias: etq.copias.get(x.id) }));
-  const r = htmlEtiquetas(sel, formato, Number($('#etq-saltear').value), Number($('#etq-porhoja').value));
+  const rollo = formato === 'rollo' ? rolloElegido() : null;
+  if (formato === 'rollo' && !rollo) { aviso('Revisá la medida de la etiqueta: ancho de 20 a 108 mm y alto de 15 a 300 mm.'); return; }
+  if (formato === 'rollo' && puedeEtiquetadora() && $('#etq-directo').checked) {
+    const total = sel.reduce((s, x) => s + x.copias, 0);
+    if (!total) return;
+    try { localStorage.setItem('formatoEtiquetas', formato); localStorage.setItem('etiquetasRollo', `${rollo.ancho}x${rollo.alto}`); } catch { /* nada */ }
+    mandarEtiquetadora(tsplEtiquetas(sel, rollo, leerAjustesEtiquetadora()), `${plural(total, 'etiqueta enviada', 'etiquetas enviadas')} a la impresora.`);
+    return;
+  }
+  const r = htmlEtiquetas(sel, formato, Number($('#etq-saltear').value), Number($('#etq-porhoja').value), rollo);
   if (!r.etiquetas) return;
-  try { localStorage.setItem('formatoEtiquetas', formato); localStorage.setItem('etiquetasPorHoja', $('#etq-porhoja').value); } catch { /* sin almacenamiento: no pasa nada */ }
+  try {
+    localStorage.setItem('formatoEtiquetas', formato); localStorage.setItem('etiquetasPorHoja', $('#etq-porhoja').value);
+    if (rollo) localStorage.setItem('etiquetasRollo', `${rollo.ancho}x${rollo.alto}`);
+  } catch { /* sin almacenamiento: no pasa nada */ }
   // La hoja de las etiquetas es distinta a la del ticket: se cambia solo mientras se imprime
   $('#impresion').classList.add('etiquetas');
-  $('#estilo-etiquetas').textContent = FORMATOS_ETIQUETA[formato].pagina;
+  $('#estilo-etiquetas').textContent = r.pagina || FORMATOS_ETIQUETA[formato].pagina;
   imprimir(r.html);
 }
 
@@ -5226,6 +5440,26 @@ function iniciarDeposito() {
   $('#etq-porhoja').innerHTML = '<option value="0">Automático (según cuántas imprimís)</option>' + POR_HOJA.map((n) => `<option value="${n}">${n} por hoja</option>`).join('');
   try { const ph = localStorage.getItem('etiquetasPorHoja'); if (ph && $(`#etq-porhoja option[value="${ph}"]`)) $('#etq-porhoja').value = ph; } catch { /* nada */ }
   $('#etq-porhoja').addEventListener('change', renderEtiquetas);
+  // Medida del rollo: las de siempre y «Otra medida»; se recuerda la última que se usó
+  $('#etq-rollo').innerHTML = MEDIDAS_ROLLO.map(([a, h]) => `<option value="${a}x${h}">${a} × ${h} mm</option>`).join('') + '<option value="otra">Otra medida…</option>';
+  try {
+    const g = (localStorage.getItem('etiquetasRollo') || '').split('x').map(Number);
+    if (g.length === 2 && medidaRollo(g[0], g[1])) {
+      if ($(`#etq-rollo option[value="${g[0]}x${g[1]}"]`)) $('#etq-rollo').value = `${g[0]}x${g[1]}`;
+      else { $('#etq-rollo').value = 'otra'; $('#etq-rollo-ancho').value = g[0]; $('#etq-rollo-alto').value = g[1]; }
+    }
+  } catch { /* nada */ }
+  ['#etq-rollo', '#etq-rollo-ancho', '#etq-rollo-alto'].forEach((s) => $(s).addEventListener('input', renderEtiquetas));
+  // Impresión directa a la etiquetadora: se recuerdan los ajustes
+  {
+    const a = ajustesEtiquetadora();
+    $('#etq-directo').checked = a.directo !== false;
+    $('#etq-sep').value = a.separacion; $('#etq-osc').value = a.oscuridad; $('#etq-cx').value = a.correrX; $('#etq-cy').value = a.correrY; $('#etq-girar').checked = !!a.girar;
+    $('#etq-directo').addEventListener('change', () => { guardarAjustesEtiquetadora(); renderEtiquetas(); });
+    ['#etq-impresora', '#etq-sep', '#etq-osc', '#etq-cx', '#etq-cy', '#etq-girar'].forEach((s) => $(s).addEventListener('change', guardarAjustesEtiquetadora));
+    $('#etq-prueba').addEventListener('click', imprimirPruebaEtiquetadora);
+  }
+  $('#etq-rollo').addEventListener('change', renderEtiquetas);
   $('#etq-buscar').addEventListener('input', renderEtiquetas);
   $('#etq-ubic').addEventListener('change', renderEtiquetas);
   $('#etq-sinfab').addEventListener('change', renderEtiquetas);
@@ -5247,7 +5481,7 @@ function iniciarDeposito() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { htmlTicket, leerMoneda, enPesos, $m,sugerenciasDeposito, porHojaEtiquetas, medidaEtiquetaHoja, asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
+  module.exports = { htmlTicket, datosParaCelular, productoCelular, productosCelular, estantesCelular, tsplEtiquetas, itemEtiquetadora, medidaRollo, htmlEtiquetas, leerMoneda, enPesos, $m, sugerenciasDeposito, porHojaEtiquetas, medidaEtiquetaHoja, asegurarEstante, tieneCodigoFabrica, codigoLibreDe, anotarCodigoProv, codigosProvDe, quitarCodigoProv, unirProductos, seParecen, registrar, cobrar, anularVenta, devolucionEnOtraCaja, semilla, baseVacia, estado, abrirCaja, cajaAbierta, movimientoCaja, resumenCaja, cerrarCaja, parseNum, planImportacion, aplicarImportacion, actualizarPrecios, redondearPrecio, sha256, crearUsuario, asegurarUsuarios, verificarPin, guardarUsuario, eliminarUsuario, fotoDe, calcularCambios, analisisVentas, serieVentas, mercaderiaParada, buscarPorCodigo, codigoUsado, asignarBarras, nuevaClaveRecuperacion, verificarRecuperacion, precioConAumento, cambiosStockImportacion, CAMPOS_IMPORTAR, gananciaBruta, totalCompras, esperaPin, fallarPin, acertarPin, bloqueosPendientes, anotarPrecio, hojaExcel, fechaExcel, textoPeriodo, precioBajoCosto, marcarProductoNuevo, moverPeriodo, periodoComparable, tramosCrecimiento, subasYBajas, promedioPorDiaSemana, resumenDia, sumarDias, ubicacionesDe, dondeEsta, codigoEtiqueta, htmlEtiquetas, claveUbic, PREFIJO_UBIC, estantesDe, guardarEstante, eliminarEstante, ubicarProducto, altaEnDeposito, recibirEnDeposito, numerarEstantes, completarEstantes, revisarCantidadDeposito, TOPE_DEPOSITO };
 } else {
   document.addEventListener('DOMContentLoaded', iniciar);
 }

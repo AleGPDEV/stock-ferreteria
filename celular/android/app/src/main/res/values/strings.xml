@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Etiquetador</string>
+    <string name="title_activity_main">Etiquetador</string>
+    <string name="package_name">uy.grupomuros.etiquetador</string>
+    <string name="custom_url_scheme">uy.grupomuros.etiquetador</string>
+</resources>

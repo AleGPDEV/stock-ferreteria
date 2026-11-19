@@ -8,3 +8,7 @@ dist/
 Generador-de-licencias*.html
 *privada*.json
 claves/
+
+# Llave de firma de la app del celular (va como secreto en GitHub)
+*.jks
+*.keystore

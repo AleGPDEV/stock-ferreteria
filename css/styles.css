@@ -915,3 +915,23 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 @media (max-width: 520px) { .ac-usd { grid-template-columns: 1fr; } }
 .caja-cotiz { margin-bottom: 8px; }
 .cc-sep { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; }
+
+/* Etiquetas de rollo de otra medida (impresora térmica): una por página, contenido escalado con --k */
+.pagina.hoja.rollo-m { display: block; box-sizing: border-box; overflow: hidden; background: #fff; }
+.pagina.hoja.rollo-m .et { width: 100%; height: 100%; box-sizing: border-box; }
+.etq-muestra.rollo-m { border: 0; background: none; }
+.etq-muestra.rollo-m .pagina { box-shadow: 0 0 0 1px var(--line); border-radius: 2mm; }
+.etq-rollo { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px 28px; }
+.etq-rollo-otra:not([hidden]) { display: flex; gap: 10px; }
+.etq-rollo small { color: var(--muted); font-size: 13px; }
+.etq-directo:not([hidden]) { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; align-items: end; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.etq-directo .etq-d-imp, .etq-directo .etq-d-girar { grid-column: 1 / -1; }
+.etq-directo .etq-d-prueba { justify-self: start; }
+
+/* Vincular el celular (QR) */
+.cel-prendido { display: grid; grid-template-columns: 220px 1fr; gap: 16px; align-items: start; }
+.cel-qr { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 6px; aspect-ratio: 1; }
+.cel-qr svg { display: block; width: 100%; height: 100%; }
+.cel-pasos ol { margin: 0 0 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 560px) { .cel-prendido { grid-template-columns: 1fr; } .cel-qr { max-width: 240px; } }
+dialog#dlg-celular { width: min(640px, calc(100vw / var(--zoom, 1) - 32px)); }

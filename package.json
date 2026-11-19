@@ -1,7 +1,7 @@
 {
   "name": "stock-ferreteria",
   "productName": "Stock Ferretería",
-  "version": "1.33.1",
+  "version": "1.36.0",
   "description": "Control de stock y caja para ferretería",
   "author": "AleGPDEV",
   "license": "UNLICENSED",
@@ -9,7 +9,7 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test tests/logica.test.js tests/herramientas.test.js",
+    "test": "node --test tests/logica.test.js tests/herramientas.test.js tests/celular.test.js",
     "test:almacen": "node tests/correr-almacen.js",
     "postinstall": "electron-builder install-app-deps",
     "dist": "electron-builder --win nsis portable --x64",

@@ -1289,3 +1289,84 @@ test('dólares: el ticket impreso muestra lo recibido y el vuelto en la moneda d
 test('el ticket sin nombre de negocio usa el nombre del programa', () => {
   assert.match(app.htmlTicket({ numero: 1, fecha: new Date().toISOString(), items: [], subtotal: 0, total: 0, medio: 'Efectivo', recibido: null }), /Grupo Muros/);
 });
+
+test('celular: etiqueta TSPL para la etiquetadora (mismo código de barras que el programa)', () => {
+  const E = require('../js/etiqueta-tspl.js');
+  const CB = require('../js/codigo-barras.js');
+  assert.equal(E.ascii('Caño ½" PVC — 3ª'), "Cano 1/2' PVC 3");
+  for (const [a, h] of [[50, 25], [40, 30], [60, 40], [100, 50], [100, 150]]) {
+    const d = E.disenoEtiqueta({ nombre: 'Taladro percutor 800 W Makawa con maletín', codigo: '7790001234567', ubicacion: 'V-1' }, { ancho: a, alto: h });
+    const [W, H] = d.puntos;
+    assert.equal(W, a * 8);
+    // todo adentro de la etiqueta
+    for (const b of d.barras) assert.ok(b.x >= 0 && b.x + b.w <= W && b.y >= 0 && b.y + b.h <= H, `barra fuera en ${a}x${h}`);
+    for (const t of d.textos) assert.ok(t.x >= 0 && t.x + t.texto.length * E.FUENTES[t.fuente][0] <= W && t.y + E.FUENTES[t.fuente][1] <= H, `texto fuera en ${a}x${h}: ${t.texto}`);
+    // las barras son exactamente las del código de barras del programa
+    const fino = d.barras[0].w / CB.anchos('7790001234567')[0];
+    assert.deepEqual(d.barras.map((b) => b.w / fino), CB.anchos('7790001234567').filter((_, i) => i % 2 === 0));
+    assert.ok(fino >= 2, `barras de al menos 2 puntos en ${a}x${h}`);
+  }
+  const t = E.tspl(E.disenoEtiqueta({ nombre: 'Gancho "S"', codigo: 'C1-0002', ubicacion: 'B-2' }, { ancho: 50, alto: 25 }), { copias: 3, separacion: 3, oscuridad: 10 });
+  assert.match(t, /^SIZE 50 mm,25 mm\r\nGAP 3 mm,0 mm\r\nDENSITY 10\r\n/);
+  assert.match(t, /TEXT \d+,\d+,"2",0,1,1,"Gancho 'S'"/);
+  assert.match(t, /PRINT 1,3\r\n$/);
+  assert.match(E.tsplPrueba({ ancho: 50, alto: 25 }), /BOX 4,4,396,196,3/);
+  // corrida y girada (impresoras que no la ponen justo en la etiqueta)
+  const p = E.tsplPrueba({ ancho: 58, alto: 40 }, { correrX: 5, correrY: -1, girar: true });
+  assert.match(p, /SIZE 58 mm,40 mm/);
+  assert.match(p, /DIRECTION 0\r\n/);
+  assert.match(p, /BOX 44,0,500,308,3/);
+  assert.match(E.tsplPrueba({ ancho: 50, alto: 25 }), /DIRECTION 1\r\n/);
+  // área del ancho del cabezal (72 mm) para poder correr el dibujo sin que dé la vuelta
+  assert.match(E.tsplPrueba({ ancho: 50, alto: 40 }, { cabezal: 72, correrX: 15 }), /SIZE 72 mm,40 mm[\s\S]*BOX 124,4,516,316,3/);
+  assert.match(E.tsplPrueba({ ancho: 100, alto: 50 }, { cabezal: 72 }), /SIZE 100 mm,50 mm/);
+  const regla = E.tsplRegla({ cabezal: 72, alto: 40, correrX: 9 });
+  assert.match(regla, /^SIZE 72 mm,40 mm/);
+  assert.match(regla, /TEXT 403,96,"2",0,1,1,"50"/);
+  assert.equal((regla.match(/^BAR /gm) || []).length, 74);
+  const corrida = E.tspl(E.disenoEtiqueta({ nombre: 'X', codigo: '7790001234567' }, { ancho: 50, alto: 25 }), { correrX: -40 });
+  assert.ok(!/-\d/.test(corrida.replace(/C1-|PRUEBA-/g, '')), 'sin coordenadas negativas');
+});
+
+test('celular + Cargador: las dos planillas se importan juntas sin duplicar', () => {
+  const d = app.baseVacia();
+  d.productos.push({ id: 'ag', codigo: 'P-0001', barras: ['7730123456789'], nombre: 'Agua 2 L', unidad: 'unidad', stock: 3, minimo: 0, costo: 40, precio: 80 });
+  // Planilla del Cargador (PC): lo que ya tenía código de barras, contado
+  const cargador = [
+    { 'Código': 'P-0001', 'Códigos de barras': '7730123456789', Producto: 'Agua 2 L', Stock: 12, Precio: '', Contado: 'Sí' },
+    { 'Código': '7790001234567', Producto: 'Taladro', Ubicación: 'V-1', Categoría: 'Herramientas', Stock: 2, Precio: 4900, Contado: 'Sí' },
+  ];
+  // Planilla del celular: lo suelto, con códigos propios del celular C1
+  const celular = [
+    { 'Código': 'C1-0001', Producto: 'Arandela plana 8 mm', Ubicación: 'B-2', Categoría: 'Bulonería', Stock: 200, Moneda: 'UYU', Precio: 5, Contado: 'Sí' },
+    { 'Código': 'C1-0002', Producto: 'Gancho S', Ubicación: 'B-2', Categoría: 'Bulonería', Stock: 1, Moneda: 'UYU', Precio: 30, Contado: 'Sí' },
+  ];
+  app.aplicarImportacion(d, app.planImportacion(d, cargador));
+  app.aplicarImportacion(d, app.planImportacion(d, celular));
+  // Importar otra vez la del celular no duplica
+  app.aplicarImportacion(d, app.planImportacion(d, celular));
+  assert.deepEqual(d.productos.map((p) => [p.codigo, p.stock]).sort(), [['7790001234567', 2], ['C1-0001', 200], ['C1-0002', 1], ['P-0001', 12]]);
+  assert.deepEqual(app.estantesDe(d).map((e) => [e.codigo, e.categoria]).sort(), [['B-2', 'Bulonería'], ['V-1', 'Herramientas']]);
+  // Lo del celular se puede escanear con la etiqueta que imprimió
+  assert.equal(app.dondeEsta(d, 'C1-0001').producto.nombre, 'Arandela plana 8 mm');
+});
+
+test('PC: etiquetas directo a la etiquetadora (TSPL, igual que el celular)', () => {
+  global.EtiquetaTSPL = require('../js/etiqueta-tspl.js');
+  try {
+    const p = { id: 'x', codigo: 'P-0007', barras: ['7791293049632'], nombre: 'Desodorante', ubicacion: 'A-01' };
+    const it = app.itemEtiquetadora({ producto: p });
+    assert.equal(it.nombre, 'Desodorante');
+    assert.equal(it.ubicacion, 'A-01');
+    assert.ok(it.codigo);
+    const u = app.itemEtiquetadora({ ubicacion: { ubicacion: 'A-02', categoria: 'Pinturas', corto: 'U2', clave: 'a-02', productos: [] } });
+    assert.deepEqual(u, { nombre: 'Pinturas: A-02', codigo: 'U2', ubicacion: 'A-02' });
+    const t = app.tsplEtiquetas([{ producto: p, copias: 3 }, { producto: p, copias: 0 }, { ubicacion: { ubicacion: 'A-02', corto: 'U2', clave: 'a-02', productos: [] }, copias: 1 }],
+      { ancho: 50, alto: 40 }, { separacion: 2, oscuridad: 9, correrX: 1 });
+    assert.equal((t.match(/^SIZE 50 mm,40 mm/gm) || []).length, 2);
+    assert.match(t, /PRINT 1,3\r\n/);
+    assert.match(t, /PRINT 1,1\r\n$/);
+    assert.match(t, /DENSITY 9/);
+    assert.match(t, /"Ubicacion A-02"/);
+  } finally { delete global.EtiquetaTSPL; }
+});
