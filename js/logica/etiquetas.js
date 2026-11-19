@@ -38,6 +38,17 @@ function medidaRollo(ancho, alto) {
   if (!(a >= 20 && a <= 108 && h >= 15 && h <= 300)) return null;
   return { ancho: a, alto: h };
 }
+/** La línea corta de la ventana de imprimir que dice cómo se imprimen las etiquetas (se cambia en «Cambiar»).
+ * a: { formato, porHoja, rollo: { ancho, alto } | null, directo, impresora }. */
+function resumenAjustesEtiquetas(a) {
+  if (a.formato === 'hoja') return `Hoja A4 común · ${Number(a.porHoja) ? `${Number(a.porHoja)} por hoja` : 'tamaño automático'}`;
+  if (a.formato === 'rollo') {
+    const medida = a.rollo ? `${a.rollo.ancho} × ${a.rollo.alto} mm` : 'revisá la medida';
+    if (!a.directo) return `Impresora de etiquetas · ${medida}`;
+    return `${a.impresora ? `Etiquetadora ${a.impresora}` : 'Etiquetadora (elegí la impresora)'} · ${medida}`;
+  }
+  return 'Hoja A4 de stickers · 24 por hoja, de 70 × 37 mm';
+}
 /** Etiquetas de rollo de otra medida: cada una ocupa su etiqueta y el contenido se agranda o achica con ella. */
 function htmlEtiquetasRollo(items, m) {
   const k = Math.round(Math.min((m.ancho - 2) / 70, (m.alto - 2) / 37) * 100) / 100;

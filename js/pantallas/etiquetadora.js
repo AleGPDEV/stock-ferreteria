@@ -36,6 +36,7 @@ async function cargarImpresoras() {
     : '<option value="">No encontré impresoras instaladas en Windows</option>';
   if (elegida) $('#etq-impresora').value = elegida.nombre;
   impresorasCargadas = true;
+  actualizarResumenEtiquetas();
 }
 function prepararEtiquetadora(formato) {
   const ok = puedeEtiquetadora() && formato === 'rollo';
@@ -70,7 +71,7 @@ function rolloElegido() {
   return medidaRollo(a, h);
 }
 function imprimirEtiquetas() {
-  const formato = $('#etq-dlg [name=etq-formato]:checked').value;
+  const formato = $('#etq-ajustes-dlg [name=etq-formato]:checked').value;
   const sel = itemsEtiquetas().filter((x) => etq.copias.get(x.id) > 0).map((x) => ({ ...x, copias: etq.copias.get(x.id) }));
   const rollo = formato === 'rollo' ? rolloElegido() : null;
   if (formato === 'rollo' && !rollo) { aviso('Revisá la medida de la etiqueta: ancho de 20 a 108 mm y alto de 15 a 300 mm.'); return; }
