@@ -2,7 +2,7 @@
 // Todo pedido pasa por la pantalla del programa (preguntar), que es la dueña de los datos:
 // nunca se lee ni se escribe SQLite por fuera de ella, así un guardado de la pantalla no pisa nada.
 // Consultas: estado, buscar un producto por código o por nombre, estantes y el próximo código libre del celular.
-// Escrituras (fase 2): producto nuevo, conteo de uno que ya existe y foto de un producto. Los estantes NO: se crean
+// Escrituras (fase 2): producto nuevo, conteo de uno que ya existe, cambio de estante y foto de un producto. Los estantes NO: se crean
 // solo en la PC (el celular elige de la lista que le manda la PC). Son idempotentes (el celular
 // manda un id propio): si el WiFi se corta y reintenta, no se duplica nada.
 // Usa solo http y crypto de Node, sin dependencias.
@@ -97,7 +97,7 @@ function crearServidorCelular({ clave, preguntar, version = '', puerto = PUERTO,
     req.on('error', mal);
   });
   // Solo estos campos pasan a la pantalla, y como texto JSON (nunca se arma código con lo que manda el celular)
-  const CAMPOS = ['idCelular', 'conteoId', 'equipo', 'productoId', 'codigo', 'barras', 'barra', 'nombre', 'precio', 'moneda', 'unidad', 'proveedor', 'minimo', 'categoria', 'ubicacion', 'cantidad', 'contado', 'hace'];
+  const CAMPOS = ['idCelular', 'conteoId', 'equipo', 'productoId', 'codigo', 'barras', 'barra', 'nombre', 'precio', 'moneda', 'unidad', 'proveedor', 'minimo', 'categoria', 'ubicacion', 'estante', 'cantidad', 'contado', 'hace'];
   const limpio = (x) => {
     const o = {};
     for (const k of CAMPOS) {
@@ -136,7 +136,7 @@ function crearServidorCelular({ clave, preguntar, version = '', puerto = PUERTO,
       const { pathname, searchParams } = new URL(req.url, 'http://local');
       if (req.method === 'POST' && pathname === '/api/fotos') return recibirFoto(req, res);
       if (req.method === 'POST') {
-        const fn = { '/api/productos': 'productoDesdeCelular', '/api/conteos': 'conteoDesdeCelular' }[pathname];
+        const fn = { '/api/productos': 'productoDesdeCelular', '/api/conteos': 'conteoDesdeCelular', '/api/mover': 'moverDesdeCelular' }[pathname];
         if (!fn) return responder(res, 404, { error: 'No existe.' });
         const cuerpo = limpio(await leerCuerpo(req));
         ultimoPedido = { fecha: new Date().toISOString(), ip: String(req.socket.remoteAddress || '').replace(/^::ffff:/, '') };
