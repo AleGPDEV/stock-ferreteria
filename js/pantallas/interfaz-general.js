@@ -156,3 +156,116 @@ function iniciarBarra() {
     try { localStorage.setItem('ferreteria-barra', plegada ? 'plegada' : 'abierta'); } catch (e) { /* nada */ }
   });
 }
+
+/* ---------- Ayuda «?»: un globito con la explicación ----------
+ * Marcado: <button type="button" class="ayuda-ico" data-ayuda="Texto de la explicación">?</button>
+ * Se activa una sola vez para toda la página (delegación): sirve también para los «?» que se dibujan después.
+ * Un solo globito a la vez. Dentro de una ventana (dialog) el globito se pone en la ventana, si no queda tapado. */
+
+/** Dónde va el globito (px de la ventana): abajo del botón; si no entra, arriba. Sin salirse por los costados.
+ * boton: { top, bottom, left, width } (getBoundingClientRect). flecha: a cuántos px del borde izquierdo apunta. */
+function posicionGlobito(boton, ancho, alto, vw, vh, margen = 8) {
+  const sep = 8;
+  let arriba = false, top = boton.bottom + sep;
+  if (top + alto > vh - margen) {
+    if (boton.top - sep - alto >= margen) { arriba = true; top = boton.top - sep - alto; }
+    else top = Math.max(margen, vh - margen - alto);
+  }
+  const centro = boton.left + boton.width / 2;
+  const left = Math.max(margen, Math.min(vw - margen - ancho, centro - ancho / 2));
+  const flecha = Math.max(12, Math.min(ancho - 12, centro - left));
+  return { top: Math.round(top), left: Math.round(left), arriba, flecha: Math.round(flecha) };
+}
+
+const ayuda = { globo: null, boton: null };
+
+/** A cada «?» le pone lo que necesita el lector de pantalla (sin tocar su id ni su texto). */
+function prepararAyuda(b) {
+  if (!b.hasAttribute('aria-label')) b.setAttribute('aria-label', 'Ayuda');
+  b.setAttribute('aria-expanded', b === ayuda.boton ? 'true' : 'false');
+  b.setAttribute('aria-controls', 'ayuda-globo');
+}
+function prepararAyudas(raiz) {
+  if (raiz.matches && raiz.matches('.ayuda-ico')) prepararAyuda(raiz);
+  if (raiz.querySelectorAll) raiz.querySelectorAll('.ayuda-ico').forEach(prepararAyuda);
+}
+
+function cerrarAyuda() {
+  if (!ayuda.boton) return;
+  ayuda.boton.setAttribute('aria-expanded', 'false');
+  ayuda.boton = null;
+  ayuda.globo.hidden = true;
+  ayuda.globo.firstChild.textContent = '';
+}
+
+function ubicarAyuda() {
+  const g = ayuda.globo, b = ayuda.boton;
+  if (!g || !b) return;
+  const r = b.getBoundingClientRect();
+  const p = posicionGlobito(r, g.offsetWidth, g.offsetHeight, document.documentElement.clientWidth, window.innerHeight);
+  g.style.top = p.top + 'px';
+  g.style.left = p.left + 'px';
+  g.style.setProperty('--flecha', p.flecha + 'px');
+  g.classList.toggle('arriba', p.arriba);
+}
+
+function abrirAyuda(b) {
+  const g = ayuda.globo;
+  if (ayuda.boton) cerrarAyuda();
+  ayuda.boton = b;
+  b.setAttribute('aria-expanded', 'true');
+  // En una ventana abierta, el globito va adentro: lo de afuera queda tapado (y el lector no lo lee)
+  const lugar = b.closest('dialog[open]') || document.body;
+  if (g.parentNode !== lugar) lugar.appendChild(g);
+  g.hidden = false;
+  g.style.visibility = 'hidden';
+  // El texto se pone recién ahora (con el globito ya visible): así el lector de pantalla lo anuncia
+  requestAnimationFrame(() => {
+    if (ayuda.boton !== b) return;
+    g.firstChild.textContent = b.dataset.ayuda || '';
+    ubicarAyuda();
+    g.style.visibility = '';
+  });
+}
+
+function iniciarAyudas() {
+  const g = document.createElement('div');
+  g.id = 'ayuda-globo';
+  g.className = 'ayuda-globo';
+  g.setAttribute('role', 'status');
+  g.hidden = true;
+  g.appendChild(document.createElement('span'));
+  document.body.appendChild(g);
+  ayuda.globo = g;
+  prepararAyudas(document);
+  // Los «?» que se dibujan después (listas, pantallas) también llevan su aria-label
+  new MutationObserver((cambios) => {
+    for (const c of cambios) c.addedNodes.forEach((n) => { if (n.nodeType === 1 && n !== g) prepararAyudas(n); });
+  }).observe(document.body, { childList: true, subtree: true });
+
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('.ayuda-ico');
+    if (!b) return;
+    e.preventDefault(); // dentro de un <label>, que no active el campo
+    if (ayuda.boton === b) cerrarAyuda(); else abrirAyuda(b);
+  });
+  // Tocar afuera lo cierra (tocar el mismo «?» lo resuelve el click de arriba)
+  document.addEventListener('pointerdown', (e) => {
+    if (!ayuda.boton || g.contains(e.target) || ayuda.boton.contains(e.target)) return;
+    cerrarAyuda();
+  }, true);
+  // Escape cierra solo el globito, no la ventana en la que está
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !ayuda.boton) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const b = ayuda.boton;
+    cerrarAyuda();
+    if (b.isConnected) b.focus();
+  }, true);
+  // Si se cierra la ventana, cambia la pantalla o se mueve la página, el globito se va
+  document.addEventListener('close', (e) => { if (ayuda.boton && e.target.contains(ayuda.boton)) cerrarAyuda(); }, true);
+  window.addEventListener('hashchange', cerrarAyuda);
+  window.addEventListener('resize', cerrarAyuda);
+  document.addEventListener('scroll', (e) => { if (ayuda.boton && !g.contains(e.target)) cerrarAyuda(); }, true);
+}
