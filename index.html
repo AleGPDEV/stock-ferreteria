@@ -853,6 +853,34 @@
     <p class="sub">Marcá qué imprimir y cuántas copias. El código de barras se lee con el lector, en Vender o en Depósito.</p>
   </header>
   <div class="dlg-b etq-b">
+    <div class="etq-config">
+      <span class="etq-config-txt"><span class="meta">Imprime en</span> <strong id="etq-config-resumen"></strong></span>
+      <button class="btn sm" type="button" id="etq-config-cambiar">Cambiar</button>
+    </div>
+    <label class="f etq-saltear" id="etq-saltear-campo" for="etq-saltear">Stickers ya usados en la hoja<input id="etq-saltear" type="number" min="0" max="23" step="1" value="0" inputmode="numeric"><small>Si la hoja ya tiene stickers despegados, poné cuántos: se empieza después.</small></label>
+    <div class="etq-filtros">
+      <input id="etq-buscar" type="search" autocomplete="off" placeholder="Buscar" aria-label="Buscar">
+      <span id="etq-filtro-ubic"><select id="etq-ubic" aria-label="Ubicación"></select>
+        <label class="check etq-sinfab"><input type="checkbox" id="etq-sinfab"> <span>Solo los que no traen código de fábrica</span></label></span>
+      <button class="btn sm" type="button" id="etq-todos">Marcar todos</button>
+      <button class="btn sm" type="button" id="etq-ninguno">Desmarcar</button>
+    </div>
+    <ul id="etq-lista" class="etq-lista"></ul>
+    <div class="etq-pie"><div><strong id="etq-cuenta"></strong><p class="meta">Así queda:</p></div><div id="etq-muestra" class="etq-muestra a4"></div></div>
+  </div>
+  <footer class="dlg-f">
+    <span class="sp"></span>
+    <button type="button" class="btn" data-cerrar>Cerrar</button>
+    <button type="button" class="btn primary btn-grande" id="etq-imprimir" data-imprime>Imprimir</button>
+  </footer>
+</dialog>
+
+<dialog id="etq-ajustes-dlg" aria-labelledby="etq-ajustes-titulo">
+  <header class="dlg-h">
+    <h2 id="etq-ajustes-titulo">Cómo se imprimen las etiquetas</h2>
+    <p class="sub">Queda guardado para la próxima vez.</p>
+  </header>
+  <div class="dlg-b">
     <fieldset class="imp-campos">
       <legend>¿En qué imprimís?</legend>
       <label class="check"><input type="radio" name="etq-formato" value="hoja"> <span><strong>Hoja A4 común</strong> (se recortan; el tamaño se ajusta a cuántas van por hoja)</span></label>
@@ -878,22 +906,11 @@
         </div>
         <small id="etq-driver-nota">Si no usás «Mandar directo», la misma medida va en las preferencias de la impresora en Windows.</small>
       </div>
-      <label class="f etq-saltear" id="etq-saltear-campo" for="etq-saltear">Stickers ya usados en la hoja<input id="etq-saltear" type="number" min="0" max="23" step="1" value="0" inputmode="numeric"><small>Si la hoja ya tiene stickers despegados, poné cuántos: se empieza después.</small></label>
     </fieldset>
-    <div class="etq-filtros">
-      <input id="etq-buscar" type="search" autocomplete="off" placeholder="Buscar" aria-label="Buscar">
-      <span id="etq-filtro-ubic"><select id="etq-ubic" aria-label="Ubicación"></select>
-        <label class="check etq-sinfab"><input type="checkbox" id="etq-sinfab"> <span>Solo los que no traen código de fábrica</span></label></span>
-      <button class="btn sm" type="button" id="etq-todos">Marcar todos</button>
-      <button class="btn sm" type="button" id="etq-ninguno">Desmarcar</button>
-    </div>
-    <ul id="etq-lista" class="etq-lista"></ul>
-    <div class="etq-pie"><div><strong id="etq-cuenta"></strong><p class="meta">Así queda:</p></div><div id="etq-muestra" class="etq-muestra a4"></div></div>
   </div>
   <footer class="dlg-f">
     <span class="sp"></span>
-    <button type="button" class="btn" data-cerrar>Cerrar</button>
-    <button type="button" class="btn primary btn-grande" id="etq-imprimir" data-imprime>Imprimir</button>
+    <button type="button" class="btn primary" data-cerrar>Listo</button>
   </footer>
 </dialog>
 
