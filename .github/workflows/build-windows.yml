@@ -1,13 +1,22 @@
-# Prueba el programa y genera el instalador de Windows en cada push a main.
-# - El .exe queda como "artifact" descargable en la pestaña Actions.
-# - Además se publica en Releases con el tag vX.Y.Z, tomando la versión de package.json.
-#   Para sacar una versión nueva, subí el número de "version" en package.json.
+# Prueba el programa y arma el instalador de Windows y la app del celular.
+# - En cada pull request a main: pruebas + instalador + APK + prueba en el emulador, sin publicar nada.
+#   Son las verificaciones que tienen que pasar para poder unir el pull request (main está protegido).
+# - En cada push a main (al unir un pull request): lo mismo, y si la versión de package.json es NUEVA se publica
+#   en Releases con el tag vX.Y.Z. Si esa versión ya estaba publicada, no se publica nada (no se pisa una versión).
+#   Para sacar una versión nueva, se sube el número de "version" en package.json (lo hace quien une, ver CONTRIBUTING.md).
 name: Instalador de Windows y app del celular
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+
+# Si se suben cambios nuevos a un pull request, la prueba anterior de ese pull request se cancela
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: write
@@ -15,6 +24,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      publicar: ${{ steps.nueva.outputs.publicar }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +58,20 @@ jobs:
         shell: bash
         run: echo "v=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
+      - name: ¿Es una versión nueva? (solo en main)
+        id: nueva
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.ver.outputs.v }}" > /dev/null 2>&1; then
+            echo "La versión ${{ steps.ver.outputs.v }} ya está publicada: no se publica de nuevo."
+            echo "publicar=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "publicar=si" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Armar las herramientas (Cargador de productos y Lector de facturas)
         run: npm run herramientas
 
@@ -62,7 +87,7 @@ jobs:
           retention-days: 30
 
       - name: Publicar en Releases
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && steps.nueva.outputs.publicar == 'si'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.v }}
@@ -179,7 +204,7 @@ jobs:
           retention-days: 30
 
       - name: Publicar en Releases
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && needs.build.outputs.publicar == 'si'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.v }}
