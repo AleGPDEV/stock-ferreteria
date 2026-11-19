@@ -233,14 +233,14 @@ label.btn input { display: none; }
     <label class="f" for="aj-separacion">Espacio entre etiquetas (mm)<input id="aj-separacion" type="text" inputmode="decimal" placeholder="2"></label>
     <label class="f aj-otra" for="aj-ancho" hidden>Ancho (mm)<input id="aj-ancho" type="number" min="20" max="108" inputmode="numeric"></label>
     <label class="f aj-otra" for="aj-alto" hidden>Alto (mm)<input id="aj-alto" type="number" min="15" max="300" inputmode="numeric"></label>
-    <label class="f f-wide" for="aj-cabezal">Ancho que imprime la impresora<select id="aj-cabezal"><option value="48">48 mm (2 pulgadas)</option><option value="72">72 mm (3 pulgadas)</option><option value="104">104 mm (4 pulgadas)</option></select></label>
+    <label class="f f-wide" for="aj-cabezal">Ancho que imprime la impresora<select id="aj-cabezal"><option value="0">Igual que la etiqueta (lo normal)</option><option value="48">48 mm (2 pulgadas)</option><option value="72">72 mm (3 pulgadas)</option><option value="104">104 mm (4 pulgadas)</option></select></label>
     <div class="f">Correr a los costados (mm)<div class="paso"><button class="btn" type="button" data-paso="aj-correr-x" data-d="-1" aria-label="Correr 1 mm para un lado">−</button><input id="aj-correr-x" type="text" inputmode="decimal" value="0" aria-label="Correr a los costados en mm"><button class="btn" type="button" data-paso="aj-correr-x" data-d="1" aria-label="Correr 1 mm para el otro lado">+</button></div></div>
     <div class="f">Correr arriba o abajo (mm)<div class="paso"><button class="btn" type="button" data-paso="aj-correr-y" data-d="-1" aria-label="Correr 1 mm para un lado">−</button><input id="aj-correr-y" type="text" inputmode="decimal" value="0" aria-label="Correr arriba o abajo en mm"><button class="btn" type="button" data-paso="aj-correr-y" data-d="1" aria-label="Correr 1 mm para el otro lado">+</button></div></div>
     <label class="seguir f-wide" for="aj-girar"><input id="aj-girar" type="checkbox"> Imprimir dado vuelta (girado 180°)</label>
     <label class="f f-wide" for="aj-oscuridad">Oscuridad de la impresión: <span id="aj-osc-val">8</span><input id="aj-oscuridad" type="range" min="1" max="15" step="1"></label>
   </div>
   <p class="ayuda" style="margin:10px 0">La medida es la de UNA etiqueta del rollo, sin contar el espacio entre etiquetas. Medila con una regla.</p>
-  <p class="ayuda" style="margin:0 0 10px">Para que salga en el lugar justo: tocá «Imprimir regla» y fijate qué número queda en el borde izquierdo de la etiqueta (leyendo los números derechos). Poné ese número en «Correr a los costados» e imprimí una de prueba: el recuadro tiene que quedar justo en el borde. Si le falta un poco, ajustá con − y +.</p>
+  <p class="ayuda" style="margin:0 0 10px">Para que salga en el lugar justo: tocá «Imprimir regla» y Primero imprimí una de prueba: el recuadro tiene que quedar justo en el borde de la etiqueta. Si sale corrido o «da la vuelta» de un lado al otro, elegí en «Ancho que imprime la impresora» el de tu impresora, tocá «Imprimir regla» y poné en «Correr a los costados» el número que queda en el borde izquierdo de la etiqueta. Ajustá con − y +.</p>
   <p class="err" id="aj-err" role="alert"></p>
   <div class="botonera">
     <button class="btn primary" type="button" id="aj-guardar">Guardar</button>
@@ -285,7 +285,7 @@ function parseNum(v) {
 }
 
 // ---------- Datos ----------
-const AJUSTES_BASE = { equipo: '', medida: [50, 25], separacion: 2, oscuridad: 8, correrX: 0, correrY: 0, girar: false, cabezal: 72, impresora: null };
+const AJUSTES_BASE = { equipo: '', medida: [50, 40], separacion: 2, oscuridad: 8, correrX: 0, correrY: 0, girar: false, cabezal: 0, impresora: null };
 let datos = { items: [], recordar: {}, catalogo: [], estantes: [], ultimoNum: 0, ajustes: { ...AJUSTES_BASE } };
 try { const g = JSON.parse(localStorage.getItem(CLAVE) || 'null'); if (g && Array.isArray(g.items)) datos = Object.assign(datos, g, { ajustes: { ...AJUSTES_BASE, ...(g.ajustes || {}) } }); } catch (e) { /* sin almacenamiento */ }
 const mapaCatalogo = (lista) => new Map(lista.flatMap((p) => [p.codigo].concat(p.barras || []).filter(Boolean).map((c) => [String(c).toUpperCase(), p])));
@@ -717,8 +717,8 @@ function cargarCatalogo(file) {
 }
 
 // ---------- Ajustes ----------
-const opcImpresion = (a) => ({ separacion: a.separacion, oscuridad: a.oscuridad, correrX: a.correrX || 0, correrY: a.correrY || 0, girar: !!a.girar, cabezal: a.cabezal || 72 });
-const MEDIDAS = [[50, 25], [40, 30], [50, 30], [58, 40], [60, 40], [100, 50], [100, 100], [100, 150]];
+const opcImpresion = (a) => ({ separacion: a.separacion, oscuridad: a.oscuridad, correrX: a.correrX || 0, correrY: a.correrY || 0, girar: !!a.girar, cabezal: a.cabezal || 0 });
+const MEDIDAS = [[50, 40], [50, 25], [40, 30], [50, 30], [58, 40], [60, 40], [100, 50], [100, 100], [100, 150]];
 function abrirAjustes() {
   $('#aj-equipo').value = aj().equipo;
   $('#aj-medida').innerHTML = MEDIDAS.map(([a, h]) => `<option value="${a}x${h}">${a} × ${h} mm</option>`).join('') + '<option value="otra">Otra medida…</option>';
@@ -730,7 +730,7 @@ function abrirAjustes() {
   $('#aj-correr-x').value = String(aj().correrX || 0).replace('.', ',');
   $('#aj-correr-y').value = String(aj().correrY || 0).replace('.', ',');
   $('#aj-girar').checked = !!aj().girar;
-  $('#aj-cabezal').value = String(aj().cabezal || 72);
+  $('#aj-cabezal').value = String(aj().cabezal || 0);
   $('#aj-err').textContent = '';
   otraMedida();
   $('#dlg-ajustes').showModal();
@@ -749,7 +749,7 @@ function leerAjustes() {
   if (sep == null || sep < 0 || sep > 10) return err('El espacio entre etiquetas: de 0 a 10 mm (casi siempre 2 o 3).');
   const cx = parseNum($('#aj-correr-x').value || '0'), cy = parseNum($('#aj-correr-y').value || '0');
   if (cx == null || cy == null || Math.abs(cx) > 40 || Math.abs(cy) > 40) return err('Lo de correr la impresión: un número entre -40 y 40 mm.');
-  return { equipo, medida: [a, h], separacion: sep, oscuridad: Number($('#aj-oscuridad').value) || 8, correrX: cx, correrY: cy, girar: $('#aj-girar').checked, cabezal: Number($('#aj-cabezal').value) || 72 };
+  return { equipo, medida: [a, h], separacion: sep, oscuridad: Number($('#aj-oscuridad').value) || 8, correrX: cx, correrY: cy, girar: $('#aj-girar').checked, cabezal: Number($('#aj-cabezal').value) || 0 };
 }
 async function guardarAjustes() {
   const n = leerAjustes();
@@ -773,6 +773,7 @@ async function imprimirPrueba() {
 async function imprimirRegla() {
   const n = leerAjustes();
   if (!n) return;
+  if (!n.cabezal) { $('#aj-err').textContent = 'Para la regla, primero elegí en «Ancho que imprime la impresora» el de tu impresora (por ejemplo 72 mm).'; return; }
   try {
     await mandar(EtiquetaTSPL.tsplRegla({ ...opcImpresion(n), alto: n.medida[1] }));
     toast('Regla enviada: anotá el número que queda en el borde izquierdo de la etiqueta.');
