@@ -39,6 +39,9 @@ main { max-width: 640px; margin: 0 auto; padding: 12px max(12px, env(safe-area-i
 .campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .f { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 14px; min-width: 0; }
 .f-wide { grid-column: 1 / -1; }
+.paso { display: flex; gap: 6px; align-items: stretch; }
+.paso input { flex: 1; min-width: 0; text-align: center; }
+.paso .btn { min-width: 44px; padding-left: 0; padding-right: 0; font-size: 20px; }
 .f input, .f select { font-weight: 400; font-size: 17px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--fg); width: 100%; min-width: 0; min-height: 46px; }
 .f input:focus, .f select:focus { outline: 3px solid var(--accent-soft); border-color: var(--accent); }
 .f input[readonly] { background: var(--surface-2); color: var(--muted); }
@@ -230,9 +233,12 @@ label.btn input { display: none; }
     <label class="f" for="aj-separacion">Espacio entre etiquetas (mm)<input id="aj-separacion" type="text" inputmode="decimal" placeholder="2"></label>
     <label class="f aj-otra" for="aj-ancho" hidden>Ancho (mm)<input id="aj-ancho" type="number" min="20" max="108" inputmode="numeric"></label>
     <label class="f aj-otra" for="aj-alto" hidden>Alto (mm)<input id="aj-alto" type="number" min="15" max="300" inputmode="numeric"></label>
+    <div class="f">Correr a los costados (mm)<div class="paso"><button class="btn" type="button" data-paso="aj-correr-x" data-d="-1" aria-label="Correr 1 mm para un lado">−</button><input id="aj-correr-x" type="text" inputmode="decimal" value="0" aria-label="Correr a los costados en mm"><button class="btn" type="button" data-paso="aj-correr-x" data-d="1" aria-label="Correr 1 mm para el otro lado">+</button></div></div>
+    <div class="f">Correr arriba o abajo (mm)<div class="paso"><button class="btn" type="button" data-paso="aj-correr-y" data-d="-1" aria-label="Correr 1 mm para un lado">−</button><input id="aj-correr-y" type="text" inputmode="decimal" value="0" aria-label="Correr arriba o abajo en mm"><button class="btn" type="button" data-paso="aj-correr-y" data-d="1" aria-label="Correr 1 mm para el otro lado">+</button></div></div>
+    <label class="seguir f-wide" for="aj-girar"><input id="aj-girar" type="checkbox"> Imprimir dado vuelta (girado 180°)</label>
     <label class="f f-wide" for="aj-oscuridad">Oscuridad de la impresión: <span id="aj-osc-val">8</span><input id="aj-oscuridad" type="range" min="1" max="15" step="1"></label>
   </div>
-  <p class="ayuda" style="margin:10px 0">La medida es la de UNA etiqueta del rollo, sin contar el espacio entre etiquetas. Si las etiquetas salen corridas, imprimí una de prueba y ajustá el espacio.</p>
+  <p class="ayuda" style="margin:10px 0">La medida es la de UNA etiqueta del rollo, sin contar el espacio entre etiquetas. Medila con una regla. Después imprimí una de prueba: el recuadro tiene que quedar justo en el borde de la etiqueta. Si sale cortado de un lado, corrélo con − y + (de a 1 mm) y volvé a probar.</p>
   <p class="err" id="aj-err" role="alert"></p>
   <div class="botonera">
     <button class="btn primary" type="button" id="aj-guardar">Guardar</button>
@@ -276,7 +282,7 @@ function parseNum(v) {
 }
 
 // ---------- Datos ----------
-const AJUSTES_BASE = { equipo: '', medida: [50, 25], separacion: 2, oscuridad: 8, impresora: null };
+const AJUSTES_BASE = { equipo: '', medida: [50, 25], separacion: 2, oscuridad: 8, correrX: 0, correrY: 0, girar: false, impresora: null };
 let datos = { items: [], recordar: {}, catalogo: [], estantes: [], ultimoNum: 0, ajustes: { ...AJUSTES_BASE } };
 try { const g = JSON.parse(localStorage.getItem(CLAVE) || 'null'); if (g && Array.isArray(g.items)) datos = Object.assign(datos, g, { ajustes: { ...AJUSTES_BASE, ...(g.ajustes || {}) } }); } catch (e) { /* sin almacenamiento */ }
 const mapaCatalogo = (lista) => new Map(lista.flatMap((p) => [p.codigo].concat(p.barras || []).filter(Boolean).map((c) => [String(c).toUpperCase(), p])));
@@ -457,7 +463,7 @@ async function imprimirElegida() {
   const d = EtiquetaTSPL.disenoEtiqueta(aImprimir, medida());
   $('#di-imprimir').disabled = true;
   try {
-    await mandar(EtiquetaTSPL.tspl(d, { copias, separacion: aj().separacion, oscuridad: aj().oscuridad }));
+    await mandar(EtiquetaTSPL.tspl(d, { copias, ...opcImpresion(aj()) }));
     const x = datos.items.find((i) => i.id === aImprimir.id);
     if (x) { x.etiquetas = (x.etiquetas || 0) + copias; guardar(); pintar(); }
     $('#dlg-imprimir').close();
@@ -708,6 +714,7 @@ function cargarCatalogo(file) {
 }
 
 // ---------- Ajustes ----------
+const opcImpresion = (a) => ({ separacion: a.separacion, oscuridad: a.oscuridad, correrX: a.correrX || 0, correrY: a.correrY || 0, girar: !!a.girar });
 const MEDIDAS = [[50, 25], [40, 30], [50, 30], [58, 40], [60, 40], [100, 50], [100, 100], [100, 150]];
 function abrirAjustes() {
   $('#aj-equipo').value = aj().equipo;
@@ -717,6 +724,9 @@ function abrirAjustes() {
   $('#aj-separacion').value = String(aj().separacion).replace('.', ',');
   $('#aj-oscuridad').value = aj().oscuridad;
   $('#aj-osc-val').textContent = aj().oscuridad;
+  $('#aj-correr-x').value = String(aj().correrX || 0).replace('.', ',');
+  $('#aj-correr-y').value = String(aj().correrY || 0).replace('.', ',');
+  $('#aj-girar').checked = !!aj().girar;
   $('#aj-err').textContent = '';
   otraMedida();
   $('#dlg-ajustes').showModal();
@@ -733,7 +743,9 @@ function leerAjustes() {
   if (!(a >= 20 && a <= 108 && h >= 15 && h <= 300)) return err('Revisá la medida: ancho de 20 a 108 mm y alto de 15 a 300 mm.');
   const sep = parseNum($('#aj-separacion').value);
   if (sep == null || sep < 0 || sep > 10) return err('El espacio entre etiquetas: de 0 a 10 mm (casi siempre 2 o 3).');
-  return { equipo, medida: [a, h], separacion: sep, oscuridad: Number($('#aj-oscuridad').value) || 8 };
+  const cx = parseNum($('#aj-correr-x').value || '0'), cy = parseNum($('#aj-correr-y').value || '0');
+  if (cx == null || cy == null || Math.abs(cx) > 40 || Math.abs(cy) > 40) return err('Lo de correr la impresión: un número entre -40 y 40 mm.');
+  return { equipo, medida: [a, h], separacion: sep, oscuridad: Number($('#aj-oscuridad').value) || 8, correrX: cx, correrY: cy, girar: $('#aj-girar').checked };
 }
 async function guardarAjustes() {
   const n = leerAjustes();
@@ -749,7 +761,7 @@ async function imprimirPrueba() {
   const n = leerAjustes();
   if (!n) return;
   try {
-    await mandar(EtiquetaTSPL.tsplPrueba({ ancho: n.medida[0], alto: n.medida[1] }, { separacion: n.separacion, oscuridad: n.oscuridad }));
+    await mandar(EtiquetaTSPL.tsplPrueba({ ancho: n.medida[0], alto: n.medida[1] }, opcImpresion(n)));
     toast('Etiqueta de prueba enviada: el recuadro tiene que quedar justo en el borde de la etiqueta.');
   } catch (e) { $('#aj-err').textContent = e.message; }
 }
@@ -818,6 +830,11 @@ $('#di-imprimir').addEventListener('click', imprimirElegida);
 $('#di-cerrar').addEventListener('click', () => $('#dlg-imprimir').close());
 $('#btn-ajustes').addEventListener('click', abrirAjustes);
 $('#aj-medida').addEventListener('change', otraMedida);
+document.querySelectorAll('[data-paso]').forEach((b) => b.addEventListener('click', () => {
+  const i = $('#' + b.dataset.paso);
+  const v = (parseNum(i.value || '0') || 0) + Number(b.dataset.d);
+  i.value = String(Math.max(-40, Math.min(40, Math.round(v * 10) / 10))).replace('.', ',');
+}));
 $('#aj-oscuridad').addEventListener('input', () => { $('#aj-osc-val').textContent = $('#aj-oscuridad').value; });
 $('#aj-guardar').addEventListener('click', guardarAjustes);
 $('#aj-prueba').addEventListener('click', imprimirPrueba);

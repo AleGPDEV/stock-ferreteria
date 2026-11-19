@@ -1297,6 +1297,14 @@ test('celular: etiqueta TSPL para la etiquetadora (mismo código de barras que e
   assert.match(t, /TEXT \d+,\d+,"2",0,1,1,"Gancho 'S'"/);
   assert.match(t, /PRINT 1,3\r\n$/);
   assert.match(E.tsplPrueba({ ancho: 50, alto: 25 }), /BOX 4,4,396,196,3/);
+  // corrida y girada (impresoras que no la ponen justo en la etiqueta)
+  const p = E.tsplPrueba({ ancho: 58, alto: 40 }, { correrX: 5, correrY: -1, girar: true });
+  assert.match(p, /SIZE 58 mm,40 mm/);
+  assert.match(p, /DIRECTION 0\r\n/);
+  assert.match(p, /BOX 44,0,500,308,3/);
+  assert.match(E.tsplPrueba({ ancho: 50, alto: 25 }), /DIRECTION 1\r\n/);
+  const corrida = E.tspl(E.disenoEtiqueta({ nombre: 'X', codigo: '7790001234567' }, { ancho: 50, alto: 25 }), { correrX: -40 });
+  assert.ok(!/-\d/.test(corrida.replace(/C1-|PRUEBA-/g, '')), 'sin coordenadas negativas');
 });
 
 test('celular + Cargador: las dos planillas se importan juntas sin duplicar', () => {

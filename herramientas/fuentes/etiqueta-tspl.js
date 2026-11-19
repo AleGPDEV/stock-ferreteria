@@ -90,31 +90,43 @@
   }
 
   /**
-   * Comandos TSPL para imprimir el dibujo. opc: { copias, separacion (mm entre etiquetas), oscuridad (1-15), velocidad }.
+   * Comandos TSPL para imprimir el dibujo. opc: { copias, separacion (mm entre etiquetas), oscuridad (1-15), velocidad,
+   * correrX / correrY (mm, pueden ser negativos: corren todo el dibujo si la impresora no lo pone justo en la etiqueta),
+   * girar (true: lo imprime dado vuelta, DIRECTION 0) }.
    */
   function tspl(d, opc = {}) {
     const copias = Math.max(1, Math.min(500, Math.floor(Number(opc.copias) || 1)));
     const gap = Number.isFinite(Number(opc.separacion)) ? Number(opc.separacion) : 2;
+    const mm = (v) => (Number.isFinite(Number(v)) ? Math.round(Math.max(-60, Math.min(60, Number(v))) * PUNTOS_MM) : 0);
+    const dx = mm(opc.correrX), dy = mm(opc.correrY);
+    const X = (x) => Math.max(0, Math.round(x + dx)), Y = (y) => Math.max(0, Math.round(y + dy));
     const l = [
       `SIZE ${d.ancho} mm,${d.alto} mm`,
       `GAP ${gap} mm,0 mm`,
       `DENSITY ${Math.max(1, Math.min(15, Math.round(Number(opc.oscuridad) || 8)))}`,
       `SPEED ${Math.max(2, Math.min(6, Math.round(Number(opc.velocidad) || 4)))}`,
-      'DIRECTION 1',
+      opc.girar ? 'DIRECTION 0' : 'DIRECTION 1',
       'REFERENCE 0,0',
       'CLS',
     ];
-    for (const t of d.textos) l.push(`TEXT ${t.x},${t.y},"${t.fuente}",0,1,1,"${t.texto.replace(/"/g, "'")}"`);
-    for (const b of d.barras) l.push(`BAR ${b.x},${b.y},${b.w},${b.h}`);
+    for (const c of d.cajas || []) l.push(`BOX ${X(c.x1)},${Y(c.y1)},${X(c.x2)},${Y(c.y2)},${c.grosor || 3}`);
+    for (const t of d.textos) l.push(`TEXT ${X(t.x)},${Y(t.y)},"${t.fuente}",0,1,1,"${t.texto.replace(/"/g, "'")}"`);
+    for (const b of d.barras) {
+      // Si queda corrida hacia afuera, se recorta en lugar de mandar coordenadas negativas.
+      const x = b.x + dx, y = b.y + dy;
+      const w = b.w + Math.min(0, x), h = b.h + Math.min(0, y);
+      if (w > 0 && h > 0) l.push(`BAR ${Math.max(0, x)},${Math.max(0, y)},${w},${h}`);
+    }
     l.push(`PRINT 1,${copias}`);
     return l.join('\r\n') + '\r\n';
   }
 
-  /** Página de prueba: un rectángulo del tamaño de la etiqueta y su medida, para ver si está bien configurada. */
+  /** Página de prueba: un recuadro del tamaño de la etiqueta y su medida, para ver si está bien configurada. */
   function tsplPrueba(medida, opc = {}) {
     const W = Math.round(medida.ancho * PUNTOS_MM), H = Math.round(medida.alto * PUNTOS_MM);
     const d = disenoEtiqueta({ nombre: `Prueba ${medida.ancho} x ${medida.alto} mm`, codigo: 'PRUEBA-1', ubicacion: 'OK' }, medida);
-    return tspl(d, opc).replace('CLS\r\n', `CLS\r\nBOX 4,4,${W - 4},${H - 4},3\r\n`);
+    d.cajas = [{ x1: 4, y1: 4, x2: W - 4, y2: H - 4, grosor: 3 }];
+    return tspl(d, opc);
   }
 
   /** Dibuja la vista previa en un canvas (tamaño real a 203 dpi, escalado con «escala»). */
