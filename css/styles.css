@@ -805,6 +805,9 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 #etq-dlg[open] { display: flex; flex-direction: column; }
 .etq-b { display: flex; flex-direction: column; gap: 12px; overflow: auto; }
 .etq-saltear input { max-width: 120px; }
+.etq-config { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.etq-config-txt { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+#etq-ajustes-dlg { width: min(760px, calc(100vw / var(--zoom, 1) - 32px)); }
 .etq-filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .etq-filtros input[type=search] { flex: 1; min-width: 180px; }
 #etq-filtro-ubic:not([hidden]) { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
