@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
-const app = require('../js/app.js');
+const app = require('../js/cargar-en-node.js');
 const { crearServidorCelular, ipsLocales, datosVinculo } = require('../electron/servidor-celular.js');
 
 function base() {

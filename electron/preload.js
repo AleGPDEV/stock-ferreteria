@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('almacen', {
   escritorio: true,
   leer: () => ipcRenderer.sendSync('almacen:leer'),
-  // Guarda solo lo que cambió (ver calcularCambios en js/app.js). Devuelve un error o null.
+  // Guarda solo lo que cambió (ver calcularCambios en js/base/datos-y-guardado.js). Devuelve un error o null.
   cambios: (c) => ipcRenderer.sendSync('almacen:cambios', c),
   info: () => ipcRenderer.sendSync('almacen:info'),
   abrirRespaldos: () => ipcRenderer.invoke('almacen:abrirRespaldos'),
