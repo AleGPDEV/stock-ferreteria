@@ -98,9 +98,6 @@ label.btn input { display: none; }
 .v-lista:empty { display: none; }
 .v-lista .btn { width: 100%; display: flex; justify-content: space-between; gap: 10px; text-align: left; font-weight: 400; }
 .v-lista .meta { color: var(--muted); font-size: 13px; }
-.nuevo-estante { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: var(--r); background: var(--verde-soft); }
-.nuevo-estante[hidden] { display: none; }
-.ne-tit { margin: 0; font-weight: 700; }
 .vista { display: flex; justify-content: center; padding: 12px; background: var(--surface-2); border-radius: var(--r); overflow-x: auto; }
 .vista canvas { box-shadow: 0 1px 4px rgba(0,0,0,.25); border-radius: 4px; max-width: 100%; height: auto; image-rendering: pixelated; }
 .copias { display: flex; align-items: center; gap: 8px; }
@@ -115,6 +112,12 @@ label.btn input { display: none; }
 .foto-prev img { width: 100%; height: 100%; object-fit: cover; }
 .foto-campo .ayuda { margin: 6px 0 0; }
 .visualmente-oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+/* Ayuda «?»: la explicación se abre al tocar el botoncito (mismo marcado que en el programa de la PC) */
+.ayuda-ico { display: inline-grid; place-items: center; width: 24px; height: 24px; min-height: 0; padding: 0; margin-left: 6px; border-radius: 50%; border: 1px solid #b9b9b9; background: #fff; color: #555; font: 700 13px/1 inherit; vertical-align: middle; cursor: pointer; flex: none; }
+.ayuda-ico[aria-expanded="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.globo { position: fixed; z-index: 100; max-width: min(320px, calc(100vw - 24px)); background: #2b2b2b; color: #fff; font-size: 14px; font-weight: 400; line-height: 1.45; padding: 10px 12px; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+.fila-tit { display: flex; align-items: center; }
+.fila-tit h2 { margin-bottom: 0; }
 </style>
 </head>
 <body>
@@ -128,27 +131,26 @@ label.btn input { display: none; }
 <main>
   <section class="card imp" id="imp-barra">
     <span class="punto" aria-hidden="true"></span>
-    <div class="txt"><strong id="imp-titulo">Impresora sin conectar</strong><span id="imp-detalle">Tocá «Conectar» para elegir la etiquetadora.</span></div>
+    <div class="txt"><strong id="imp-titulo">Impresora sin conectar</strong><span id="imp-detalle"></span></div>
     <button class="btn sm" type="button" id="btn-conectar">Conectar</button>
   </section>
 
   <input id="foto-lista" class="visualmente-oculto" type="file" accept="image/*" capture="environment" aria-hidden="true" tabindex="-1">
   <section class="card imp" id="pc-barra">
     <span class="punto" aria-hidden="true"></span>
-    <div class="txt" role="status"><strong id="pc-titulo">PC sin vincular</strong><span id="pc-detalle">Vinculá el celular para ver en el momento lo que hay en el programa.</span></div>
+    <div class="txt" role="status"><strong id="pc-titulo">PC sin vincular</strong><span id="pc-detalle"></span></div>
     <button class="btn sm" type="button" id="btn-pc">Vincular</button>
   </section>
 
   <section class="card">
     <div class="acciones">
       <button class="btn verde grande" type="button" id="btn-camara">Escanear código con la cámara</button>
-      <label class="seguir"><input type="checkbox" id="seguir"> Seguir escaneando para contar (cada lectura suma 1)</label>
+      <div class="fila-tit"><label class="seguir"><input type="checkbox" id="seguir"> Seguir escaneando para contar</label><button type="button" class="ayuda-ico" data-ayuda="Con un código de barras: escanealo con la cámara o con un lector Bluetooth en el cuadro de búsqueda. Si ya está en la lista, cada lectura suma 1. Lo que viene suelto: «Producto sin código», que le da un código propio y le imprime la etiqueta. Todo se guarda en la PC en el momento.">?</button></div>
       <button class="btn primary grande" type="button" id="sin-codigo">+ Producto sin código</button>
       <p class="aviso warn" id="aviso-pc" hidden></p>
       <input id="escanear" type="text" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="Código o nombre de un producto" aria-label="Código o nombre de un producto">
       <ul class="v-lista" id="b-lista"></ul>
     </div>
-    <p class="ayuda">Con código de barras: <strong>escanealo</strong> (con la cámara o con un lector Bluetooth en el cuadro de búsqueda); si ya está en la lista, cada lectura suma 1. Lo que viene suelto: <strong>Producto sin código</strong>, la app le da un código propio y le imprime la etiqueta. Todo se guarda en la PC en el momento: <strong>sin conexión con la PC no se carga nada</strong>.</p>
     <p class="aviso" id="estado" role="status"></p>
 
     <form id="form" hidden novalidate>
@@ -160,25 +162,15 @@ label.btn input { display: none; }
           <label class="btn" for="c-foto" id="c-foto-btn">📷 Sacar foto</label>
           <input id="c-foto" class="visualmente-oculto" type="file" accept="image/*" capture="environment">
           <button class="btn sm ghost" type="button" id="c-foto-quitar" hidden>No usar esta foto</button>
-          <p class="ayuda" id="c-foto-ayuda">Opcional. Se guarda en la PC junto con el producto.</p>
+          <p class="ayuda" id="c-foto-ayuda"></p>
         </div>
       </div>
       <div class="campos">
         <label class="f f-wide" for="c-nombre">Nombre del producto<input id="c-nombre" type="text" autocomplete="off" enterkeyhint="next" placeholder="Ej.: Arandela plana 8 mm"></label>
         <label class="f" for="c-precio"><span id="c-precio-lbl">Precio ($)</span><input id="c-precio" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej.: 290"></label>
         <label class="f" for="c-cantidad"><span id="c-cant-lbl">Cantidad</span><input id="c-cantidad" type="text" inputmode="decimal" autocomplete="off" placeholder="1"></label>
-        <label class="f" for="c-estante">Estante<select id="c-estante"></select></label>
+        <label class="f" for="c-estante">Estante<select id="c-estante"></select><small>Si falta un estante, crealo en la PC.</small></label>
         <label class="f" for="c-categoria">Categoría<input id="c-categoria" type="text" list="lista-cat" autocomplete="off" placeholder="Ej.: Bulonería"><small id="c-cat-ayuda"></small></label>
-        <div class="nuevo-estante f-wide" id="nuevo-estante" hidden>
-          <p class="ne-tit">Estante nuevo</p>
-          <div class="campos">
-            <label class="f" for="ne-codigo">Nombre<input id="ne-codigo" type="text" autocomplete="off" placeholder="Ej.: A-3"></label>
-            <label class="f" for="ne-categoria">Categoría<input id="ne-categoria" type="text" list="lista-cat" autocomplete="off" placeholder="Ej.: Sanitaria"></label>
-          </div>
-          <p class="err" id="ne-err" role="alert"></p>
-          <div class="botonera"><button class="btn verde" type="button" id="ne-crear">Crear estante</button><button class="btn" type="button" id="ne-cancelar">Cancelar</button></div>
-          <p class="ayuda">Se crea en el programa de la PC, con su categoría.</p>
-        </div>
       </div>
       <details class="mas" id="mas">
         <summary>Más datos: moneda, unidad, proveedor, mínimo</summary>
@@ -201,7 +193,7 @@ label.btn input { display: none; }
   </section>
 
   <section class="card">
-    <h2>Lo que cargaste</h2>
+    <div class="fila-tit"><h2>Lo que cargaste</h2><button type="button" class="ayuda-ico" data-ayuda="Todo lo de esta lista ya está guardado en el programa de la PC. Desde acá se reimprimen las etiquetas y se corrige lo cargado. «Limpiar la lista» la borra solo de este celular.">?</button></div>
     <div class="resumen">
       <div><div class="lbl">Productos</div><div class="val" id="r-prod">0</div></div>
       <div><div class="lbl">Unidades</div><div class="val" id="r-unid">0</div></div>
@@ -209,7 +201,6 @@ label.btn input { display: none; }
     </div>
     <input id="buscar" type="search" placeholder="Buscar en la lista" aria-label="Buscar en la lista">
     <ul class="lista" id="lista"></ul>
-    <p class="ayuda">Todo lo de esta lista <strong>ya está guardado en el programa de la PC</strong>. Desde acá se reimprimen las etiquetas y se corrige lo cargado.</p>
     <div class="botonera">
       <button class="btn danger" type="button" id="nueva">Limpiar la lista</button>
     </div>
@@ -237,8 +228,8 @@ label.btn input { display: none; }
 
 <!-- Elegir la impresora -->
 <dialog id="dlg-impresoras">
-  <h2>Elegir la etiquetadora</h2>
-  <p class="ayuda" id="dimp-ayuda">Primero emparejala en el Bluetooth del celular (Ajustes → Bluetooth → la impresora; la clave suele ser 0000 o 1234). Después elegila acá.</p>
+  <div class="fila-tit"><h2>Elegir la etiquetadora</h2><button type="button" class="ayuda-ico" data-ayuda="Primero emparejala en el Bluetooth del celular (Ajustes → Bluetooth → la impresora; la clave suele ser 0000 o 1234). Después elegila acá.">?</button></div>
+  <p class="ayuda" id="dimp-ayuda" hidden></p>
   <ul class="dispositivos" id="dimp-lista"></ul>
   <p class="err" id="dimp-err" role="alert"></p>
   <div class="botonera"><button class="btn" type="button" id="dimp-buscar">Volver a buscar</button><button class="btn" type="button" id="dimp-cerrar">Cerrar</button></div>
@@ -248,19 +239,17 @@ label.btn input { display: none; }
 <dialog id="dlg-ajustes">
   <h2>Ajustes</h2>
   <div class="campos">
-    <label class="f f-wide" for="aj-equipo">Nombre de este celular<input id="aj-equipo" type="text" maxlength="4" autocomplete="off" placeholder="Ej.: C1" style="text-transform:uppercase"><small>Va adelante de los códigos que crea este celular (C1-0001, C1-0002…). Cada celular tiene que tener uno distinto.</small></label>
-    <label class="f" for="aj-medida">Medida de la etiqueta<select id="aj-medida"></select></label>
+    <div class="f f-wide"><span>Nombre de este celular <button type="button" class="ayuda-ico" data-ayuda="Va adelante de los códigos que crea este celular (C1-0001, C1-0002…). Cada celular tiene que tener uno distinto.">?</button></span><input id="aj-equipo" type="text" maxlength="4" autocomplete="off" placeholder="Ej.: C1" style="text-transform:uppercase" aria-label="Nombre de este celular"></div>
+    <div class="f"><span>Medida de la etiqueta <button type="button" class="ayuda-ico" data-ayuda="La de UNA etiqueta del rollo, sin contar el espacio entre etiquetas. Medila con una regla.">?</button></span><select id="aj-medida" aria-label="Medida de la etiqueta"></select></div>
     <label class="f" for="aj-separacion">Espacio entre etiquetas (mm)<input id="aj-separacion" type="text" inputmode="decimal" placeholder="2"></label>
     <label class="f aj-otra" for="aj-ancho" hidden>Ancho (mm)<input id="aj-ancho" type="number" min="20" max="108" inputmode="numeric"></label>
     <label class="f aj-otra" for="aj-alto" hidden>Alto (mm)<input id="aj-alto" type="number" min="15" max="300" inputmode="numeric"></label>
     <label class="f f-wide" for="aj-cabezal">Ancho que imprime la impresora<select id="aj-cabezal"><option value="0">Igual que la etiqueta (lo normal)</option><option value="48">48 mm (2 pulgadas)</option><option value="72">72 mm (3 pulgadas)</option><option value="104">104 mm (4 pulgadas)</option></select></label>
-    <div class="f">Correr a los costados (mm)<div class="paso"><button class="btn" type="button" data-paso="aj-correr-x" data-d="-1" aria-label="Correr 1 mm para un lado">−</button><input id="aj-correr-x" type="text" inputmode="decimal" value="0" aria-label="Correr a los costados en mm"><button class="btn" type="button" data-paso="aj-correr-x" data-d="1" aria-label="Correr 1 mm para el otro lado">+</button></div></div>
+    <div class="f"><span>Correr a los costados (mm) <button type="button" class="ayuda-ico" data-ayuda="Para que salga en el lugar justo, imprimí una etiqueta de prueba: el recuadro tiene que quedar justo en el borde. Si sale corrido o «da la vuelta» de un lado al otro, elegí en «Ancho que imprime la impresora» el de tu impresora, tocá «Imprimir regla» y poné acá el número que queda en el borde izquierdo de la etiqueta. Ajustá con − y +.">?</button></span><div class="paso"><button class="btn" type="button" data-paso="aj-correr-x" data-d="-1" aria-label="Correr 1 mm para un lado">−</button><input id="aj-correr-x" type="text" inputmode="decimal" value="0" aria-label="Correr a los costados en mm"><button class="btn" type="button" data-paso="aj-correr-x" data-d="1" aria-label="Correr 1 mm para el otro lado">+</button></div></div>
     <div class="f">Correr arriba o abajo (mm)<div class="paso"><button class="btn" type="button" data-paso="aj-correr-y" data-d="-1" aria-label="Correr 1 mm para un lado">−</button><input id="aj-correr-y" type="text" inputmode="decimal" value="0" aria-label="Correr arriba o abajo en mm"><button class="btn" type="button" data-paso="aj-correr-y" data-d="1" aria-label="Correr 1 mm para el otro lado">+</button></div></div>
     <label class="seguir f-wide" for="aj-girar"><input id="aj-girar" type="checkbox"> Imprimir dado vuelta (girado 180°)</label>
     <label class="f f-wide" for="aj-oscuridad">Oscuridad de la impresión: <span id="aj-osc-val">8</span><input id="aj-oscuridad" type="range" min="1" max="15" step="1"></label>
   </div>
-  <p class="ayuda" style="margin:10px 0">La medida es la de UNA etiqueta del rollo, sin contar el espacio entre etiquetas. Medila con una regla.</p>
-  <p class="ayuda" style="margin:0 0 10px">Para que salga en el lugar justo: tocá «Imprimir regla» y Primero imprimí una de prueba: el recuadro tiene que quedar justo en el borde de la etiqueta. Si sale corrido o «da la vuelta» de un lado al otro, elegí en «Ancho que imprime la impresora» el de tu impresora, tocá «Imprimir regla» y poné en «Correr a los costados» el número que queda en el borde izquierdo de la etiqueta. Ajustá con − y +.</p>
   <p class="err" id="aj-err" role="alert"></p>
   <div class="botonera">
     <button class="btn primary" type="button" id="aj-guardar">Guardar</button>
@@ -315,70 +304,76 @@ function guardar() {
 const aj = () => datos.ajustes;
 const medida = () => ({ ancho: aj().medida[0], alto: aj().medida[1] });
 
-// ---------- Estantes (los del programa, que manda la PC) ----------
-const NUEVO = '__nuevo__';
+// ---------- Estantes: SOLO los del programa de la PC ----------
+/* Los estantes se crean y se cambian en la PC. El celular elige de la lista que manda la PC, que reemplaza a la
+ * que tenía (así no quedan estantes que existen solo en el teléfono). */
 const claveEst = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7E]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
 const estantes = () => (Array.isArray(datos.estantes) ? datos.estantes : []);
-function sumarEstantes(lista) {
-  const mapa = new Map(estantes().map((e) => [claveEst(e.codigo), e]));
+/** La lista de la PC pasa a ser la del celular (no se suma a la vieja). */
+function reemplazarEstantes(lista) {
+  const mapa = new Map();
   for (const e of lista || []) {
     const k = claveEst(e && e.codigo);
-    if (!k) continue;
-    const ya = mapa.get(k);
-    if (!ya) mapa.set(k, { codigo: String(e.codigo).trim(), categoria: String(e.categoria || '').trim(), propio: !!e.propio });
-    else if (!ya.categoria && e.categoria) ya.categoria = String(e.categoria).trim();
+    if (k && !mapa.has(k)) mapa.set(k, { codigo: String(e.codigo).trim(), categoria: String(e.categoria || '').trim() });
   }
   datos.estantes = [...mapa.values()].sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true }));
 }
 const estanteDe = (codigo) => estantes().find((e) => claveEst(e.codigo) === claveEst(codigo));
-function opcionesEstante(sel) {
+/** extra: el estante que ya tiene un producto del programa, por si todavía no llegó en la lista. */
+function opcionesEstante(sel, extra = '') {
   const grupos = new Map();
   estantes().forEach((e) => { const c = e.categoria || 'Sin categoría'; if (!grupos.has(c)) grupos.set(c, []); grupos.get(c).push(e); });
   const orden = [...grupos.keys()].sort((a, b) => (a === 'Sin categoría') - (b === 'Sin categoría') || a.localeCompare(b, 'es'));
-  const elegido = sel && sel !== NUEVO ? (estanteDe(sel) || {}).codigo || '' : '';
+  const otro = extra && !estanteDe(extra) ? extra : '';
+  const elegido = otro && claveEst(sel) === claveEst(otro) ? otro : (estanteDe(sel) || {}).codigo || '';
   $('#c-estante').innerHTML = `<option value="">Sin estante</option>`
-    + orden.map((c) => `<optgroup label="${esc(c)}">${grupos.get(c).map((e) => `<option value="${esc(e.codigo)}" ${e.codigo === elegido ? 'selected' : ''}>${esc(e.codigo)}${e.categoria ? ' · ' + esc(e.categoria) : ''}</option>`).join('')}</optgroup>`).join('')
-    + `<option value="${NUEVO}">+ Crear un estante nuevo…</option>`;
+    + (otro ? `<option value="${esc(otro)}" ${otro === elegido ? 'selected' : ''}>${esc(otro)}</option>` : '')
+    + orden.map((c) => `<optgroup label="${esc(c)}">${grupos.get(c).map((e) => `<option value="${esc(e.codigo)}" ${e.codigo === elegido ? 'selected' : ''}>${esc(e.codigo)}${e.categoria ? ' · ' + esc(e.categoria) : ''}</option>`).join('')}</optgroup>`).join('');
 }
-let estanteAnterior = '';
 function alElegirEstante(categoriaProducto = null) {
   const v = $('#c-estante').value;
   const cat = $('#c-categoria');
-  if (v === NUEVO) { abrirNuevoEstante(); return; }
-  estanteAnterior = v;
-  $('#nuevo-estante').hidden = true;
   const e = v ? estanteDe(v) : null;
   if (e && e.categoria) { cat.value = e.categoria; cat.readOnly = true; $('#c-cat-ayuda').textContent = `La del estante ${e.codigo}.`; }
   else { cat.readOnly = false; if (categoriaProducto != null) cat.value = categoriaProducto; $('#c-cat-ayuda').textContent = ''; }
 }
-function abrirNuevoEstante() {
-  $('#nuevo-estante').hidden = false;
-  $('#c-categoria').value = ''; $('#c-categoria').readOnly = true;
-  $('#ne-codigo').value = ''; $('#ne-categoria').value = ''; $('#ne-err').textContent = '';
-  $('#ne-codigo').focus();
+// ---------- Ayuda «?» ----------
+/* <button type="button" class="ayuda-ico" data-ayuda="…">?</button>: al tocarlo se abre la explicación al lado;
+ * se cierra al tocar afuera, al volver a tocarlo o con Escape. Una sola abierta a la vez. */
+let globo = null;
+function cerrarAyuda() {
+  if (!globo) return;
+  const b = document.querySelector('.ayuda-ico[aria-expanded="true"]');
+  if (b) { b.setAttribute('aria-expanded', 'false'); b.removeAttribute('aria-describedby'); }
+  globo.remove();
+  globo = null;
 }
-function cancelarNuevoEstante() { opcionesEstante(estanteAnterior); alElegirEstante(); }
-async function crearEstante() {
-  const codigo = $('#ne-codigo').value.replace(/\s+/g, ' ').trim();
-  const categoria = $('#ne-categoria').value.replace(/\s+/g, ' ').trim();
-  const err = (t) => { $('#ne-err').textContent = t; };
-  if (!claveEst(codigo)) { err('Escribí el nombre del estante, por ejemplo A-3.'); return; }
-  if (!categoria) { err('Escribí la categoría del estante.'); return; }
-  const ya = estanteDe(codigo);
-  if (ya) { err(`Ya hay un estante ${ya.codigo}${ya.categoria ? ' (' + ya.categoria + ')' : ''}.`); return; }
-  if (!pcOk()) { err(textoSinPC()); return; }
-  $('#ne-crear').disabled = true;
-  try {
-    const r = await pedirPC('/api/estantes', undefined, 8000, { codigo, categoria });
-    if (r.status !== 200) { err(errorDePC(r)); return; }
-    sumarEstantes(r.data.estantes || [r.data.estante]);
-    guardar();
-    opcionesEstante(r.data.estante.codigo);
-    alElegirEstante();
-    toast(`Estante ${r.data.estante.codigo} · ${r.data.estante.categoria} creado en el programa.`);
-  } catch (e) { sinPC(); err('No se pudo llegar a la PC: el estante no se creó.'); }
-  finally { $('#ne-crear').disabled = !pcOk(); }
+function abrirAyuda(b) {
+  cerrarAyuda();
+  globo = document.createElement('div');
+  globo.className = 'globo';
+  globo.id = 'globo-ayuda';
+  globo.setAttribute('role', 'tooltip');
+  globo.textContent = b.dataset.ayuda;
+  // Dentro de una ventana (dialog) tiene que ir en la ventana, si no queda tapado
+  (b.closest('dialog') || document.body).appendChild(globo);
+  b.setAttribute('aria-expanded', 'true');
+  b.setAttribute('aria-describedby', 'globo-ayuda');
+  const r = b.getBoundingClientRect(), g = globo.getBoundingClientRect();
+  const x = Math.min(Math.max(8, r.left + r.width / 2 - g.width / 2), window.innerWidth - g.width - 8);
+  const abajo = r.bottom + 8 + g.height < window.innerHeight;
+  globo.style.left = `${x}px`;
+  globo.style.top = `${abajo ? r.bottom + 8 : Math.max(8, r.top - g.height - 8)}px`;
 }
+document.querySelectorAll('.ayuda-ico').forEach((b) => { b.setAttribute('aria-label', 'Ayuda'); b.setAttribute('aria-expanded', 'false'); });
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('.ayuda-ico');
+  if (b) { e.preventDefault(); e.stopPropagation(); if (b.getAttribute('aria-expanded') === 'true') cerrarAyuda(); else abrirAyuda(b); return; }
+  if (globo && !globo.contains(e.target)) cerrarAyuda();
+}, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && globo) { e.preventDefault(); cerrarAyuda(); } }, true);
+window.addEventListener('scroll', cerrarAyuda, true);
+document.addEventListener('close', cerrarAyuda, true);
 
 // ---------- Avisos ----------
 let tToast = 0;
@@ -520,13 +515,13 @@ function pintarPC() {
   b.classList.toggle('mal', ['sin-pc', 'token', 'otra', 'no-listo'].includes(pc.estado));
   b.classList.toggle('espera', pc.estado === 'conectando');
   const t = {
-    'sin-vincular': ['PC sin vincular', 'Vinculá el celular para ver en el momento lo que hay en el programa.'],
+    'sin-vincular': ['PC sin vincular', 'Tocá «Vincular» y escaneá el QR de la PC.'],
     conectando: ['Buscando la PC…', ''],
-    ok: ['Conectado a la PC', pc.productos != null ? `${numero.format(pc.productos)} productos en el programa. Lo que buscás se consulta ahí.` : ''],
+    ok: ['Conectado a la PC', pc.productos != null ? `${numero.format(pc.productos)} producto${pc.productos === 1 ? '' : 's'}` : ''],
     'no-listo': ['La PC responde, pero el programa no está listo', pc.detalle || 'Revisá el programa en la PC.'],
-    'sin-pc': ['Sin conexión con la PC', navigator.onLine === false ? 'Conectate al WiFi del local.' : 'No se encuentra la PC. ¿Está abierto el programa? Si cambió algo en la red, volvé a escanear el código QR.'],
-    token: ['Este celular ya no está vinculado', 'En la PC desvincularon los celulares: tocá «Vincular» y escaneá el código QR nuevo.'],
-    otra: ['Responde otra PC', 'En esa dirección hay otro programa. Tocá «Vincular» y escaneá el QR de la PC del local.'],
+    'sin-pc': ['Sin conexión con la PC', navigator.onLine === false ? 'Conectate al WiFi del local.' : '¿Está abierto el programa? Si cambió la red, volvé a escanear el QR.'],
+    token: ['Celular desvinculado', 'Tocá «Vincular» y escaneá el QR nuevo de la PC.'],
+    otra: ['Responde otra PC', 'Tocá «Vincular» y escaneá el QR de la PC del local.'],
   }[pc.estado] || ['', ''];
   $('#pc-titulo').textContent = t[0];
   $('#pc-detalle').textContent = t[1];
@@ -534,7 +529,7 @@ function pintarPC() {
   $('#btn-pc').hidden = pc.estado === 'ok' || pc.estado === 'conectando';
   // Sin la PC no se registra nada: se apagan los botones que cargan (las etiquetas de la lista se pueden reimprimir)
   const bloq = !pcOk();
-  ['#btn-camara', '#sin-codigo', '#btn-guardar-imprimir', '#btn-solo-guardar', '#ne-crear'].forEach((sel) => { const el = $(sel); if (el) el.disabled = bloq; });
+  ['#btn-camara', '#sin-codigo', '#btn-guardar-imprimir', '#btn-solo-guardar'].forEach((sel) => { const el = $(sel); if (el) el.disabled = bloq; });
   $('#aviso-pc').hidden = !bloq || pc.estado === 'conectando';
   $('#aviso-pc').textContent = bloq ? textoSinPC() : '';
 }
@@ -563,11 +558,16 @@ async function revisarPC() {
     pintarPC();
   }
 }
-/** Los estantes del programa (con su categoría) pasan a la lista del celular. */
+/** Los estantes del programa (con su categoría) reemplazan a la lista del celular. */
 async function traerEstantesPC() {
   try {
     const r = await pedirPC('/api/estantes');
-    if (r.status === 200 && r.data && Array.isArray(r.data.estantes)) { sumarEstantes(r.data.estantes); guardar(); if (!$('#form').hidden) opcionesEstante($('#c-estante').value); }
+    if (r.status === 200 && r.data && Array.isArray(r.data.estantes)) {
+      reemplazarEstantes(r.data.estantes);
+      guardar();
+      // Si la ficha está abierta, se actualiza la lista sin perder lo elegido
+      if (!$('#form').hidden) { const v = $('#c-estante').value; opcionesEstante(v, $('#form').dataset.ubicPC || ''); alElegirEstante(); }
+    }
   } catch (e) { /* se reintenta al reconectar */ }
 }
 /** Un producto del programa por código, en el momento. undefined si no se pudo preguntar (sin conexión). */
@@ -789,9 +789,13 @@ function abrirForm(x, id = null) {
   rotulosMoneda();
   $('#c-cantidad').value = x.cantidad === '' || x.cantidad == null ? '' : String(x.cantidad).replace('.', ',');
   $('#c-minimo').value = x.minimo === '' || x.minimo == null || x.minimo === 0 ? '' : String(x.minimo).replace('.', ',');
-  const ubic = x.ubicacion || (id || x.existente ? '' : r.ubicacion || '');
-  if (ubic && !estanteDe(ubic)) sumarEstantes([{ codigo: ubic, categoria: x.categoria || '' }]);
-  opcionesEstante(ubic);
+  // El estante que ya tiene un producto del programa se muestra aunque todavía no esté en la lista;
+  // el último elegido para uno nuevo, solo si sigue existiendo en la PC
+  const ubicPC = x.ubicacion || '';
+  const ubic = ubicPC || (id || x.existente ? '' : r.ubicacion && estanteDe(r.ubicacion) ? r.ubicacion : '');
+  $('#form').dataset.ubicPC = ubicPC;
+  opcionesEstante(ubic, ubicPC);
+  if (pcOk()) traerEstantesPC(); // la lista de la PC, al día
   $('#c-categoria').value = '';
   alElegirEstante(x.categoria || (id || x.existente ? '' : r.categoria || ''));
   $('#c-unidad').value = x.unidad || (id ? 'unidad' : r.unidad || 'unidad');
@@ -830,7 +834,7 @@ async function nuevoSinCodigo() {
     codigo = r.data.codigo;
   } catch (e) { sinPC(); estado(esc(textoSinPC()), 'warn'); return; }
   abrirForm({ codigo, propio: true, cantidad: '' });
-  estado(`Producto sin código: va a llevar el código <strong>${esc(codigo)}</strong>, que imprime la etiqueta. En el programa queda con ese mismo código.`, 'info');
+  estado(''); // el código ya se ve en la ficha
 }
 /** Manda un ítem de la lista a la PC (producto nuevo o conteo de uno que ya existía). De a uno por ítem.
  *  Devuelve { data } o { error }. Si se corta el WiFi, se puede volver a mandar: la PC no lo duplica. */
@@ -891,7 +895,7 @@ function pintarFotoForm(yaTiene) {
   $('#c-foto-prev').innerHTML = u ? `<img src="${u}" alt="Foto del producto">` : `<span>${yaTiene ? 'Ya tiene foto en la PC' : 'Sin foto'}</span>`;
   $('#c-foto-btn').textContent = u ? '📷 Sacar otra' : yaTiene ? '📷 Reemplazar la foto' : '📷 Sacar foto';
   $('#c-foto-quitar').hidden = !u;
-  $('#c-foto-ayuda').textContent = u ? 'Se manda a la PC al guardar.' : yaTiene ? 'Si sacás otra, reemplaza la que tiene en el programa.' : 'Opcional. Se guarda en la PC junto con el producto.';
+  $('#c-foto-ayuda').textContent = u ? 'Se manda a la PC al guardar.' : yaTiene ? 'Una nueva reemplaza la actual.' : '';
 }
 function limpiarFotoForm() { if (fotoForm && fotoForm.url) URL.revokeObjectURL(fotoForm.url); fotoForm = null; }
 async function alSacarFotoForm(file) {
@@ -930,7 +934,6 @@ async function guardarForm() {
   const cantidad = cantidadTxt === '' ? (existente ? '' : 1) : parseNum(cantidadTxt);
   if (!nombre) { $('#c-nombre').focus(); return err('Escribí el nombre del producto.'); }
   if (cantidad == null || (cantidad !== '' && (cantidad < 0 || cantidad > 99999))) { $('#c-cantidad').focus(); return err('Revisá la cantidad.'); }
-  if ($('#c-estante').value === NUEVO) return err('Terminá de crear el estante (o tocá Cancelar en el estante nuevo).');
   if (!existente && !(precio > 0)) { $('#c-precio').focus(); return err('Poné el precio (en el programa se puede corregir después).'); }
   if (codigo && datos.items.some((x) => x.id !== editando && x.codigo && x.codigo.toUpperCase() === codigo)) return err('Ese producto ya está en la lista: buscalo y tocá Editar.');
   const anterior = editando ? datos.items.find((i) => i.id === editando) : null;
@@ -976,7 +979,7 @@ async function guardarForm() {
     estado(ef ? `<strong>${esc(x.nombre)}</strong> se guardó, pero la foto no: ${esc(ef)}` : `<strong>${esc(x.nombre)}</strong> y su foto quedaron guardados en la PC.`, ef ? 'warn' : 'ok');
   }
   if (r.data.revisado && !existente && anterior) toast('En la PC ya lo revisaron: solo se guardó la cantidad.');
-  else if (existente && cambioCantidad && cantidad !== '') estado(`<strong>${esc(x.nombre)}</strong>: contados ${numero.format(cantidad)}. En la PC el stock quedó en <strong>${numero.format(p.stock)}</strong> (lo contado más lo que se vendió o llegó mientras tanto).`, 'ok');
+  else if (existente && cambioCantidad && cantidad !== '') estado(`<strong>${esc(x.nombre)}</strong>: ${numero.format(cantidad)} contados · stock en la PC: <strong>${numero.format(p.stock)}</strong>`, 'ok');
   return x;
 }
 
@@ -1085,7 +1088,6 @@ $('#escanear').addEventListener('keydown', (e) => {
 });
 $('#form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  if (!$('#nuevo-estante').hidden && document.activeElement && document.activeElement.closest('#nuevo-estante')) { crearEstante(); return; }
   const x = await guardarForm();
   if (!x) return;
   toast(`Guardado en la PC: ${x.nombre}.`);
@@ -1103,8 +1105,6 @@ $('#c-foto-quitar').addEventListener('click', () => { limpiarFotoForm(); pintarF
 $('#foto-lista').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; alSacarFotoLista(f); });
 $('#c-estante').addEventListener('change', () => alElegirEstante(''));
 $('#c-moneda').addEventListener('change', rotulosMoneda);
-$('#ne-crear').addEventListener('click', crearEstante);
-$('#ne-cancelar').addEventListener('click', cancelarNuevoEstante);
 $('#c-nombre').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#c-precio').focus(); } });
 $('#lista').addEventListener('click', async (e) => {
   const et = e.target.closest('[data-etq]');

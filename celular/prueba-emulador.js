@@ -12,7 +12,7 @@ d.productos.push({ id: 'a', codigo: 'MAR-16', barras: ['7790001112223'], nombre:
 app.guardarEstante(d, { codigo: 'B-9', categoria: 'Herramientas' });
 const pantalla = {
   estadoParaCelular: () => ({ listo: true, productos: d.productos.length }), productoParaCelular: (c) => app.productoCelular(d, c), productosParaCelular: (q) => app.productosCelular(d, q), estantesParaCelular: () => app.estantesCelular(d),
-  productoDesdeCelular: (x) => app.altaDesdeCelularEn(d, x), conteoDesdeCelular: (x) => app.conteoDesdeCelularEn(d, x), estanteDesdeCelular: (x) => app.estanteDesdeCelularEn(d, x), codigoLibreParaCelular: (e) => app.codigoLibreCelular(d, e),
+  productoDesdeCelular: (x) => app.altaDesdeCelularEn(d, x), conteoDesdeCelular: (x) => app.conteoDesdeCelularEn(d, x), codigoLibreParaCelular: (e) => app.codigoLibreCelular(d, e),
   fotoDesdeCelular: (x) => app.fotoDesdeCelularEn(d, x),
 };
 const fotosRecibidas = new Map();
@@ -58,6 +58,8 @@ const pcDePrueba = crearServidorCelular({ clave: () => ({ token: 'token-de-prueb
   await tocar('#sin-codigo');
   await page.waitForSelector('#form:not([hidden])', { timeout: 15000 });
   r.codigo = await page.textContent('#form-codigo');
+  // Los estantes vienen solo de la PC: la ficha no ofrece crear uno y la lista es la de la PC
+  r.estantesFicha = await page.evaluate(() => [...document.querySelectorAll('#c-estante option')].map((o) => o.value).filter(Boolean));
   await page.fill('#c-nombre', 'Arandela plana 8 mm');
   await page.fill('#c-precio', '5');
   await page.fill('#c-cantidad', '12');
@@ -107,6 +109,7 @@ const pcDePrueba = crearServidorCelular({ clave: () => ({ token: 'token-de-prueb
   const okPC = (r.http === 200 || r.http === 401) && r.bloqueadoSinPC && r.pc.estado === 'ok' && r.pc.url === 'http://10.0.2.2:8765' && r.pc.estantes.includes('B-9') && r.pc.habilitado
     && r.enLaPC && r.enLaPC.stock === 12 && r.enLaPC.revisar === true && r.enLaPC.creadoPor === 'Celular C1'
     && /Producto del programa/.test(r.existente) && /solo lectura: true/.test(r.existente) && r.martilloEnLaPC === 3 && r.sinToken === 'token'
+    && r.estantesFicha.length === 1 && r.estantesFicha[0] === 'B-9'
     && r.foto.err === null && r.foto.chip && r.fotoEnLaPC > 1000 && r.fotoEnLaPC < 400000;
   const ok = okPC && r.plugins.includes('ImpresoraBT') && r.plugins.includes('BarcodeScanner') && /C1-0001/.test(r.codigo) && /Arandela/.test(r.despuesDeReabrir) && r.errorImprimir;
   await device.close();
