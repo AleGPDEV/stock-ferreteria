@@ -453,7 +453,7 @@ function abrirImprimir(item, copias) {
   aImprimir = item;
   const d = EtiquetaTSPL.disenoEtiqueta(item, medida());
   EtiquetaTSPL.dibujar(d, $('#di-vista'), 1);
-  $('#di-vista').style.width = Math.min(d.puntos[0], 480) + 'px';
+  $('#di-vista').style.width = Math.round(Math.min(d.puntos[0], 480, (window.innerHeight || 700) * 0.34 * d.puntos[0] / d.puntos[1])) + 'px';
   $('#di-titulo').textContent = item.nombre;
   $('#di-aviso').textContent = d.aviso || '';
   $('#di-aviso').hidden = !d.aviso;
