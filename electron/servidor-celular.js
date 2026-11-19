@@ -1,7 +1,9 @@
 // Servidor para la app del celular (Etiquetador) en el WiFi del local.
 // Todo pedido pasa por la pantalla del programa (preguntar), que es la dueña de los datos:
 // nunca se lee ni se escribe SQLite por fuera de ella, así un guardado de la pantalla no pisa nada.
-// En esta etapa es SOLO LECTURA: estado, buscar un producto por código o por nombre, y los estantes.
+// Consultas: estado, buscar un producto por código o por nombre, estantes y el próximo código libre del celular.
+// Escrituras (fase 2): producto nuevo, conteo de uno que ya existe y estante nuevo. Son idempotentes (el celular
+// manda un id propio): si el WiFi se corta y reintenta, no se duplica nada.
 // Usa solo http y crypto de Node, sin dependencias.
 const http = require('http');
 const crypto = require('crypto');
@@ -9,6 +11,7 @@ const os = require('os');
 
 const PUERTO = 8765;
 const MAX_TEXTO = 80;
+const MAX_CUERPO = 32 * 1024;
 
 /** Un código nuevo para vincular celulares (24 bytes al azar). Cambiarlo desvincula a todos. */
 const nuevoToken = () => crypto.randomBytes(24).toString('base64url');
@@ -58,25 +61,58 @@ function crearServidorCelular({ clave, preguntar, version = '', puerto = PUERTO,
       'Cache-Control': 'no-store',
       // Para probar la app en el navegador de la PC; sin el código de vinculación igual no se lee nada
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Authorization',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     });
     res.end(JSON.stringify(cuerpo == null ? null : cuerpo));
   };
-  /** Lo que devuelve la pantalla: { error } si el programa no está abierto o no respondió. */
+  /** Lo que devuelve la pantalla. 503: el programa no está abierto o no está listo; 422: el pedido no se pudo hacer (el celular muestra el motivo). */
   const deLaPantalla = async (res, js) => {
     const r = await preguntar(js);
     if (!r || typeof r !== 'object') return responder(res, 503, { error: 'El programa no respondió.' });
-    if (r.error) return responder(res, 503, { error: r.error });
+    if (r.error) return responder(res, r.sinPrograma || r.noListo ? 503 : 422, r);
     return responder(res, 200, r);
+  };
+  const leerCuerpo = (req) => new Promise((ok, mal) => {
+    let largo = 0;
+    const partes = [];
+    // Si es demasiado grande se deja de juntar, pero se lee hasta el final para poder contestar
+    req.on('data', (c) => { largo += c.length; if (largo <= MAX_CUERPO) partes.push(c); });
+    req.on('end', () => {
+      if (largo > MAX_CUERPO) { mal(new Error('El pedido es demasiado grande.')); return; }
+      try {
+        const v = JSON.parse(Buffer.concat(partes).toString('utf8') || '{}');
+        if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error();
+        ok(v);
+      } catch (e) { mal(new Error('El pedido no se entiende.')); }
+    });
+    req.on('error', mal);
+  });
+  // Solo estos campos pasan a la pantalla, y como texto JSON (nunca se arma código con lo que manda el celular)
+  const CAMPOS = ['idCelular', 'conteoId', 'equipo', 'productoId', 'codigo', 'barras', 'barra', 'nombre', 'precio', 'moneda', 'unidad', 'proveedor', 'minimo', 'categoria', 'ubicacion', 'cantidad', 'contado', 'hace'];
+  const limpio = (x) => {
+    const o = {};
+    for (const k of CAMPOS) {
+      if (x[k] == null) continue;
+      if (k === 'barras') o[k] = (Array.isArray(x[k]) ? x[k] : []).slice(0, 20).map((b) => String(b).slice(0, MAX_TEXTO));
+      else o[k] = typeof x[k] === 'number' ? x[k] : String(x[k]).slice(0, 120);
+    }
+    return o;
   };
 
   async function atender(req, res) {
     try {
       if (req.method === 'OPTIONS') return responder(res, 204, null);
       if (!autorizado(req)) return responder(res, 401, { error: 'Este celular no está vinculado con la PC. Escaneá el código QR de nuevo.' });
-      if (req.method !== 'GET') return responder(res, 405, { error: 'Por ahora el celular solo puede consultar.' });
       const { pathname, searchParams } = new URL(req.url, 'http://local');
+      if (req.method === 'POST') {
+        const fn = { '/api/productos': 'productoDesdeCelular', '/api/conteos': 'conteoDesdeCelular', '/api/estantes': 'estanteDesdeCelular' }[pathname];
+        if (!fn) return responder(res, 404, { error: 'No existe.' });
+        const cuerpo = limpio(await leerCuerpo(req));
+        ultimoPedido = { fecha: new Date().toISOString(), ip: String(req.socket.remoteAddress || '').replace(/^::ffff:/, '') };
+        return deLaPantalla(res, `${fn}(${JSON.stringify(cuerpo)})`);
+      }
+      if (req.method !== 'GET') return responder(res, 405, { error: 'No se puede.' });
       ultimoPedido = { fecha: new Date().toISOString(), ip: String(req.socket.remoteAddress || '').replace(/^::ffff:/, '') };
       const { pcId } = clave() || {};
       switch (pathname) {
@@ -88,6 +124,7 @@ function crearServidorCelular({ clave, preguntar, version = '', puerto = PUERTO,
         case '/api/producto': return deLaPantalla(res, `productoParaCelular(${texto(searchParams.get('codigo'))})`);
         case '/api/productos': return deLaPantalla(res, `productosParaCelular(${texto(searchParams.get('q'))})`);
         case '/api/estantes': return deLaPantalla(res, 'estantesParaCelular()');
+        case '/api/codigo-libre': return deLaPantalla(res, `codigoLibreParaCelular(${texto(searchParams.get('equipo'))})`);
         default: return responder(res, 404, { error: 'No existe.' });
       }
     } catch (err) {

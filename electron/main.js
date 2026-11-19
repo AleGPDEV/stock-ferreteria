@@ -415,8 +415,8 @@ ipcMain.on('herramienta:abrir', (e, nombre) => abrirHerramienta(String(nombre)))
 // Los estantes los tiene la ventana del programa (ahí están los datos): se le piden a ella.
 const esHerramienta = (e) => Object.values(abiertas).some((w) => w && !w.isDestroyed() && w.webContents === e.sender);
 async function preguntarAlPrograma(codigo) {
-  if (!ventana || ventana.isDestroyed()) return { error: 'El programa no está abierto.' };
-  try { return await ventana.webContents.executeJavaScript(codigo); } catch (err) { return { error: 'El programa no respondió.' }; }
+  if (!ventana || ventana.isDestroyed()) return { error: 'El programa no está abierto.', sinPrograma: true };
+  try { return await ventana.webContents.executeJavaScript(codigo); } catch (err) { return { error: 'El programa no respondió.', sinPrograma: true }; }
 }
 ipcMain.handle('herramienta:estantes', (e) => (esHerramienta(e) ? preguntarAlPrograma('estantesParaHerramienta()') : null));
 ipcMain.handle('herramienta:buscarProducto', (e, codigo) => (esHerramienta(e) ? preguntarAlPrograma(`productoParaHerramienta(${JSON.stringify(String(codigo || '').slice(0, 80))})`) : null));

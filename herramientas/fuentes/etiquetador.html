@@ -138,10 +138,11 @@ label.btn input { display: none; }
       <button class="btn verde grande" type="button" id="btn-camara">Escanear código con la cámara</button>
       <label class="seguir"><input type="checkbox" id="seguir"> Seguir escaneando para contar (cada lectura suma 1)</label>
       <button class="btn primary grande" type="button" id="sin-codigo">+ Producto sin código</button>
+      <p class="aviso warn" id="aviso-pc" hidden></p>
       <input id="escanear" type="text" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="Código o nombre de un producto" aria-label="Código o nombre de un producto">
       <ul class="v-lista" id="b-lista"></ul>
     </div>
-    <p class="ayuda">Con código de barras: <strong>escanealo</strong> (con la cámara o con un lector Bluetooth en el cuadro de búsqueda), como en el Cargador; si ya está en la lista, cada lectura suma 1. Lo que viene suelto: <strong>Producto sin código</strong>, la app le da un código propio y le imprime la etiqueta.</p>
+    <p class="ayuda">Con código de barras: <strong>escanealo</strong> (con la cámara o con un lector Bluetooth en el cuadro de búsqueda); si ya está en la lista, cada lectura suma 1. Lo que viene suelto: <strong>Producto sin código</strong>, la app le da un código propio y le imprime la etiqueta. Todo se guarda en la PC en el momento: <strong>sin conexión con la PC no se carga nada</strong>.</p>
     <p class="aviso" id="estado" role="status"></p>
 
     <form id="form" hidden novalidate>
@@ -150,7 +151,7 @@ label.btn input { display: none; }
       <div class="campos">
         <label class="f f-wide" for="c-nombre">Nombre del producto<input id="c-nombre" type="text" autocomplete="off" enterkeyhint="next" placeholder="Ej.: Arandela plana 8 mm"></label>
         <label class="f" for="c-precio"><span id="c-precio-lbl">Precio ($)</span><input id="c-precio" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej.: 290"></label>
-        <label class="f" for="c-cantidad">Cantidad<input id="c-cantidad" type="text" inputmode="decimal" autocomplete="off" placeholder="1"></label>
+        <label class="f" for="c-cantidad"><span id="c-cant-lbl">Cantidad</span><input id="c-cantidad" type="text" inputmode="decimal" autocomplete="off" placeholder="1"></label>
         <label class="f" for="c-estante">Estante<select id="c-estante"></select></label>
         <label class="f" for="c-categoria">Categoría<input id="c-categoria" type="text" list="lista-cat" autocomplete="off" placeholder="Ej.: Bulonería"><small id="c-cat-ayuda"></small></label>
         <div class="nuevo-estante f-wide" id="nuevo-estante" hidden>
@@ -161,14 +162,13 @@ label.btn input { display: none; }
           </div>
           <p class="err" id="ne-err" role="alert"></p>
           <div class="botonera"><button class="btn verde" type="button" id="ne-crear">Crear estante</button><button class="btn" type="button" id="ne-cancelar">Cancelar</button></div>
-          <p class="ayuda">Se crea en el programa, con su categoría, al importar el Excel.</p>
+          <p class="ayuda">Se crea en el programa de la PC, con su categoría.</p>
         </div>
       </div>
       <details class="mas" id="mas">
-        <summary>Más datos: moneda, costo, unidad, proveedor, mínimo</summary>
+        <summary>Más datos: moneda, unidad, proveedor, mínimo</summary>
         <div class="campos">
           <label class="f" for="c-moneda">Moneda<select id="c-moneda"><option value="UYU">Pesos ($)</option><option value="USD">Dólares (U$S)</option></select></label>
-          <label class="f" for="c-costo"><span id="c-costo-lbl">Costo ($)</span><input id="c-costo" type="text" inputmode="decimal" autocomplete="off"></label>
           <label class="f" for="c-unidad">Unidad
             <select id="c-unidad"><option>unidad</option><option>kg</option><option>m</option><option>litro</option><option>caja</option><option>paquete</option><option>rollo</option><option>par</option></select>
           </label>
@@ -194,13 +194,10 @@ label.btn input { display: none; }
     </div>
     <input id="buscar" type="search" placeholder="Buscar en la lista" aria-label="Buscar en la lista">
     <ul class="lista" id="lista"></ul>
-    <button class="btn verde grande" type="button" id="descargar">Enviar el Excel para el programa</button>
-    <p class="ayuda">Mismo formato que el Cargador de productos: en el programa, <strong>Productos → Importar desde Excel</strong>. Se puede importar junto con la planilla del Cargador.</p>
+    <p class="ayuda">Todo lo de esta lista <strong>ya está guardado en el programa de la PC</strong>. Desde acá se reimprimen las etiquetas y se corrige lo cargado.</p>
     <div class="botonera">
-      <label class="btn" for="catalogo">Cargar el inventario del programa<input type="file" id="catalogo" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>
-      <button class="btn danger" type="button" id="nueva">Empezar una lista nueva</button>
+      <button class="btn danger" type="button" id="nueva">Limpiar la lista</button>
     </div>
-    <p class="ayuda" id="catalogo-estado">Con el Excel de <strong>Inventario completo</strong> del programa (Reportes → Stock), la app reconoce lo que ya existe y usa los mismos estantes.</p>
   </section>
   <p class="pie" id="pie-version"></p>
 </main>
@@ -262,14 +259,13 @@ label.btn input { display: none; }
 <dialog id="dlg"><p id="dlg-texto"></p><div class="botonera" style="justify-content:flex-end"><button class="btn" type="button" id="dlg-no">Cancelar</button><button class="btn primary" type="button" id="dlg-si">Aceptar</button></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script>__XLSX__</script>
 <script>__CODIGO_BARRAS__</script>
 <script>__ETIQUETA_TSPL__</script>
 <script>
 'use strict';
 /* Etiquetador (app Android de Grupo Muros): carga productos sueltos, les da un código propio de este celular
- * (C1-0001…) e imprime su etiqueta en la etiquetadora por Bluetooth. Lo cargado sale en un Excel con el mismo
- * formato que el Cargador de productos, para importarlo en el programa (Productos → Importar desde Excel). */
+ * (C1-0001…), cuenta el stock e imprime etiquetas en la etiquetadora por Bluetooth. Todo se guarda en el momento en
+ * el programa de la PC, por el WiFi del local (desde la versión 1.5: ya no hay Excel). Sin la PC no se carga nada. */
 const VERSION = '__VERSION__';
 const CLAVE = 'etiquetador-v1';
 const $ = (s) => document.querySelector(s);
@@ -295,28 +291,16 @@ function parseNum(v) {
 
 // ---------- Datos ----------
 const AJUSTES_BASE = { equipo: '', medida: [50, 40], separacion: 2, oscuridad: 8, correrX: 0, correrY: 0, girar: false, cabezal: 0, impresora: null };
-let datos = { items: [], recordar: {}, catalogo: [], estantes: [], ultimoNum: 0, ajustes: { ...AJUSTES_BASE } };
+let datos = { items: [], recordar: {}, estantes: [], ultimoNum: 0, ajustes: { ...AJUSTES_BASE } };
 try { const g = JSON.parse(localStorage.getItem(CLAVE) || 'null'); if (g && Array.isArray(g.items)) datos = Object.assign(datos, g, { ajustes: { ...AJUSTES_BASE, ...(g.ajustes || {}) } }); } catch (e) { /* sin almacenamiento */ }
-const mapaCatalogo = (lista) => new Map(lista.flatMap((p) => [p.codigo].concat(p.barras || []).filter(Boolean).map((c) => [String(c).toUpperCase(), p])));
-let catalogo = mapaCatalogo(datos.catalogo || []);
-const productosCatalogo = () => datos.catalogo || [];
+delete datos.catalogo; // el inventario en Excel de versiones anteriores: ahora los datos vienen de la PC
 function guardar() {
-  try { localStorage.setItem(CLAVE, JSON.stringify(datos)); } catch (e) { toast('No se pudo guardar en el celular. Enviá el Excel ahora.'); }
+  try { localStorage.setItem(CLAVE, JSON.stringify(datos)); } catch (e) { toast('No se pudo guardar la lista en el celular (lo cargado ya está en la PC).'); }
 }
 const aj = () => datos.ajustes;
 const medida = () => ({ ancho: aj().medida[0], alto: aj().medida[1] });
 
-/** El próximo código propio de este celular: C1-0001, C1-0002… (sin repetir los que ya usó ni los del programa). */
-function siguienteCodigo() {
-  const pre = aj().equipo;
-  const re = new RegExp(`^${pre.replace(/[^A-Z0-9]/g, '')}-(\\d+)$`);
-  const usados = datos.items.map((x) => x.codigo).concat(productosCatalogo().map((p) => p.codigo))
-    .map((c) => re.exec(String(c || '').toUpperCase())).filter(Boolean).map((m) => Number(m[1]));
-  const n = Math.max(datos.ultimoNum || 0, ...usados, 0) + 1;
-  return { codigo: `${pre}-${String(n).padStart(4, '0')}`, n };
-}
-
-// ---------- Estantes (los mismos que el programa, por el Excel del inventario) ----------
+// ---------- Estantes (los del programa, que manda la PC) ----------
 const NUEVO = '__nuevo__';
 const claveEst = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7E]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
 const estantes = () => (Array.isArray(datos.estantes) ? datos.estantes : []);
@@ -359,7 +343,7 @@ function abrirNuevoEstante() {
   $('#ne-codigo').focus();
 }
 function cancelarNuevoEstante() { opcionesEstante(estanteAnterior); alElegirEstante(); }
-function crearEstante() {
+async function crearEstante() {
   const codigo = $('#ne-codigo').value.replace(/\s+/g, ' ').trim();
   const categoria = $('#ne-categoria').value.replace(/\s+/g, ' ').trim();
   const err = (t) => { $('#ne-err').textContent = t; };
@@ -367,11 +351,18 @@ function crearEstante() {
   if (!categoria) { err('Escribí la categoría del estante.'); return; }
   const ya = estanteDe(codigo);
   if (ya) { err(`Ya hay un estante ${ya.codigo}${ya.categoria ? ' (' + ya.categoria + ')' : ''}.`); return; }
-  sumarEstantes([{ codigo, categoria, propio: true }]);
-  guardar();
-  opcionesEstante(codigo);
-  alElegirEstante();
-  toast(`Estante ${codigo} · ${categoria} creado.`);
+  if (!pcOk()) { err(textoSinPC()); return; }
+  $('#ne-crear').disabled = true;
+  try {
+    const r = await pedirPC('/api/estantes', undefined, 8000, { codigo, categoria });
+    if (r.status !== 200) { err(errorDePC(r)); return; }
+    sumarEstantes(r.data.estantes || [r.data.estante]);
+    guardar();
+    opcionesEstante(r.data.estante.codigo);
+    alElegirEstante();
+    toast(`Estante ${r.data.estante.codigo} · ${r.data.estante.categoria} creado en el programa.`);
+  } catch (e) { sinPC(); err('No se pudo llegar a la PC: el estante no se creó.'); }
+  finally { $('#ne-crear').disabled = !pcOk(); }
 }
 
 // ---------- Avisos ----------
@@ -466,11 +457,13 @@ const CADA_CUANTO_PC = 5000;
 let pc = { estado: datos.pc ? 'conectando' : 'sin-vincular', detalle: '', productos: null, desde: 0 };
 const pcOk = () => pc.estado === 'ok';
 /** GET a la PC. Devuelve { status, data }; si no llega a la PC, tira un error. */
-async function pedirPC(ruta, url = datos.pc && datos.pc.url, ms = 4000) {
+async function pedirPC(ruta, url = datos.pc && datos.pc.url, ms = 4000, cuerpo = null) {
   if (!datos.pc || !url) throw new Error('El celular no está vinculado con la PC.');
   const headers = { Authorization: 'Bearer ' + datos.pc.token };
+  if (cuerpo) headers['Content-Type'] = 'application/json';
   if (Http()) {
-    const r = await Http().get({ url: url + ruta, headers, connectTimeout: Math.min(ms, 3000), readTimeout: ms });
+    const opc = { url: url + ruta, headers, connectTimeout: Math.min(ms, 3000), readTimeout: ms };
+    const r = cuerpo ? await Http().post({ ...opc, data: cuerpo }) : await Http().get(opc);
     let d = r.data;
     if (typeof d === 'string') { try { d = JSON.parse(d || 'null'); } catch (e) { d = null; } }
     return { status: r.status, data: d };
@@ -479,7 +472,7 @@ async function pedirPC(ruta, url = datos.pc && datos.pc.url, ms = 4000) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ms);
   try {
-    const r = await fetch(url + ruta, { headers, signal: ctl.signal, cache: 'no-store' });
+    const r = await fetch(url + ruta, { method: cuerpo ? 'POST' : 'GET', body: cuerpo ? JSON.stringify(cuerpo) : undefined, headers, signal: ctl.signal, cache: 'no-store' });
     return { status: r.status, data: await r.json().catch(() => null) };
   } finally { clearTimeout(t); }
 }
@@ -493,6 +486,19 @@ async function probarPC(url) {
     return { res: 'no' };
   } catch (e) { return { res: 'no' }; }
 }
+/** Por qué no se puede cargar ahora (sin PC). */
+function textoSinPC() {
+  if (!datos.pc) return 'Primero vinculá el celular con la PC (botón «Vincular» arriba).';
+  if (pc.estado === 'token') return 'Este celular ya no está vinculado: tocá «Vincular» arriba y escaneá el código QR de la PC.';
+  if (pc.estado === 'no-listo') return 'El programa de la PC no está listo: ' + (pc.detalle || 'revisalo en la PC.');
+  return 'Sin conexión con la PC no se puede cargar nada. Revisá el WiFi y que el programa esté abierto en la PC.';
+}
+/** El motivo que manda la PC cuando no acepta algo. */
+function errorDePC(r) {
+  if (r.status === 401) { pc.estado = 'token'; pintarPC(); return textoSinPC(); }
+  return (r.data && r.data.error) || (r.status === 503 ? 'El programa de la PC no está listo.' : 'La PC no lo aceptó.');
+}
+function sinPC() { if (datos.pc && pc.estado !== 'token') { pc.estado = 'sin-pc'; pintarPC(); } }
 function pintarPC() {
   const b = $('#pc-barra');
   b.classList.toggle('ok', pc.estado === 'ok');
@@ -511,6 +517,11 @@ function pintarPC() {
   $('#pc-detalle').textContent = t[1];
   $('#btn-pc').textContent = datos.pc ? 'Volver a vincular' : 'Vincular';
   $('#btn-pc').hidden = pc.estado === 'ok' || pc.estado === 'conectando';
+  // Sin la PC no se registra nada: se apagan los botones que cargan (las etiquetas de la lista se pueden reimprimir)
+  const bloq = !pcOk();
+  ['#btn-camara', '#sin-codigo', '#btn-guardar-imprimir', '#btn-solo-guardar', '#ne-crear'].forEach((sel) => { const el = $(sel); if (el) el.disabled = bloq; });
+  $('#aviso-pc').hidden = !bloq || pc.estado === 'conectando';
+  $('#aviso-pc').textContent = bloq ? textoSinPC() : '';
 }
 let revisandoPC = false;
 /** Cada 5 s: ¿sigue respondiendo la PC? Si no responde en su dirección, prueba las otras del QR. */
@@ -653,21 +664,17 @@ function buscarProductos(texto) {
   const q = normal(texto).trim();
   if (q.length < 2) return [];
   const pal = q.split(/\s+/);
-  const deLista = datos.items.map((x) => ({ ...x, deLista: true }));
-  const delPrograma = pcOk() && resultadosPC.q === q ? resultadosPC.lista.map((p) => ({ ...p, dePC: true })) : null;
   const filtro = (p) => { const t = normal(`${p.nombre} ${p.codigo} ${(p.barras || []).join(' ')} ${p.categoria || ''} ${p.ubicacion || ''}`); return pal.every((w) => t.includes(w)); };
-  // Con la PC conectada, lo del programa sale de la PC (en el momento); si no, del inventario en Excel
-  if (delPrograma) return deLista.filter(filtro).concat(delPrograma.filter((p) => !datos.items.some((x) => x.codigo === p.codigo))).slice(0, 8);
-  return deLista.concat(productosCatalogo().filter((p) => !datos.items.some((x) => x.codigo === p.codigo)))
-    .filter((p) => { const t = normal(`${p.nombre} ${p.codigo} ${(p.barras || []).join(' ')} ${p.categoria || ''} ${p.ubicacion || ''}`); return pal.every((w) => t.includes(w)); })
-    .slice(0, 8);
+  const deLista = datos.items.filter(filtro).map((x) => ({ ...x, deLista: true }));
+  const delPrograma = pcOk() && resultadosPC.q === q ? resultadosPC.lista.filter((p) => !datos.items.some((x) => x.codigo === p.codigo)).map((p) => ({ ...p, dePC: true })) : [];
+  return deLista.concat(delPrograma).slice(0, 8);
 }
 function pintarBusqueda() {
   buscarEnPC($('#escanear').value);
   const lista = buscarProductos($('#escanear').value);
   $('#b-lista').innerHTML = $('#escanear').value.trim().length < 2 ? '' : lista.length
     ? lista.map((p, i) => `<li><button type="button" class="btn" data-b="${i}"><span>${esc(p.nombre)} <span class="v-lista meta" style="display:inline">${esc(p.codigo)}${p.ubicacion ? ' · ' + esc(p.ubicacion) : ''}</span>${p.deLista ? ' <span class="chip ok">en la lista</span>' : ''}</span><strong>${p.precio != null && p.precio !== '' ? $m(p.precio, p.moneda) : ''}</strong></button></li>`).join('')
-    : `<li class="ayuda">No lo encuentro${pcOk() ? ' en la lista ni en el programa' : productosCatalogo().length ? '' : ' (vinculá la PC o cargá el inventario del programa para buscar ahí)'}. Si viene suelto, tocá «Producto sin código».</li>`;
+    : `<li class="ayuda">${pcOk() ? 'No lo encuentro en la lista ni en el programa. Si viene suelto, tocá «Producto sin código».' : 'No está en la lista. ' + esc(textoSinPC())}</li>`;
   $('#b-lista').onclick = (e) => {
     const b = e.target.closest('[data-b]');
     if (!b) return;
@@ -686,22 +693,34 @@ async function codigoEscrito(texto) {
   const ya = datos.items.find((x) => (x.codigo && x.codigo.toUpperCase() === codigo) || (x.barras || []).includes(codigo));
   if (ya) {
     if (!$('#form').hidden && editando === ya.id) { $('#c-cantidad').value = String((parseNum($('#c-cantidad').value) || 0) + 1).replace('.', ','); avisar(40); return 'sumado'; }
+    if (!pcOk()) { avisar([200]); estado(esc(textoSinPC()), 'warn'); return 'bloqueado'; }
+    // Ya está en la lista: suma 1 y se lo manda a la PC (si la PC no lo acepta, vuelve a lo que estaba)
+    const antes = { cantidad: ya.cantidad, contadoEl: ya.contadoEl };
+    if (ya.cantidad === '' || ya.cantidad == null) ya.contadoEl = Date.now(); // empieza a contar ahora
     ya.cantidad = (Number(ya.cantidad) || 0) + 1;
     ya.cambio = Date.now();
     ultimoId = ya.id;
-    guardar(); pintar(); avisar(40);
-    estado(`<strong>${esc(ya.nombre)}</strong> ya estaba en la lista: ahora hay <strong>${numero.format(ya.cantidad)}</strong>. <button class="btn sm" type="button" data-editar="${ya.id}">Corregir</button>`, 'ok');
+    pintar(); avisar(40);
+    const r = await enviarItem(ya);
+    if (r.error) {
+      Object.assign(ya, antes); guardar(); pintar(); avisar([200]);
+      estado(`<strong>${esc(ya.nombre)}</strong>: no se sumó. ${esc(r.error)}`, 'warn');
+      return 'error';
+    }
+    guardar(); pintar();
+    estado(`<strong>${esc(ya.nombre)}</strong>: ahora hay <strong>${numero.format(ya.cantidad)}</strong> contados (guardado en la PC). <button class="btn sm" type="button" data-editar="${ya.id}">Corregir</button>`, 'ok');
     return 'sumado';
   }
   avisar([60, 60, 60]);
-  // Con la PC conectada se pregunta al programa en el momento; si no responde, se usa el inventario en Excel
-  const enPC = await productoDePC(codigo);
-  const p = enPC !== undefined ? enPC : catalogo.get(codigo);
+  if (!pcOk()) { estado(esc(textoSinPC()), 'warn'); return 'bloqueado'; }
+  // Se pregunta al programa en el momento
+  const p = await productoDePC(codigo);
+  if (p === undefined) { estado(`No se pudo preguntar a la PC por <strong>${esc(codigo)}</strong>. ${esc(textoSinPC())}`, 'warn'); return 'bloqueado'; }
   if (p) {
     // El código leído ya es del producto (propio o de barras): no se agrega de nuevo como código de barras
     const suyo = [p.codigo].concat(p.barras || []).some((c) => String(c).toUpperCase() === codigo);
-    abrirForm({ ...p, barras: suyo ? [] : [codigo], cantidad: '', existente: true });
-    estado(`<strong>${esc(p.nombre)}</strong> ya está en el programa${p.stock != null ? ` (hay ${numero.format(p.stock)} ${enPC ? 'ahora, según la PC' : 'según el último inventario cargado'})` : ''}. Poné cuántos hay ahora.`, 'info');
+    abrirForm({ ...p, barras: [], barraNueva: suyo ? '' : codigo, cantidad: '', existente: true });
+    estado(`<strong>${esc(p.nombre)}</strong> ya está en el programa${p.stock != null ? ` (hay ${numero.format(p.stock)} según la PC)` : ''}. Poné cuántos hay ahora.`, 'info');
     return 'ficha';
   }
   // Un código de fábrica que no está: producto nuevo con ese código (no necesita código propio)
@@ -742,13 +761,14 @@ function abrirForm(x, id = null) {
   $('#form').dataset.codigo = x.codigo || '';
   $('#form').dataset.existente = x.existente ? '1' : '';
   formBarras = (x.barras || []).slice();
+  formBarraNueva = x.barraNueva || '';
   $('#form-titulo').textContent = id ? 'Corregir el producto' : x.existente ? 'Producto del programa' : x.propio ? 'Producto sin código' : 'Producto nuevo';
-  $('#form-codigo').innerHTML = x.codigo ? `Código: <span class="codigo-propio">${esc(x.codigo)}</span>${x.propio && !id ? ' (propio de este celular)' : ''}` : '';
+  $('#form-codigo').innerHTML = (x.codigo ? `Código: <span class="codigo-propio">${esc(x.codigo)}</span>${x.propio && !id ? ' (propio de este celular)' : ''}` : '')
+    + (x.barraNueva ? `<br>El código leído <span class="mono">${esc(x.barraNueva)}</span> se le agrega como código de barras.` : '');
   $('#c-nombre').value = x.nombre || '';
   $('#c-precio').value = x.precio === '' || x.precio == null ? '' : String(x.precio).replace('.', ',');
   $('#c-moneda').value = x.moneda === 'USD' ? 'USD' : 'UYU';
   rotulosMoneda();
-  $('#c-costo').value = x.costo === '' || x.costo == null || x.costo === 0 ? '' : String(x.costo).replace('.', ',');
   $('#c-cantidad').value = x.cantidad === '' || x.cantidad == null ? '' : String(x.cantidad).replace('.', ',');
   $('#c-minimo').value = x.minimo === '' || x.minimo == null || x.minimo === 0 ? '' : String(x.minimo).replace('.', ',');
   const ubic = x.ubicacion || (id || x.existente ? '' : r.ubicacion || '');
@@ -758,62 +778,117 @@ function abrirForm(x, id = null) {
   alElegirEstante(x.categoria || (id || x.existente ? '' : r.categoria || ''));
   $('#c-unidad').value = x.unidad || (id ? 'unidad' : r.unidad || 'unidad');
   $('#c-proveedor').value = x.proveedor || (id || x.existente ? '' : r.proveedor || '');
+  // Un producto que ya estaba en el programa: desde el celular solo se cuenta y se cambia de estante
+  // (el precio y el nombre los cambia el administrador en la PC)
+  const fijo = !!x.existente;
+  ['#c-nombre', '#c-precio'].forEach((s) => { $(s).readOnly = fijo; });
+  ['#c-moneda', '#c-unidad'].forEach((s) => { $(s).disabled = fijo; });
+  ['#c-minimo', '#c-proveedor'].forEach((s) => { $(s).readOnly = fijo; });
+  if (fijo) { $('#c-categoria').readOnly = true; $('#mas').open = false; }
+  $('#mas').hidden = fijo;
+  $('#c-cant-lbl').textContent = fijo ? '¿Cuántos hay?' : 'Cantidad';
+  $('#c-cantidad').placeholder = fijo ? 'Vacío: no cambia' : '1';
   $('#form-err').textContent = '';
   $('#form').hidden = false;
   $('#form').scrollIntoView({ block: 'start', behavior: 'smooth' });
   setTimeout(() => ($('#c-nombre').value ? $('#c-cantidad') : $('#c-nombre')).focus(), 250);
 }
 let formBarras = [];
+let formBarraNueva = '';
 function rotulosMoneda() {
   const usd = $('#c-moneda').value === 'USD';
   $('#c-precio-lbl').textContent = usd ? 'Precio (U$S)' : 'Precio ($)';
-  $('#c-costo-lbl').textContent = usd ? 'Costo (U$S)' : 'Costo ($)';
 }
 function cerrarForm() { $('#form').hidden = true; editando = null; estado(''); }
 
-function nuevoSinCodigo() {
+async function nuevoSinCodigo() {
   if (!aj().equipo) { toast('Primero poné el nombre de este celular en Ajustes (por ejemplo C1).'); abrirAjustes(); return; }
-  const { codigo } = siguienteCodigo();
+  if (!pcOk()) { estado(esc(textoSinPC()), 'warn'); return; }
+  // El código lo da la PC: así nunca se repite, aunque se haya reinstalado la app
+  let codigo = '';
+  try {
+    const r = await pedirPC('/api/codigo-libre?equipo=' + encodeURIComponent(aj().equipo));
+    if (r.status !== 200 || !r.data || !r.data.codigo) { estado(esc(errorDePC(r)), 'warn'); return; }
+    codigo = r.data.codigo;
+  } catch (e) { sinPC(); estado(esc(textoSinPC()), 'warn'); return; }
   abrirForm({ codigo, propio: true, cantidad: '' });
   estado(`Producto sin código: va a llevar el código <strong>${esc(codigo)}</strong>, que imprime la etiqueta. En el programa queda con ese mismo código.`, 'info');
 }
-
-/** Guarda el producto; devuelve el ítem guardado (o null si falta algo). */
-function guardarForm() {
+/** Manda un ítem de la lista a la PC (producto nuevo o conteo de uno que ya existía). De a uno por ítem.
+ *  Devuelve { data } o { error }. Si se corta el WiFi, se puede volver a mandar: la PC no lo duplica. */
+const colaEnvio = new Map();
+function enviarItem(x) {
+  const anterior = colaEnvio.get(x.id) || Promise.resolve();
+  const p = anterior.then(() => enviarAhora(x));
+  colaEnvio.set(x.id, p.catch(() => {}));
+  return p;
+}
+async function enviarAhora(x) {
+  if (!pcOk()) return { error: textoSinPC() };
+  const hace = Math.max(0, Date.now() - (x.contadoEl || Date.now()));
+  const base = { equipo: aj().equipo, codigo: x.codigo, hace };
+  const cuerpo = x.existente
+    ? { ...base, conteoId: x.id, productoId: x.productoId, contado: x.cantidad === '' ? null : x.cantidad, ubicacion: x.ubicacion, barra: x.barraNueva || undefined }
+    : { ...base, idCelular: x.id, barras: x.barras || [], nombre: x.nombre, precio: x.precio, moneda: x.moneda, unidad: x.unidad, proveedor: x.proveedor, minimo: x.minimo, categoria: x.categoria, ubicacion: x.ubicacion, cantidad: x.cantidad };
+  let r;
+  try { r = await pedirPC(x.existente ? '/api/conteos' : '/api/productos', undefined, 8000, cuerpo); }
+  catch (e) { sinPC(); return { error: 'No se pudo llegar a la PC. Probá de nuevo: si ya había llegado, no se duplica.' }; }
+  if (r.status !== 200 || !r.data) return { error: errorDePC(r), data: r.data };
+  return { data: r.data };
+}
+let guardando = false;
+/** Guarda el producto en la PC y en la lista; devuelve el ítem guardado (o null si falta algo o la PC no lo aceptó). */
+async function guardarForm() {
   const err = (t) => { $('#form-err').textContent = t; return null; };
+  if (guardando) return null;
+  if (!pcOk()) return err(textoSinPC());
   const codigo = ($('#form').dataset.codigo || '').trim().toUpperCase();
+  const existente = $('#form').dataset.existente === '1';
   const nombre = $('#c-nombre').value.trim();
   const precio = parseNum($('#c-precio').value);
   const cantidadTxt = $('#c-cantidad').value.trim();
-  const cantidad = cantidadTxt === '' ? 1 : parseNum(cantidadTxt);
-  const existente = $('#form').dataset.existente === '1';
+  const cantidad = cantidadTxt === '' ? (existente ? '' : 1) : parseNum(cantidadTxt);
   if (!nombre) { $('#c-nombre').focus(); return err('Escribí el nombre del producto.'); }
-  if (cantidad == null || cantidad < 0 || cantidad > 99999) { $('#c-cantidad').focus(); return err('Revisá la cantidad.'); }
+  if (cantidad == null || (cantidad !== '' && (cantidad < 0 || cantidad > 99999))) { $('#c-cantidad').focus(); return err('Revisá la cantidad.'); }
   if ($('#c-estante').value === NUEVO) return err('Terminá de crear el estante (o tocá Cancelar en el estante nuevo).');
-  if (precio != null && precio < 0) return err('El precio no puede ser negativo.');
-  if (precio == null && !existente && !editando) return err('Poné el precio (en el programa se puede corregir después).');
+  if (!existente && !(precio > 0)) { $('#c-precio').focus(); return err('Poné el precio (en el programa se puede corregir después).'); }
   if (codigo && datos.items.some((x) => x.id !== editando && x.codigo && x.codigo.toUpperCase() === codigo)) return err('Ese producto ya está en la lista: buscalo y tocá Editar.');
+  const anterior = editando ? datos.items.find((i) => i.id === editando) : null;
+  const cambioCantidad = !anterior || String(anterior.cantidad) !== String(cantidad);
   const item = {
-    codigo, nombre, precio, cantidad, moneda: $('#c-moneda').value === 'USD' ? 'USD' : 'UYU',
-    costo: parseNum($('#c-costo').value), minimo: parseNum($('#c-minimo').value),
-    categoria: $('#c-categoria').value.trim(), ubicacion: $('#c-estante').value === NUEVO ? '' : $('#c-estante').value,
-    unidad: $('#c-unidad').value, proveedor: $('#c-proveedor').value.trim(),
-    existente, propio: $('#form').dataset.propio === '1', barras: formBarras.filter((b) => b && b !== codigo), cambio: Date.now(),
+    id: anterior ? anterior.id : uid(), codigo, nombre, precio, cantidad, moneda: $('#c-moneda').value === 'USD' ? 'USD' : 'UYU', minimo: parseNum($('#c-minimo').value),
+    categoria: $('#c-categoria').value.trim(), ubicacion: $('#c-estante').value, unidad: $('#c-unidad').value, proveedor: $('#c-proveedor').value.trim(),
+    existente, propio: $('#form').dataset.propio === '1', barras: formBarras.filter((b) => b && b !== codigo), barraNueva: formBarraNueva || (anterior && anterior.barraNueva) || '',
+    productoId: anterior && anterior.productoId, etiquetas: anterior ? anterior.etiquetas || 0 : 0,
+    // Cuándo se contó: si se corrige la cantidad es el mismo conteo; si se cuenta por primera vez, es ahora
+    contadoEl: anterior && anterior.contadoEl && !(anterior.cantidad === '' && cantidad !== '') ? anterior.contadoEl : Date.now(),
   };
-  let x;
-  if (editando) { x = datos.items.find((i) => i.id === editando); Object.assign(x, item); }
-  else {
-    x = { id: uid(), etiquetas: 0, ...item };
-    datos.items.push(x);
-    // El número propio queda usado aunque después se borre el producto: así nunca se repite un código ya impreso
-    const mm = /-(\d+)$/.exec(codigo);
-    if (item.propio && mm) datos.ultimoNum = Math.max(datos.ultimoNum || 0, Number(mm[1]));
+  guardando = true;
+  ['#btn-guardar-imprimir', '#btn-solo-guardar'].forEach((s) => { $(s).disabled = true; });
+  $('#form-err').textContent = '';
+  let r;
+  try { r = await enviarItem(item); } finally {
+    guardando = false;
+    ['#btn-guardar-imprimir', '#btn-solo-guardar'].forEach((s) => { $(s).disabled = !pcOk(); });
   }
+  if (r.error) {
+    if (r.data && r.data.codigoUsado && r.data.producto) estado(`En el programa, ese código es de <strong>${esc(r.data.producto.nombre)}</strong>. Escanealo de nuevo o buscalo para contarlo.`, 'warn');
+    return err('No se guardó: ' + r.error);
+  }
+  // Lo que quedó en la PC
+  const p = r.data.producto || {};
+  Object.assign(item, { codigo: p.codigo || item.codigo, barras: Array.isArray(p.barras) ? p.barras : item.barras, barraNueva: '', nombre: p.nombre || item.nombre, precio: p.precio, moneda: p.moneda, ubicacion: p.ubicacion, categoria: p.categoria, stock: p.stock, productoId: r.data.productoId, cambio: Date.now(), revisado: !!r.data.revisado });
+  let x;
+  if (anterior) { x = Object.assign(anterior, item); } else { x = item; datos.items.push(x); }
+  const mm = /-(\d+)$/.exec(codigo);
+  if (item.propio && mm) datos.ultimoNum = Math.max(datos.ultimoNum || 0, Number(mm[1]));
   ultimoId = x.id;
-  datos.recordar = { categoria: item.categoria, ubicacion: item.ubicacion, unidad: item.unidad, proveedor: item.proveedor };
+  if (!existente) datos.recordar = { categoria: item.categoria, ubicacion: item.ubicacion, unidad: item.unidad, proveedor: item.proveedor };
   guardar();
   pintar();
   cerrarForm();
+  if (r.data.revisado && !existente && anterior) toast('En la PC ya lo revisaron: solo se guardó la cantidad.');
+  else if (existente && cambioCantidad && cantidad !== '') estado(`<strong>${esc(x.nombre)}</strong>: contados ${numero.format(cantidad)}. En la PC el stock quedó en <strong>${numero.format(p.stock)}</strong> (lo contado más lo que se vendió o llegó mientras tanto).`, 'ok');
   return x;
 }
 
@@ -823,82 +898,21 @@ function pintar() {
   $('#r-prod').textContent = numero.format(items.length);
   $('#r-unid').textContent = numero.format(items.reduce((s, x) => s + (Number(x.cantidad) || 0), 0));
   $('#r-etq').textContent = numero.format(items.reduce((s, x) => s + (Number(x.etiquetas) || 0), 0));
-  $('#descargar').disabled = !items.length;
   const q = normal($('#buscar').value.trim());
   const lista = items.filter((x) => !q || normal(`${x.codigo} ${x.nombre} ${x.categoria} ${x.ubicacion}`).includes(q)).sort((a, b) => (b.cambio || 0) - (a.cambio || 0));
   $('#lista').innerHTML = lista.length ? lista.map((x) => `
     <li class="${x.id === ultimoId ? 'recien' : ''}">
-      <div class="fila1"><span class="nom">${esc(x.nombre)}</span><span class="cant">${numero.format(x.cantidad || 0)} ${esc(x.unidad || '')}</span></div>
-      <div class="meta"><span class="mono">${esc(x.codigo || 'sin código')}</span>${x.ubicacion ? ' · ' + esc(x.ubicacion) : ''} · ${x.precio == null || x.precio === '' ? (x.existente ? 'precio sin cambio' : '<span class="err">sin precio</span>') : $m(x.precio, x.moneda)}
-        ${x.existente ? ' · <span class="chip">ya en el programa</span>' : ''}${x.etiquetas ? ` · <span class="chip ok">${x.etiquetas} etiqueta${x.etiquetas === 1 ? '' : 's'}</span>` : ''}</div>
+      <div class="fila1"><span class="nom">${esc(x.nombre)}</span><span class="cant">${x.cantidad === '' || x.cantidad == null ? 'sin contar' : `${numero.format(x.cantidad)} ${esc(x.unidad || '')}`}</span></div>
+      <div class="meta"><span class="mono">${esc(x.codigo || 'sin código')}</span>${x.ubicacion ? ' · ' + esc(x.ubicacion) : ''}${x.precio == null || x.precio === '' ? '' : ' · ' + $m(x.precio, x.moneda)}
+        ${x.existente ? ' · <span class="chip">contado</span>' : ' · <span class="chip">nuevo</span>'} · <span class="chip ok">en la PC</span>${x.etiquetas ? ` · <span class="chip ok">${x.etiquetas} etiqueta${x.etiquetas === 1 ? '' : 's'}</span>` : ''}</div>
       <div class="acc"><button class="btn sm verde" type="button" data-etq="${x.id}">Etiqueta</button><button class="btn sm" type="button" data-editar="${x.id}">Editar</button><button class="btn sm danger" type="button" data-borrar="${x.id}">Quitar</button></div>
     </li>`).join('')
     : `<li class="vacio">${items.length ? 'Nada coincide con la búsqueda.' : 'Todavía no cargaste nada.'}</li>`;
-  const cats = [...new Set(items.map((x) => x.categoria).concat(productosCatalogo().map((p) => p.categoria), estantes().map((e) => e.categoria)).filter(Boolean))].sort();
+  const cats = [...new Set(items.map((x) => x.categoria).concat(estantes().map((e) => e.categoria)).filter(Boolean))].sort();
   $('#lista-cat').innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join('');
-  const provs = [...new Set(items.map((x) => x.proveedor).concat(productosCatalogo().map((p) => p.proveedor)).filter(Boolean))].sort();
+  const provs = [...new Set(items.map((x) => x.proveedor).filter(Boolean))].sort();
   $('#lista-prov').innerHTML = provs.map((c) => `<option value="${esc(c)}">`).join('');
   $('#sub-equipo').textContent = aj().equipo ? `Grupo Muros · celular ${aj().equipo}` : 'Grupo Muros · poné el nombre del celular en Ajustes';
-  if (productosCatalogo().length) $('#catalogo-estado').innerHTML = `Inventario del programa cargado: <strong>${numero.format(productosCatalogo().length)}</strong> productos y ${estantes().length} estantes.`;
-}
-
-// ---------- Excel (mismo formato que el Cargador de productos) ----------
-function libroExcel() {
-  const filas = datos.items.map((x) => ({
-    'Código': x.codigo, 'Códigos de barras': (x.barras || []).join(' '), 'Producto': x.nombre, 'Categoría': x.categoria, 'Unidad': x.unidad, 'Proveedor': x.proveedor, 'Ubicación': x.ubicacion,
-    'Stock': x.cantidad, 'Stock mínimo': x.minimo ?? '', 'Moneda': x.moneda === 'USD' ? 'USD' : 'UYU', 'Costo': x.costo ?? '', 'Precio': x.precio ?? '',
-    'Contado': 'Sí',
-  }));
-  const hoja = XLSX.utils.json_to_sheet(filas, { header: ['Código', 'Códigos de barras', 'Producto', 'Categoría', 'Unidad', 'Proveedor', 'Ubicación', 'Stock', 'Stock mínimo', 'Moneda', 'Costo', 'Precio', 'Contado'] });
-  filas.forEach((f, i) => { const c = hoja[XLSX.utils.encode_cell({ r: i + 1, c: 0 })]; if (c) { c.t = 's'; c.v = String(f['Código'] || ''); c.z = '@'; } });
-  hoja['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 42 }, { wch: 16 }, { wch: 9 }, { wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 9 }];
-  const libro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro, hoja, 'Productos');
-  return libro;
-}
-async function descargarExcel() {
-  if (!datos.items.length) return;
-  const nombre = `productos_celular_${aj().equipo || 'C'}_${hoy()}.xlsx`;
-  const libro = libroExcel();
-  const P = window.Capacitor && window.Capacitor.Plugins;
-  try {
-    if (P && P.Filesystem && P.Share) {
-      // En el celular: se guarda y se abre «Compartir» (WhatsApp, Gmail, Drive…) para mandarlo a la PC
-      const b64 = XLSX.write(libro, { bookType: 'xlsx', type: 'base64' });
-      const r = await P.Filesystem.writeFile({ path: nombre, data: b64, directory: 'CACHE' });
-      await P.Share.share({ title: nombre, text: `Productos cargados en el celular ${aj().equipo} (${datos.items.length})`, files: [r.uri], dialogTitle: 'Mandar el Excel a la PC' });
-    } else XLSX.writeFile(libro, nombre);
-    toast(`Excel listo con ${datos.items.length} productos.`);
-  } catch (e) {
-    if (e && /cancel/i.test(String(e.message || e))) return;
-    toast('No se pudo armar el Excel. Probá de nuevo.');
-  }
-}
-function cargarCatalogo(file) {
-  const lector = new FileReader();
-  lector.onload = () => {
-    try {
-      const libro = XLSX.read(new Uint8Array(lector.result), { type: 'array', codepage: 65001, raw: true });
-      const filas = XLSX.utils.sheet_to_json(libro.Sheets[libro.SheetNames[0]], { defval: '' });
-      const col = (f, ...nombres) => { for (const k of Object.keys(f)) if (nombres.includes(normal(k).trim())) return f[k]; return ''; };
-      const lista = [];
-      for (const f of filas) {
-        const codigo = String(col(f, 'codigo', 'cod')).trim().toUpperCase();
-        const nombre = String(col(f, 'producto', 'nombre', 'descripcion')).trim();
-        if (!codigo || !nombre) continue;
-        const barras = String(col(f, 'codigos de barras', 'codigo de barras', 'barras')).toUpperCase().split(/[\s,;]+/).filter(Boolean);
-        lista.push({ codigo, barras, nombre, categoria: String(col(f, 'categoria')).trim(), unidad: String(col(f, 'unidad')).trim(), proveedor: String(col(f, 'proveedor')).trim(),
-          ubicacion: String(col(f, 'ubicacion')).trim(), stock: parseNum(col(f, 'stock')), minimo: parseNum(col(f, 'stock minimo', 'minimo')), costo: parseNum(col(f, 'costo')), precio: parseNum(col(f, 'precio', 'precio de venta')), moneda: leerMoneda(col(f, 'moneda')) });
-      }
-      if (!lista.length) { toast('Esa planilla no tiene productos con Código y Producto.'); return; }
-      datos.catalogo = lista;
-      catalogo = mapaCatalogo(lista);
-      sumarEstantes(lista.filter((p) => p.ubicacion).map((p) => ({ codigo: p.ubicacion, categoria: p.categoria })));
-      guardar(); pintar();
-      toast(`Se cargaron ${lista.length} productos del programa.`);
-    } catch (e) { toast('No pude leer ese archivo. Tiene que ser el Excel del inventario.'); }
-  };
-  lector.readAsArrayBuffer(file);
 }
 
 // ---------- Ajustes ----------
@@ -984,15 +998,15 @@ $('#escanear').addEventListener('keydown', (e) => {
 $('#form').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!$('#nuevo-estante').hidden && document.activeElement && document.activeElement.closest('#nuevo-estante')) { crearEstante(); return; }
-  const x = guardarForm();
+  const x = await guardarForm();
   if (!x) return;
-  toast(`Guardado: ${x.nombre}.`);
+  toast(`Guardado en la PC: ${x.nombre}.`);
   abrirImprimir(x, 1);
 });
-$('#btn-solo-guardar').addEventListener('click', () => {
-  const x = guardarForm();
+$('#btn-solo-guardar').addEventListener('click', async () => {
+  const x = await guardarForm();
   if (!x) return;
-  toast(`Guardado: ${x.nombre}.`);
+  toast(`Guardado en la PC: ${x.nombre}.`);
   if ($('#seguir').checked && Camara()) setTimeout(escanearCamara, 700);
 });
 $('#cancelar').addEventListener('click', cerrarForm);
@@ -1009,17 +1023,15 @@ $('#lista').addEventListener('click', async (e) => {
   const bo = e.target.closest('[data-borrar]');
   if (bo) {
     const x = datos.items.find((i) => i.id === bo.dataset.borrar);
-    if (!x || !(await confirmar(`¿Quitar «${x.nombre}» de la lista?${x.etiquetas ? ' Ya tiene etiquetas impresas: su código no se va a volver a usar.' : ''}`, 'Quitar', true))) return;
+    if (!x || !(await confirmar(`¿Quitar «${x.nombre}» de esta lista? En el programa de la PC queda como está (si hay que borrarlo, se hace en la PC).`, 'Quitar', true))) return;
     datos.items = datos.items.filter((i) => i.id !== x.id);
     guardar(); pintar();
   }
 });
 $('#buscar').addEventListener('input', pintar);
-$('#descargar').addEventListener('click', descargarExcel);
-$('#catalogo').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) cargarCatalogo(f); });
 $('#nueva').addEventListener('click', async () => {
   if (!datos.items.length) return;
-  if (!(await confirmar(`¿Borrar la lista (${datos.items.length} productos) y empezar otra? Mandá el Excel antes si no lo hiciste. Los códigos ya usados no se repiten.`, 'Borrar la lista', true))) return;
+  if (!(await confirmar(`¿Limpiar la lista (${datos.items.length} productos)? Todo ya está guardado en la PC: solo se borra de este celular.`, 'Limpiar la lista', true))) return;
   datos.items = []; ultimoId = null;
   guardar(); pintar(); estado('');
 });

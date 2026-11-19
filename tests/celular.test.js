@@ -103,7 +103,8 @@ test('servidor: pide el token, contesta lo que dice la pantalla y no deja escrib
     const malo = `x"); estadoParaCelular("`;
     await pedir(p, `/api/producto?codigo=${encodeURIComponent(malo)}`, 'secreto-123');
     assert.equal(preguntados.at(-1), `productoParaCelular(${JSON.stringify(malo)})`);
-    assert.equal((await pedir(p, '/api/productos', 'secreto-123', 'POST')).status, 405);
+    assert.equal((await pedir(p, '/api/ventas', 'secreto-123', 'POST')).status, 404);
+    assert.equal((await pedir(p, '/api/estado', 'secreto-123', 'DELETE')).status, 405);
     assert.equal((await pedir(p, '/api/ventas', 'secreto-123')).status, 404);
     assert.equal(s.ultimoPedido.ip, '127.0.0.1');
     // Código nuevo: el celular viejo queda afuera enseguida
@@ -117,7 +118,7 @@ test('servidor: pide el token, contesta lo que dice la pantalla y no deja escrib
 });
 
 test('servidor: si el programa no responde, el celular recibe el aviso y no datos viejos', async () => {
-  const s = crearServidorCelular({ clave: () => ({ token: 't', pcId: 'p' }), preguntar: async () => ({ error: 'El programa no está abierto.' }), puerto: 0, host: '127.0.0.1' });
+  const s = crearServidorCelular({ clave: () => ({ token: 't', pcId: 'p' }), preguntar: async () => ({ error: 'El programa no está abierto.', sinPrograma: true }), puerto: 0, host: '127.0.0.1' });
   await s.iniciar();
   try {
     const e = await pedir(s.puerto, '/api/estado', 't');
@@ -135,4 +136,149 @@ test('servidor: avisa si el puerto está ocupado', async () => {
   await a.iniciar();
   const b = crearServidorCelular({ clave: () => ({ token: 't', pcId: 'p' }), preguntar: async () => ({}), puerto: a.puerto, host: '127.0.0.1' });
   try { assert.match(await b.iniciar(), /lo está usando otro programa/); } finally { await a.detener(); }
+});
+
+/* ---------- Fase 2: el celular guarda en la PC ---------- */
+
+test('celular: producto nuevo, idempotente y marcado para revisar, sin costo', () => {
+  const d = base();
+  app.guardarEstante(d, { codigo: 'A-1', categoria: 'Bulonería' });
+  const x = { idCelular: 'cel-1', equipo: 'c1', codigo: 'C1-0001', nombre: 'Tuerca  8 mm', precio: 3, cantidad: 40, ubicacion: 'a-1', costo: 999, proveedor: 'herramientas sur', hace: 1000 };
+  const r = app.altaDesdeCelularEn(d, x);
+  assert.equal(r.error, undefined);
+  assert.equal(r.existia, false);
+  const p = d.productos.find((q) => q.codigo === 'C1-0001');
+  assert.equal(p.nombre, 'Tuerca 8 mm');
+  assert.equal(p.costo, 0);
+  assert.equal(p.categoria, 'Bulonería'); // la del estante
+  assert.equal(p.ubicacion, 'A-1');
+  assert.equal(p.proveedorId, 'v1');
+  assert.equal(p.stock, 40);
+  assert.equal(p.revisar, true);
+  assert.equal(p.creadoPor, 'Celular C1');
+  assert.equal(d.movimientos.at(-1).usuario, 'Celular C1');
+  // Se cortó el WiFi y el celular reintenta: no se duplica
+  const r2 = app.altaDesdeCelularEn(d, x);
+  assert.equal(r2.existia, true);
+  assert.equal(d.productos.filter((q) => q.codigo === 'C1-0001').length, 1);
+  assert.equal(p.stock, 40);
+  // El mismo celular corrige el precio y la cantidad antes de que lo revisen
+  app.altaDesdeCelularEn(d, { ...x, precio: 4, cantidad: 45 });
+  assert.equal(p.precio, 4);
+  assert.equal(p.stock, 45);
+  // Después de que el administrador lo revisó, el celular ya no cambia sus datos (sí el conteo)
+  delete p.revisar;
+  app.altaDesdeCelularEn(d, { ...x, nombre: 'Otro nombre', precio: 1, cantidad: 44 });
+  assert.equal(p.nombre, 'Tuerca 8 mm');
+  assert.equal(p.precio, 4);
+  assert.equal(p.stock, 44);
+});
+
+test('celular: un producto nuevo con un código que ya existe no pisa al otro', () => {
+  const d = base();
+  const r = app.altaDesdeCelularEn(d, { idCelular: 'z', equipo: 'C1', codigo: '7790001112223', nombre: 'Otra cosa', precio: 10 });
+  assert.match(r.error, /ya es de «Martillo 16 oz»/);
+  assert.equal(r.producto.codigo, 'MAR-16');
+  assert.equal(d.productos.length, 3);
+  assert.match(app.altaDesdeCelularEn(d, { idCelular: 'z', equipo: 'C1', codigo: 'C1-9', nombre: 'X', precio: 10, ubicacion: 'NO-EXISTE' }).error, /no está en el programa/);
+  assert.match(app.altaDesdeCelularEn(d, { idCelular: 'z', equipo: '', codigo: 'C1-9', nombre: 'X', precio: 10 }).error, /nombre del celular/);
+  assert.match(app.altaDesdeCelularEn(d, { idCelular: 'z', equipo: 'C1', codigo: 'C1-9', nombre: 'X', precio: 0 }).error, /precio/);
+});
+
+test('celular: el conteo suma lo que se vendió después de contar (no se pierden ventas)', () => {
+  const d = base();
+  const martillo = d.productos[0]; // stock 10
+  // Se contaron 8 hace 10 minutos; después se vendieron 2 en la caja
+  const hace10 = new Date(Date.now() - 10 * 60000).toISOString();
+  d.movimientos.push({ id: 'v', fecha: new Date(Date.now() - 5 * 60000).toISOString(), tipo: 'salida', productoId: 'a', cantidad: -2, stockAntes: 12, stockDespues: 10 });
+  assert.equal(app.stockDesdeConteo(d, 'a', 8, hace10), 6);
+  const r = app.conteoDesdeCelularEn(d, { conteoId: 'k1', equipo: 'C1', codigo: '7790001112223', contado: 8, hace: 10 * 60000 });
+  assert.equal(r.error, undefined);
+  assert.equal(martillo.stock, 6);
+  assert.equal(d.movimientos.at(-1).conteoId, 'k1');
+  assert.equal(d.movimientos.at(-1).usuario, 'Celular C1');
+  // El celular sigue contando (cada escaneo suma 1) y corrige el mismo conteo: no se cuenta dos veces
+  app.conteoDesdeCelularEn(d, { conteoId: 'k1', equipo: 'C1', codigo: 'MAR-16', contado: 9, hace: 10 * 60000 });
+  assert.equal(martillo.stock, 7);
+  // Reintento igual: no cambia nada
+  const movs = d.movimientos.length;
+  app.conteoDesdeCelularEn(d, { conteoId: 'k1', equipo: 'C1', codigo: 'MAR-16', contado: 9, hace: 10 * 60000 });
+  assert.equal(martillo.stock, 7);
+  assert.equal(d.movimientos.length, movs);
+  // Sin cantidad: no toca el stock, pero sí el estante y el código de barras nuevo
+  app.guardarEstante(d, { codigo: 'B-2', categoria: 'Herramientas' });
+  app.conteoDesdeCelularEn(d, { conteoId: 'k2', equipo: 'C1', codigo: 'MAR-16', ubicacion: 'B-2', barra: '7790009998887' });
+  assert.equal(martillo.stock, 7);
+  assert.equal(martillo.ubicacion, 'B-2');
+  assert.ok(martillo.barras.includes('7790009998887'));
+  // Nunca el precio ni el nombre de un producto que ya existía
+  app.conteoDesdeCelularEn(d, { conteoId: 'k3', equipo: 'C1', codigo: 'MAR-16', nombre: 'X', precio: 1 });
+  assert.equal(martillo.precio, 620);
+  assert.equal(martillo.nombre, 'Martillo 16 oz');
+  assert.match(app.conteoDesdeCelularEn(d, { conteoId: 'k4', equipo: 'C1', codigo: 'NADA' }).error, /ya no está/);
+  assert.match(app.conteoDesdeCelularEn(d, { conteoId: 'k4', equipo: 'C1', codigo: 'MAR-16', contado: 1e7 }).error, /demasiado/);
+});
+
+test('celular: la hora del conteo es la de la PC (no importa el reloj del celular)', () => {
+  const ahora = Date.parse('2026-11-19T15:00:00Z');
+  assert.equal(app.contadoElDesde(60000, ahora), '2026-11-19T14:59:00.000Z');
+  assert.equal(app.contadoElDesde(-5, ahora), '2026-11-19T15:00:00.000Z');
+  assert.equal(app.contadoElDesde(1e12, ahora), '2026-11-12T15:00:00.000Z'); // como mucho una semana
+});
+
+test('celular: código libre del celular y estante nuevo', () => {
+  const d = base();
+  assert.deepEqual(app.codigoLibreCelular(d, 'c1'), { codigo: 'C1-0001' });
+  d.productos.push({ id: 'z', codigo: 'C1-0007', nombre: 'x', stock: 0 });
+  assert.deepEqual(app.codigoLibreCelular(d, 'C1'), { codigo: 'C1-0008' });
+  assert.match(app.codigoLibreCelular(d, 'P').error, /nombre de este celular/);
+  const r = app.estanteDesdeCelularEn(d, { codigo: 'D-4', categoria: 'Sanitaria' });
+  assert.deepEqual(r.estante, { codigo: 'D-4', categoria: 'Sanitaria' });
+  assert.ok(r.estantes.some((e) => e.codigo === 'D-4'));
+  assert.ok(app.estanteDesdeCelularEn(d, { codigo: 'D-4', categoria: 'Sanitaria' }).error);
+});
+
+function mandar(puerto, ruta, token, cuerpo) {
+  return new Promise((ok, mal) => {
+    const t = typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo);
+    const req = http.request({ host: '127.0.0.1', port: puerto, path: ruta, method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(t) } }, (res) => {
+      let s = '';
+      res.on('data', (c) => { s += c; });
+      res.on('end', () => ok({ status: res.statusCode, data: s ? JSON.parse(s) : null }));
+    });
+    req.on('error', mal);
+    req.end(t);
+  });
+}
+
+test('servidor: el celular guarda en la PC (alta, conteo, estante) y los errores llegan con su motivo', async () => {
+  const d = base();
+  const P = {
+    productoDesdeCelular: (x) => app.altaDesdeCelularEn(d, x), conteoDesdeCelular: (x) => app.conteoDesdeCelularEn(d, x), estanteDesdeCelular: (x) => app.estanteDesdeCelularEn(d, x),
+    codigoLibreParaCelular: (e) => app.codigoLibreCelular(d, e), estadoParaCelular: () => ({ listo: true, productos: d.productos.length }),
+  };
+  const llamadas = [];
+  const preguntar = async (js) => { llamadas.push(js); return Function(...Object.keys(P), `return ${js}`)(...Object.values(P)); };
+  const s = crearServidorCelular({ clave: () => ({ token: 't', pcId: 'p' }), preguntar, puerto: 0, host: '127.0.0.1' });
+  await s.iniciar();
+  try {
+    const c = await pedir(s.puerto, '/api/codigo-libre?equipo=C2', 't');
+    assert.deepEqual(c.data, { codigo: 'C2-0001' });
+    const e = await mandar(s.puerto, '/api/estantes', 't', { codigo: 'Z-1', categoria: 'Jardín' });
+    assert.equal(e.status, 200);
+    const a = await mandar(s.puerto, '/api/productos', 't', { idCelular: 'i1', equipo: 'C2', codigo: 'C2-0001', nombre: 'Manguera', precio: 300, cantidad: 2, ubicacion: 'Z-1', costo: 5 });
+    assert.equal(a.status, 200);
+    assert.equal(a.data.producto.categoria, 'Jardín');
+    assert.equal(d.productos.find((p) => p.codigo === 'C2-0001').costo, 0); // el costo ni siquiera pasa
+    assert.ok(!llamadas.at(-1).includes('costo'));
+    const k = await mandar(s.puerto, '/api/conteos', 't', { conteoId: 'k', equipo: 'C2', codigo: 'MAR-16', contado: 3, hace: 0 });
+    assert.equal(k.status, 200);
+    assert.equal(k.data.producto.stock, 3);
+    const mal = await mandar(s.puerto, '/api/productos', 't', { idCelular: 'i2', equipo: 'C2', codigo: 'MAR-16', nombre: 'X', precio: 1 });
+    assert.equal(mal.status, 422);
+    assert.match(mal.data.error, /ya es de/);
+    assert.equal((await mandar(s.puerto, '/api/productos', 't', 'esto no es json')).status, 400);
+    assert.equal((await mandar(s.puerto, '/api/productos', 'otro', {})).status, 401);
+    assert.equal((await mandar(s.puerto, '/api/productos', 't', { nombre: 'x'.repeat(40000) })).status, 400);
+  } finally { await s.detener(); }
 });

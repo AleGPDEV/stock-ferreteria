@@ -3,16 +3,18 @@
 // los ajustes, cargar un producto y armar el Excel funcionen de verdad en Android.
 const { _android: android } = require('playwright');
 const { crearServidorCelular } = require('../electron/servidor-celular.js');
+const app = require('../js/app.js');
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
-// Una PC de mentira (el servidor de verdad, con datos de prueba): el emulador la ve en 10.0.2.2
-const MARTILLO = { codigo: 'MAR-16', barras: ['7790001112223'], nombre: 'Martillo 16 oz', categoria: 'Herramientas', unidad: 'unidad', proveedor: '', ubicacion: 'B-9', stock: 7, minimo: 2, precio: 620, moneda: 'UYU' };
-const pantallaDePrueba = async (js) => {
-  if (js === 'estadoParaCelular()') return { listo: true, productos: 1 };
-  if (js === 'estantesParaCelular()') return { estantes: [{ codigo: 'B-9', categoria: 'Herramientas' }] };
-  if (js.startsWith('productoParaCelular(')) return { producto: js.includes('7790001112223') ? MARTILLO : null };
-  if (js.startsWith('productosParaCelular(')) return { productos: [MARTILLO] };
-  return { error: 'no' };
+// Una PC de prueba: el servidor de verdad y las funciones de verdad del programa (js/app.js), con datos de prueba.
+// El emulador la ve en 10.0.2.2.
+const d = app.baseVacia();
+d.productos.push({ id: 'a', codigo: 'MAR-16', barras: ['7790001112223'], nombre: 'Martillo 16 oz', categoria: 'Herramientas', unidad: 'unidad', proveedorId: '', ubicacion: 'B-9', costo: 390, precio: 620, minimo: 2, stock: 7 });
+app.guardarEstante(d, { codigo: 'B-9', categoria: 'Herramientas' });
+const pantalla = {
+  estadoParaCelular: () => ({ listo: true, productos: d.productos.length }), productoParaCelular: (c) => app.productoCelular(d, c), productosParaCelular: (q) => app.productosCelular(d, q), estantesParaCelular: () => app.estantesCelular(d),
+  productoDesdeCelular: (x) => app.altaDesdeCelularEn(d, x), conteoDesdeCelular: (x) => app.conteoDesdeCelularEn(d, x), estanteDesdeCelular: (x) => app.estanteDesdeCelularEn(d, x), codigoLibreParaCelular: (e) => app.codigoLibreCelular(d, e),
 };
+const pantallaDePrueba = async (js) => Function(...Object.keys(pantalla), `return ${js}`)(...Object.values(pantalla));
 const pcDePrueba = crearServidorCelular({ clave: () => ({ token: 'token-de-prueba', pcId: 'pc-de-prueba' }), preguntar: pantallaDePrueba, version: 'prueba' });
 (async () => {
   const errPC = await pcDePrueba.iniciar();
@@ -38,15 +40,29 @@ const pcDePrueba = crearServidorCelular({ clave: () => ({ token: 'token-de-prueb
   // Bluetooth: en el emulador no hay, pero el complemento tiene que contestar (no colgarse)
   r.listar = await page.evaluate(async () => { try { return await window.Capacitor.Plugins.ImpresoraBT.listar(); } catch (e) { return 'error: ' + e.message; } });
   r.estado = await page.evaluate(async () => window.Capacitor.Plugins.ImpresoraBT.estado());
-  // Ajustes y un producto sin código
+  // Ajustes; sin la PC no se puede cargar nada
   await page.fill('#aj-equipo', 'c1');
   await tocar('#aj-guardar');
+  r.bloqueadoSinPC = await page.evaluate(() => document.getElementById('sin-codigo').disabled);
+  // La PC por WiFi: el pedido http:// sin cifrar tiene que salir por CapacitorHttp (no lo bloquea Android)
+  r.http = await page.evaluate(async () => { try { const x = await window.Capacitor.Plugins.CapacitorHttp.get({ url: 'http://10.0.2.2:8765/api/estado', connectTimeout: 3000, readTimeout: 3000 }); return x.status; } catch (e) { return 'error: ' + e.message; } });
+  r.pc = await page.evaluate(async () => {
+    datos.pc = { urls: ['http://10.0.2.3:8765', 'http://10.0.2.2:8765'], url: 'http://10.0.2.3:8765', token: 'token-de-prueba', pcId: 'pc-de-prueba' };
+    await revisarPC(); // la primera dirección no responde: tiene que encontrar la segunda
+    await new Promise((ok) => setTimeout(ok, 1500)); // los estantes llegan aparte
+    return { estado: pc.estado, url: datos.pc.url, estantes: datos.estantes.map((e) => e.codigo), habilitado: !document.getElementById('sin-codigo').disabled };
+  });
+  // Producto sin código: el código lo da la PC y se guarda en la PC (POST por CapacitorHttp)
   await tocar('#sin-codigo');
-  await espera(500);
+  await page.waitForSelector('#form:not([hidden])', { timeout: 15000 });
   r.codigo = await page.textContent('#form-codigo');
   await page.fill('#c-nombre', 'Arandela plana 8 mm');
   await page.fill('#c-precio', '5');
+  await page.fill('#c-cantidad', '12');
   await tocar('#btn-solo-guardar');
+  await page.waitForFunction(() => document.getElementById('form').hidden, null, { timeout: 15000 });
+  const nuevo = d.productos.find((p) => p.codigo === 'C1-0001');
+  r.enLaPC = nuevo ? { nombre: nuevo.nombre, stock: nuevo.stock, revisar: nuevo.revisar, creadoPor: nuevo.creadoPor } : null;
   r.lista = await page.textContent('#lista');
   // Imprimir sin impresora: tiene que avisar, no colgarse
   await tocar('[data-etq]');
@@ -54,27 +70,14 @@ const pcDePrueba = crearServidorCelular({ clave: () => ({ token: 'token-de-prueb
   await espera(1500);
   r.errorImprimir = await page.textContent('#di-err');
   await tocar('#di-cerrar');
-  // Excel: se arma y se guarda en el celular (el «Compartir» de Android no se puede tocar acá)
-  r.excel = await page.evaluate(async () => {
-    const P = window.Capacitor.Plugins;
-    const b64 = XLSX.write(libroExcel(), { bookType: 'xlsx', type: 'base64' });
-    const w = await P.Filesystem.writeFile({ path: 'prueba.xlsx', data: b64, directory: 'CACHE' });
-    const s = await P.Filesystem.stat({ path: 'prueba.xlsx', directory: 'CACHE' });
-    return { uri: w.uri, tamano: s.size };
-  });
-  // La PC por WiFi: el pedido http:// sin cifrar tiene que salir por CapacitorHttp (no lo bloquea Android)
-  r.http = await page.evaluate(async () => { try { const x = await window.Capacitor.Plugins.CapacitorHttp.get({ url: 'http://10.0.2.2:8765/api/estado', connectTimeout: 3000, readTimeout: 3000 }); return x.status; } catch (e) { return 'error: ' + e.message; } });
-  r.pc = await page.evaluate(async () => {
-    datos.pc = { urls: ['http://10.0.2.3:8765', 'http://10.0.2.2:8765'], url: 'http://10.0.2.3:8765', token: 'token-de-prueba', pcId: 'pc-de-prueba' };
-    await revisarPC(); // la primera dirección no responde: tiene que encontrar la segunda
-    await new Promise((ok) => setTimeout(ok, 1500)); // los estantes llegan aparte
-    return { estado: pc.estado, url: datos.pc.url, titulo: document.getElementById('pc-titulo').textContent, estantes: datos.estantes.map((e) => e.codigo) };
-  });
-  r.buscarEnPC = await page.evaluate(async () => {
-    await codigoEscrito('7790001112223');
-    return document.getElementById('form-titulo').textContent + ' | ' + document.getElementById('estado').textContent;
-  });
-  await tocar('#cancelar');
+  // Contar un producto que ya estaba en el programa
+  await page.evaluate(() => codigoEscrito('7790001112223'));
+  await page.waitForSelector('#form:not([hidden])', { timeout: 15000 });
+  r.existente = await page.evaluate(() => document.getElementById('form-titulo').textContent + ' | ' + document.getElementById('estado').textContent + ' | solo lectura: ' + document.getElementById('c-precio').readOnly);
+  await page.fill('#c-cantidad', '3');
+  await tocar('#btn-solo-guardar');
+  await page.waitForFunction(() => document.getElementById('form').hidden, null, { timeout: 15000 });
+  r.martilloEnLaPC = d.productos.find((p) => p.codigo === 'MAR-16').stock;
   r.sinToken = await page.evaluate(async () => { datos.pc.token = 'viejo'; await revisarPC(); const e = pc.estado; datos.pc.token = 'token-de-prueba'; return e; });
   // Lo cargado queda guardado al cerrar y volver a abrir la app
   await device.shell('am force-stop uy.grupomuros.etiquetador');
@@ -87,9 +90,10 @@ const pcDePrueba = crearServidorCelular({ clave: () => ({ token: 'token-de-prueb
   await device.screenshot({ path: 'celular/captura-emulador.png' });
   console.log(JSON.stringify(r, null, 2));
   await pcDePrueba.detener();
-  const okPC = r.http === 200 || r.http === 401;
-  const ok = okPC && r.pc.estado === 'ok' && r.pc.url === 'http://10.0.2.2:8765' && r.pc.estantes.includes('B-9') && /Producto del programa/.test(r.buscarEnPC) && /según la PC/.test(r.buscarEnPC) && r.sinToken === 'token'
-    && r.plugins.includes('ImpresoraBT') && r.plugins.includes('BarcodeScanner') && /C1-0001/.test(r.codigo) && /Arandela/.test(r.despuesDeReabrir) && r.excel.tamano > 1000 && r.errorImprimir;
+  const okPC = (r.http === 200 || r.http === 401) && r.bloqueadoSinPC && r.pc.estado === 'ok' && r.pc.url === 'http://10.0.2.2:8765' && r.pc.estantes.includes('B-9') && r.pc.habilitado
+    && r.enLaPC && r.enLaPC.stock === 12 && r.enLaPC.revisar === true && r.enLaPC.creadoPor === 'Celular C1'
+    && /Producto del programa/.test(r.existente) && /solo lectura: true/.test(r.existente) && r.martilloEnLaPC === 3 && r.sinToken === 'token';
+  const ok = okPC && r.plugins.includes('ImpresoraBT') && r.plugins.includes('BarcodeScanner') && /C1-0001/.test(r.codigo) && /Arandela/.test(r.despuesDeReabrir) && r.errorImprimir;
   await device.close();
   if (!ok) { console.error('LA PRUEBA FALLÓ'); process.exit(1); }
   console.log('PRUEBA OK');
