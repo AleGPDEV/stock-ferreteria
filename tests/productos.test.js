@@ -51,3 +51,22 @@ test('quitar otro código: saca solo ese (sin importar mayúsculas) y no toca la
   assert.deepEqual(quitarCodigoExtra(lista, 'NO-ESTA'), lista);
   assert.deepEqual(lista, ['7790001112223', 'LH-5563']);
 });
+
+/* global enEstante, SIN_ESTANTE, claveUbic */
+test('filtro por estante: todos, sin estante y un estante (sin importar mayúsculas, tildes ni espacios)', () => {
+  const ps = [
+    { id: '1', nombre: 'Codo', ubicacion: 'A-01' },
+    { id: '2', nombre: 'Llave', ubicacion: '  a-01 ' },
+    { id: '3', nombre: 'Taladro', ubicacion: 'Depósito atrás' },
+    { id: '4', nombre: 'Clavo', ubicacion: '' },
+    { id: '5', nombre: 'Tarugo' },
+  ];
+  const ids = (filtro) => ps.filter((p) => enEstante(p, filtro)).map((p) => p.id).join(',');
+  assert.equal(ids(''), '1,2,3,4,5');
+  assert.equal(ids(SIN_ESTANTE), '4,5');
+  assert.equal(ids(claveUbic('A-01')), '1,2');
+  assert.equal(ids(claveUbic('deposito ATRAS')), '3');
+  assert.equal(ids(claveUbic('B-02')), '');
+  // Un estante llamado como el valor de «Sin estante» no se confunde
+  assert.equal(enEstante({ ubicacion: SIN_ESTANTE }, SIN_ESTANTE), false);
+});

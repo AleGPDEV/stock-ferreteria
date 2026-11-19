@@ -91,6 +91,7 @@ function renderAlertaStock() {
 function verParaReponer() {
   $('#prod-buscar').value = '';
   $('#prod-cat').value = '';
+  $('#prod-estante').value = '';
   $('#prod-estado').value = 'reponer';
   if (location.hash !== '#productos') location.hash = '#productos';
   else render();

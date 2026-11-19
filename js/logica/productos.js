@@ -211,3 +211,12 @@ function actualizarPrecios(d, filtro, pct, op = {}) {
   anotarHistorial(d, { masivo: true, producto: `${lista.length} productos (${op.grupo || (filtro ? filtro.slice(2) : 'todos')})`, pct: Number(pct), motivo: `Actualizar precios ${Number(pct) > 0 ? '+' : ''}${n(Number(pct))} %` });
   return { cantidad: lista.length, cambiados };
 }
+
+/* Filtro de Productos por estante. El valor es '' (todos), SIN_ESTANTE o la clave del estante (claveUbic,
+ * siempre en mayúsculas: por eso SIN_ESTANTE, en minúsculas, no se confunde con ningún estante). */
+const SIN_ESTANTE = 'sin-estante';
+function enEstante(p, filtro) {
+  if (!filtro) return true;
+  const k = claveUbic(p.ubicacion);
+  return filtro === SIN_ESTANTE ? !k : k === filtro;
+}

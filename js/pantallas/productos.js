@@ -9,13 +9,24 @@ function renderProductos() {
   const actual = selCat.value;
   selCat.innerHTML = '<option value="">Todas las categorías</option>' + cats.map((c) => `<option${c === actual ? ' selected' : ''}>${esc(c)}</option>`).join('');
   $('#lista-cat').innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join('');
+  // Estantes: los mismos que en Depósito, con su categoría y cuántos productos tiene cada uno
+  const selEst = $('#prod-estante');
+  const estElegido = selEst.value;
+  const sinEstante = db.productos.filter((p) => enEstante(p, SIN_ESTANTE)).length;
+  selEst.innerHTML = '<option value="">Todos los estantes</option>'
+    + `<option value="${SIN_ESTANTE}">Sin estante (${sinEstante})</option>`
+    + ubicacionesDe(db).map((u) => `<option value="${esc(u.clave)}">${esc(u.ubicacion)}${u.categoria ? ` · ${esc(u.categoria)}` : ''} (${u.productos.length})</option>`).join('');
+  selEst.value = estElegido;
+  if (selEst.value !== estElegido) selEst.value = ''; // el estante ya no existe: se muestran todos
 
   const q = normal($('#prod-buscar').value.trim());
   const cat = selCat.value;
   const est = $('#prod-estado').value;
+  const estante = selEst.value;
   const lista = db.productos
     .filter((p) => !q || normal(`${textoCodigos(p)} ${p.nombre} ${p.ubicacion} ${nombreProv(p.proveedorId)}`).includes(q))
     .filter((p) => !cat || p.categoria === cat)
+    .filter((p) => enEstante(p, estante))
     .filter((p) => !est || (est === 'reponer' ? estado(p) !== 'ok' : est === 'sincosto' ? !(p.costo > 0) : est === 'sinprecio' ? !(p.precio > 0) : est === 'sinfoto' ? !tieneFoto(p) : est === 'bajocosto' ? precioBajoCosto(p) : est === 'revisar' ? !!p.revisar : estado(p) === est))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
 
@@ -132,7 +143,7 @@ function actualizarMargen() {
 
 function iniciarProductos() {
   $('#btn-nuevo-prod').addEventListener('click', () => abrirProducto());
-  ['#prod-buscar', '#prod-cat', '#prod-estado'].forEach((s) => $(s).addEventListener('input', renderProductos));
+  ['#prod-buscar', '#prod-cat', '#prod-estante', '#prod-estado'].forEach((s) => $(s).addEventListener('input', renderProductos));
   ['#p-costo', '#p-precio'].forEach((s) => $(s).addEventListener('input', actualizarMargen));
   $('#p-moneda').addEventListener('change', etiquetasMoneda);
 
