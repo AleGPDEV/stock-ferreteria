@@ -46,7 +46,9 @@ test('celular: los estantes con su categoría', () => {
   const d = base();
   app.guardarEstante(d, { codigo: 'A-1', categoria: 'Bulonería' });
   const r = app.estantesCelular(d);
-  assert.deepEqual(r.estantes.find((e) => e.codigo === 'A-1'), { codigo: 'A-1', categoria: 'Bulonería' });
+  const a1 = r.estantes.find((e) => e.codigo === 'A-1');
+  assert.deepEqual({ codigo: a1.codigo, categoria: a1.categoria }, { codigo: 'A-1', categoria: 'Bulonería' });
+  assert.match(a1.corto, /^U\d+$/); // el número de la etiqueta del estante
   assert.ok(r.estantes.some((e) => e.codigo === 'C-02'));
 });
 
@@ -330,5 +332,49 @@ test('servidor: recibe la foto, la guarda y la asigna; si el producto no está, 
     assert.equal((await mandar(s.puerto, '/api/fotos', 't', { equipo: 'C1', codigo: 'MAR-16', imagen: 'no es base64 !!' })).status, 400);
     assert.equal(guardadas.size, 3);
     assert.equal((await mandar(s.puerto, '/api/fotos', 'otro', { imagen: JPEG.toString('base64') })).status, 401);
+  } finally { await s.detener(); }
+});
+
+/* ---------- Cambiar de estante desde el celular ---------- */
+
+test('celular: cambiar de estante con la etiqueta del estante (número corto, «UBIC» o nombre)', () => {
+  const d = base();
+  app.guardarEstante(d, { codigo: 'A-1', categoria: 'Bulonería' });
+  app.guardarEstante(d, { codigo: 'D-4', categoria: 'Sanitaria' });
+  const corto = app.estantesCelular(d).estantes.find((e) => e.codigo === 'D-4').corto;
+  assert.match(corto, /^U\d+$/);
+  // Por el número corto de la etiqueta
+  let r = app.moverDesdeCelularEn(d, { equipo: 'C1', codigo: '7790001112223', estante: corto });
+  assert.equal(r.error, undefined);
+  assert.deepEqual([r.antes, r.ahora], ['C-02', 'D-4']);
+  assert.equal(d.productos[0].ubicacion, 'D-4');
+  assert.equal(r.producto.ubicacion, 'D-4');
+  // Por «UBIC nombre» (etiquetas viejas) y por el nombre
+  assert.equal(app.moverDesdeCelularEn(d, { equipo: 'C1', codigo: 'MAR-16', estante: 'UBIC A-1' }).ahora, 'A-1');
+  assert.equal(app.moverDesdeCelularEn(d, { equipo: 'C1', codigo: 'MAR-16', estante: 'd-4' }).ahora, 'D-4');
+  // Al mismo estante: no cambia nada
+  assert.equal(app.moverDesdeCelularEn(d, { equipo: 'C1', codigo: 'MAR-16', estante: 'D-4' }).sinCambio, true);
+  // Errores: un producto en lugar del estante, un estante que no existe, un producto que no está
+  assert.match(app.moverDesdeCelularEn(d, { equipo: 'C1', codigo: 'MAR-16', estante: 'CAB-25' }).error, /Eso es un producto/);
+  assert.match(app.moverDesdeCelularEn(d, { equipo: 'C1', codigo: 'MAR-16', estante: 'Z-99' }).error, /no está en el programa/);
+  assert.match(app.moverDesdeCelularEn(d, { equipo: 'C1', codigo: 'NADA', estante: 'D-4' }).error, /ya no está/);
+  assert.equal(d.productos[0].ubicacion, 'D-4');
+});
+
+test('servidor: POST /api/mover cambia el estante en la PC', async () => {
+  const d = base();
+  app.guardarEstante(d, { codigo: 'D-4', categoria: 'Sanitaria' });
+  const P = { moverDesdeCelular: (x) => app.moverDesdeCelularEn(d, x) };
+  const preguntar = async (js) => Function(...Object.keys(P), `return ${js}`)(...Object.values(P));
+  const s = crearServidorCelular({ clave: () => ({ token: 't', pcId: 'p' }), preguntar, puerto: 0, host: '127.0.0.1' });
+  await s.iniciar();
+  try {
+    const ok = await mandar(s.puerto, '/api/mover', 't', { equipo: 'C1', codigo: 'MAR-16', estante: 'UBIC D-4' });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.data.ahora, 'D-4');
+    assert.equal(d.productos[0].ubicacion, 'D-4');
+    const mal = await mandar(s.puerto, '/api/mover', 't', { equipo: 'C1', codigo: 'MAR-16', estante: 'MAR-16' });
+    assert.equal(mal.status, 422);
+    assert.equal(mal.data.noEsEstante, true);
   } finally { await s.detener(); }
 });

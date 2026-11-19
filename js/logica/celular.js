@@ -30,7 +30,7 @@ function productosCelular(d, texto, max = 20) {
     .sort((a, b) => (normal(b.p.nombre).startsWith(q) - normal(a.p.nombre).startsWith(q)) || ordenNatural(a.p.nombre, b.p.nombre));
   return { productos: lista.slice(0, max).map((x) => datosParaCelular(d, x.p)), mas: Math.max(0, lista.length - max) };
 }
-const estantesCelular = (d) => ({ estantes: ubicacionesDe(d).map((u) => ({ codigo: u.ubicacion, categoria: u.categoria || '' })) });
+const estantesCelular = (d) => ({ estantes: ubicacionesDe(d).map((u) => ({ codigo: u.ubicacion, categoria: u.categoria || '', corto: u.corto || '' })) });
 const SIN_DATOS_CELULAR = { error: 'Los datos del programa están dañados: hay que restaurar una copia en la PC.', noListo: true };
 
 /* ---------- Lo que guarda el celular en la PC (fase 2) ----------
@@ -141,6 +141,27 @@ function conteoDesdeCelularEn(d, x) {
   if (cant != null) { const e = aplicarConteoCelular(d, p, cant, x.hace, id, usuario); if (e) return { error: e }; }
   return { producto: datosParaCelular(d, p), productoId: p.id };
 }
+/**
+ * Cambiar de estante desde el celular: el producto (por su código) pasa al estante escaneado. «estante» es lo que
+ * se leyó de la etiqueta del estante (el número corto U12, o «UBIC nombre» en las etiquetas viejas) o su nombre:
+ * se reconoce igual que en la pantalla Depósito. El estante tiene que existir en el programa.
+ */
+function moverDesdeCelularEn(d, x) {
+  x = x || {};
+  if (!equipoCelular(x.equipo)) return { error: 'Falta el nombre del celular (Ajustes).' };
+  const p = (x.productoId && d.productos.find((q) => q.id === x.productoId)) || buscarPorCodigo(d, x.codigo);
+  if (!p) return { error: 'Ese producto ya no está en el programa.' };
+  const r = dondeEsta(d, String(x.estante || '').slice(0, 80));
+  if (r.tipo !== 'ubicacion') {
+    return { error: r.tipo === 'producto' ? 'Eso es un producto: escaneá la etiqueta del estante.' : 'Ese estante no está en el programa. Si falta, crealo en la PC.', noEsEstante: true };
+  }
+  const antes = p.ubicacion || '';
+  const ahora = r.ubicacion.ubicacion;
+  if (claveUbic(antes) === claveUbic(ahora)) return { producto: datosParaCelular(d, p), productoId: p.id, antes, ahora, sinCambio: true };
+  const e = ubicarProducto(d, p.id, ahora);
+  if (e) return { error: e };
+  return { producto: datosParaCelular(d, p), productoId: p.id, antes, ahora };
+}
 /** Foto sacada con el celular: el archivo ya está en la carpeta Fotos (lo guardó el servidor); acá se le asigna al producto. */
 function fotoDesdeCelularEn(d, x) {
   x = x || {};
@@ -175,6 +196,7 @@ function guardarDesdeCelular(r, productoId) {
 }
 const productoDesdeCelular = (x) => (datosDanados ? SIN_DATOS_CELULAR : (() => { const r = altaDesdeCelularEn(db, x); return guardarDesdeCelular(r, r && r.productoId); })());
 const conteoDesdeCelular = (x) => (datosDanados ? SIN_DATOS_CELULAR : (() => { const r = conteoDesdeCelularEn(db, x); return guardarDesdeCelular(r, r && r.productoId); })());
+const moverDesdeCelular = (x) => (datosDanados ? SIN_DATOS_CELULAR : (() => { const r = moverDesdeCelularEn(db, x); return r && r.sinCambio ? r : guardarDesdeCelular(r, r && r.productoId); })());
 const fotoDesdeCelular = (x) => (datosDanados ? SIN_DATOS_CELULAR : (() => { const r = fotoDesdeCelularEn(db, x); return guardarDesdeCelular(r, r && r.productoId); })());
 const codigoLibreParaCelular = (equipo) => (datosDanados ? SIN_DATOS_CELULAR : codigoLibreCelular(db, equipo));
 function estadoParaCelular() { return datosDanados ? { ...SIN_DATOS_CELULAR, listo: false } : { listo: true, productos: db.productos.length }; }

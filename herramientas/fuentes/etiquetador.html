@@ -112,6 +112,15 @@ label.btn input { display: none; }
 .foto-prev img { width: 100%; height: 100%; object-fit: cover; }
 .foto-campo .ayuda { margin: 6px 0 0; }
 .visualmente-oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.mover { display: flex; flex-direction: column; gap: 12px; }
+.mover[hidden] { display: none; }
+.pasos-mover { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pasos-mover li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--r); border: 1px solid #ddd; opacity: .6; }
+.pasos-mover li.activo { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
+.pasos-mover li.listo { opacity: 1; border-color: var(--verde); background: var(--verde-soft); }
+.pasos-mover .n { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 1px solid currentColor; font-weight: 700; }
+.pasos-mover .t { display: flex; flex-direction: column; gap: 2px; }
+.mover-hecho { font-size: 16px; }
 /* Ayuda «?»: la explicación se abre al tocar el botoncito (mismo marcado que en el programa de la PC) */
 .ayuda-ico { display: inline-grid; place-items: center; width: 24px; height: 24px; min-height: 0; padding: 0; margin-left: 6px; border-radius: 50%; border: 1px solid #b9b9b9; background: #fff; color: #555; font: 700 13px/1 inherit; vertical-align: middle; cursor: pointer; flex: none; }
 .ayuda-ico[aria-expanded="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -147,11 +156,27 @@ label.btn input { display: none; }
       <button class="btn verde grande" type="button" id="btn-camara">Escanear código con la cámara</button>
       <div class="fila-tit"><label class="seguir"><input type="checkbox" id="seguir"> Seguir escaneando para contar</label><button type="button" class="ayuda-ico" data-ayuda="Con un código de barras: escanealo con la cámara o con un lector Bluetooth en el cuadro de búsqueda. Si ya está en la lista, cada lectura suma 1. Lo que viene suelto: «Producto sin código», que le da un código propio y le imprime la etiqueta. Todo se guarda en la PC en el momento.">?</button></div>
       <button class="btn primary grande" type="button" id="sin-codigo">+ Producto sin código</button>
+      <button class="btn grande" type="button" id="btn-mover">⇄ Cambiar de estante</button>
       <p class="aviso warn" id="aviso-pc" hidden></p>
       <input id="escanear" type="text" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="Código o nombre de un producto" aria-label="Código o nombre de un producto">
       <ul class="v-lista" id="b-lista"></ul>
     </div>
     <p class="aviso" id="estado" role="status"></p>
+
+    <div class="mover" id="mover" hidden>
+      <div class="fila-tit"><h2>Cambiar de estante</h2><button type="button" class="ayuda-ico" data-ayuda="Escaneá el producto y después la etiqueta del estante nuevo (o elegilo de la lista). Se guarda en la PC y queda listo para el siguiente. Con «Seguir escaneando» activado, la cámara se vuelve a abrir sola.">?</button></div>
+      <ol class="pasos-mover">
+        <li id="mv-p1"><span class="n">1</span><span class="t"><strong>Producto</strong><span id="mv-prod">Escaneá el producto.</span></span></li>
+        <li id="mv-p2"><span class="n">2</span><span class="t"><strong>Estante nuevo</strong><span id="mv-est">Después, la etiqueta del estante.</span></span></li>
+      </ol>
+      <button class="btn verde grande" type="button" id="mv-camara">Escanear con la cámara</button>
+      <label class="f" for="mv-lista" id="mv-lista-wrap" hidden>O elegí el estante<select id="mv-lista"></select></label>
+      <p class="aviso mover-hecho" id="mv-msj" role="status"></p>
+      <div class="botonera">
+        <button class="btn" type="button" id="mv-otro" hidden>Otro producto</button>
+        <button class="btn" type="button" id="mv-salir">Terminar</button>
+      </div>
+    </div>
 
     <form id="form" hidden novalidate>
       <h2 id="form-titulo">Producto nuevo</h2>
@@ -314,7 +339,7 @@ function reemplazarEstantes(lista) {
   const mapa = new Map();
   for (const e of lista || []) {
     const k = claveEst(e && e.codigo);
-    if (k && !mapa.has(k)) mapa.set(k, { codigo: String(e.codigo).trim(), categoria: String(e.categoria || '').trim() });
+    if (k && !mapa.has(k)) mapa.set(k, { codigo: String(e.codigo).trim(), categoria: String(e.categoria || '').trim(), corto: String(e.corto || '').trim() });
   }
   datos.estantes = [...mapa.values()].sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true }));
 }
@@ -529,7 +554,7 @@ function pintarPC() {
   $('#btn-pc').hidden = pc.estado === 'ok' || pc.estado === 'conectando';
   // Sin la PC no se registra nada: se apagan los botones que cargan (las etiquetas de la lista se pueden reimprimir)
   const bloq = !pcOk();
-  ['#btn-camara', '#sin-codigo', '#btn-guardar-imprimir', '#btn-solo-guardar'].forEach((sel) => { const el = $(sel); if (el) el.disabled = bloq; });
+  ['#btn-camara', '#sin-codigo', '#btn-mover', '#mv-camara', '#btn-guardar-imprimir', '#btn-solo-guardar'].forEach((sel) => { const el = $(sel); if (el) el.disabled = bloq; });
   $('#aviso-pc').hidden = !bloq || pc.estado === 'conectando';
   $('#aviso-pc').textContent = bloq ? textoSinPC() : '';
 }
@@ -685,6 +710,7 @@ function buscarProductos(texto) {
   return deLista.concat(delPrograma).slice(0, 8);
 }
 function pintarBusqueda() {
+  if (moviendo()) { $('#b-lista').innerHTML = ''; return; }
   buscarEnPC($('#escanear').value);
   const lista = buscarProductos($('#escanear').value);
   $('#b-lista').innerHTML = $('#escanear').value.trim().length < 2 ? '' : lista.length
@@ -770,6 +796,7 @@ async function escanearCamara() {
 }
 
 function abrirForm(x, id = null) {
+  if (moviendo()) cerrarMover();
   editando = id;
   limpiarFotoForm();
   $('#form').dataset.foto = x.foto ? '1' : '';
@@ -858,6 +885,99 @@ async function enviarAhora(x) {
   if (r.status !== 200 || !r.data) return { error: errorDePC(r), data: r.data };
   return { data: r.data };
 }
+// ---------- Cambiar de estante ----------
+/* Paso 1: el producto (se pregunta a la PC). Paso 2: la etiqueta del estante nuevo (o elegirlo de la lista).
+ * La PC reconoce el estante igual que la pantalla Depósito (número corto U12, «UBIC nombre» o el nombre) y lo guarda. */
+let mover = null; // { paso: 1 | 2, producto }
+const moviendo = () => !!mover;
+function pintarMover() {
+  if (!mover) return;
+  const p = mover.producto;
+  $('#mv-p1').className = mover.paso === 1 ? 'activo' : 'listo';
+  $('#mv-p2').className = mover.paso === 2 ? 'activo' : '';
+  $('#mv-prod').innerHTML = p ? `<strong>${esc(p.nombre)}</strong> · ahora en ${p.ubicacion ? `<strong>${esc(p.ubicacion)}</strong>` : 'ningún estante'}` : 'Escaneá el producto.';
+  $('#mv-est').textContent = mover.paso === 2 ? 'Escaneá la etiqueta del estante nuevo.' : 'Después, la etiqueta del estante.';
+  $('#mv-otro').hidden = mover.paso !== 2;
+  $('#mv-lista-wrap').hidden = mover.paso !== 2;
+  if (mover.paso === 2) {
+    $('#mv-lista').innerHTML = '<option value="">Elegí…</option>' + estantes().map((e) => `<option value="${esc(e.codigo)}">${esc(e.codigo)}${e.categoria ? ' · ' + esc(e.categoria) : ''}</option>`).join('');
+  }
+  $('#escanear').placeholder = mover.paso === 1 ? 'Código del producto' : 'Etiqueta del estante';
+}
+function abrirMover() {
+  if (!pcOk()) { estado(esc(textoSinPC()), 'warn'); return; }
+  if (!aj().equipo) { toast('Primero poné el nombre de este celular en Ajustes (por ejemplo C1).'); abrirAjustes(); return; }
+  cerrarForm();
+  mover = { paso: 1, producto: null };
+  $('#mover').hidden = false;
+  $('#mv-msj').textContent = ''; $('#mv-msj').className = 'aviso mover-hecho';
+  $('#escanear').value = ''; $('#b-lista').innerHTML = '';
+  estado('');
+  pintarMover();
+  if (pcOk()) traerEstantesPC();
+  $('#mover').scrollIntoView({ block: 'nearest' });
+}
+function cerrarMover() {
+  mover = null;
+  $('#mover').hidden = true;
+  $('#escanear').placeholder = 'Código o nombre de un producto';
+}
+function mensajeMover(html, tipo) { $('#mv-msj').innerHTML = html; $('#mv-msj').className = `aviso mover-hecho ${tipo}`; }
+/** Lo escaneado (o elegido) en el modo «Cambiar de estante». Devuelve true si avanzó (para volver a abrir la cámara). */
+async function pasoMover(texto) {
+  const t = String(texto || '').trim();
+  if (!mover || !t) return false;
+  if (!pcOk()) { mensajeMover(esc(textoSinPC()), 'warn'); avisar([200]); return false; }
+  if (mover.paso === 1) {
+    const p = await productoDePC(t);
+    if (p === undefined) { mensajeMover(esc(textoSinPC()), 'warn'); avisar([200]); return false; }
+    if (!p) {
+      const esEstante = estantes().some((e) => claveEst(e.codigo) === claveEst(t) || (e.corto && e.corto.toUpperCase() === t.toUpperCase())) || /^UBIC /i.test(t);
+      mensajeMover(esEstante ? 'Eso es un estante: primero escaneá el producto.' : `<strong>${esc(t)}</strong> no está en el programa.`, 'warn');
+      avisar([200]);
+      return false;
+    }
+    mover = { paso: 2, producto: p };
+    $('#mv-msj').textContent = '';
+    avisar(40);
+    pintarMover();
+    return true;
+  }
+  // Paso 2: el estante nuevo, en la PC
+  const p = mover.producto;
+  let r;
+  try { r = await pedirPC('/api/mover', undefined, 8000, { equipo: aj().equipo, codigo: p.codigo, estante: t }); }
+  catch (e) { sinPC(); mensajeMover('No se pudo llegar a la PC: no se cambió nada.', 'warn'); avisar([200]); return false; }
+  if (r.status !== 200 || !r.data) { mensajeMover(esc(errorDePC(r)), 'warn'); avisar([200]); return false; }
+  const d = r.data;
+  // Si el producto está en la lista del celular, también se actualiza ahí
+  datos.items.filter((x) => x.codigo === d.producto.codigo).forEach((x) => { x.ubicacion = d.ahora; });
+  guardar(); pintar();
+  mensajeMover(d.sinCambio ? `<strong>${esc(p.nombre)}</strong> ya estaba en <strong>${esc(d.ahora)}</strong>.`
+    : `✓ <strong>${esc(p.nombre)}</strong>: ${d.antes ? esc(d.antes) : 'sin estante'} → <strong>${esc(d.ahora)}</strong>`, 'ok');
+  avisar([60, 60, 60]);
+  mover = { paso: 1, producto: null };
+  pintarMover();
+  return true;
+}
+async function camaraMover() {
+  if (!Camara()) { toast('El escáner con la cámara funciona en la app instalada en el celular.'); return; }
+  try {
+    const m = await Camara().isGoogleBarcodeScannerModuleAvailable();
+    if (!m.available) { await Camara().installGoogleBarcodeScannerModule(); toast('Se está bajando el lector de códigos de Google (una sola vez). Probá de nuevo en un minuto.'); return; }
+    const res = await Camara().scan();
+    const b = res && res.barcodes && res.barcodes[0];
+    const codigo = b && (b.rawValue || b.displayValue);
+    if (!codigo) return;
+    const avanzo = await pasoMover(codigo);
+    // Después del producto, la cámara se abre sola para el estante; después del estante, solo con «Seguir escaneando»
+    if (avanzo && mover && (mover.paso === 2 || $('#seguir').checked)) setTimeout(camaraMover, 700);
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    if (!/cancel/i.test(msg)) toast('No se pudo usar la cámara: ' + msg);
+  }
+}
+
 // ---------- Fotos ----------
 /* La foto se achica en el celular (900 px, JPEG) y se manda a la PC, que la guarda en su carpeta Fotos y se la
  * asigna al producto: queda igual que una foto cargada a mano en el programa (con sus copias de seguridad). */
@@ -1073,6 +1193,11 @@ async function imprimirRegla() {
 
 // ---------- Eventos ----------
 $('#sin-codigo').addEventListener('click', nuevoSinCodigo);
+$('#btn-mover').addEventListener('click', abrirMover);
+$('#mv-camara').addEventListener('click', camaraMover);
+$('#mv-salir').addEventListener('click', () => { cerrarMover(); estado(''); });
+$('#mv-otro').addEventListener('click', () => { if (mover) { mover = { paso: 1, producto: null }; $('#mv-msj').textContent = ''; pintarMover(); } });
+$('#mv-lista').addEventListener('change', (e) => { const v = e.target.value; if (v) pasoMover(v); });
 $('#btn-camara').addEventListener('click', escanearCamara);
 $('#seguir').checked = !!datos.seguir;
 $('#seguir').addEventListener('change', () => { datos.seguir = $('#seguir').checked; guardar(); });
@@ -1081,6 +1206,7 @@ $('#escanear').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   e.preventDefault();
   const v = $('#escanear').value.trim();
+  if (moviendo()) { $('#escanear').value = ''; pasoMover(v); return; }
   const una = buscarProductos(v);
   // Con un lector Bluetooth o escribiendo el código: si es un código, se busca directo
   if (/^[0-9A-Za-z.\-]{4,}$/.test(v) && /\d/.test(v)) { $('#escanear').value = ''; $('#b-lista').innerHTML = ''; codigoEscrito(v); }
