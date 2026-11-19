@@ -34,7 +34,7 @@ function pintarCelular() {
   } else if (!admin) {
     $('#cel-qr').innerHTML = ''; $('#cel-qr').dataset.texto = ''; // el QR lleva la clave: que no quede a la vista
   }
-  $('#cel-card-estado').textContent = !i ? 'El celular carga productos y cuenta el stock directo en esta PC, por el WiFi del local.'
+  $('#cel-card-estado').textContent = !i ? ''
     : i.activo ? `Conexión prendida${i.ultimoPedido ? ` · último pedido de un celular: ${fechaHora(i.ultimoPedido.fecha)}` : '.'}`
       : 'Conexión apagada.';
 }
