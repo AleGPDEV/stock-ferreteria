@@ -50,7 +50,8 @@ function renderRespaldoExtra(info) {
 function iniciarRespaldo() {
   if (escritorio()) {
     const info = window.almacen.info();
-    $('#respaldo-texto').textContent = `Los cambios se guardan solos en esta PC. Cada día se hace un respaldo comprimido en ${info.respaldos} (al abrir, al cerrar la caja y al cerrar el programa) y se guardan los últimos 60 días. Las fotos de los productos se copian a la carpeta Fotos que está ahí mismo.`;
+    const detalle = `Cada día se hace un respaldo comprimido en ${info.respaldos} (al abrir, al cerrar la caja y al cerrar el programa) y se guardan los últimos 60 días. Las fotos de los productos se copian a la carpeta Fotos que está ahí mismo.`;
+    $('#respaldo-texto').innerHTML = `Los cambios se guardan solos en esta PC. <button type="button" class="ayuda-ico" data-ayuda="${esc(detalle)}">?</button>`;
     $('#btn-abrir-respaldos').hidden = false;
     $('#btn-abrir-respaldos').addEventListener('click', () => window.almacen.abrirRespaldos());
     if (window.almacen.elegirCarpetaExtra) {

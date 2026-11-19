@@ -21,7 +21,7 @@ const categoriaDeUbic = (ubic) => (ubicacionesDe(db).find((u) => u.clave === cla
 
 function htmlDonde(r) {
   const fila = (p) => `<li><button type="button" class="dep-item" data-dep-prod="${p.id}">${miniatura(p)}<span class="dep-item-txt"><strong>${esc(p.nombre)}</strong><span class="meta"><span class="mono">${esc(p.codigo)}</span> · stock ${n(p.stock)} ${esc(p.unidad)}</span></span><span class="dep-item-ubi">${p.ubicacion ? esc(p.ubicacion) : '<span class="meta">sin ubicación</span>'}</span></button></li>`;
-  const cantidad = (id, idBoton) => `<label class="f dep-cant" for="${id}">¿Cuántos llegaron? <small>Opcional: dejalo vacío si solo lo estás ubicando.</small>
+  const cantidad = (id, idBoton) => `<label class="f dep-cant" for="${id}"><span>¿Cuántos llegaron? (opcional) <button type="button" class="ayuda-ico" data-ayuda="Dejalo vacío si solo lo estás ubicando.">?</button></span>
       <span class="dep-fila"><input id="${id}" type="number" min="0" step="any" inputmode="decimal" autocomplete="off">${idBoton ? `<button class="btn verde" type="button" data-dep-recibir="${idBoton}">Sumar al stock</button>` : ''}</span></label>`;
   if (r.tipo === 'vacio') return '<p class="vacio">Escaneá un producto o la etiqueta de un estante, o escribí un nombre.</p>';
   if (r.tipo === 'nada') return `<p class="vacio">No encontré nada con eso. Probá con otra palabra${r.texto ? `, o <button type="button" class="link-btn" data-dep-sincodigo="${esc(r.texto)}">cargalo como producto sin código</button>` : ''}.</p>`;
@@ -29,10 +29,10 @@ function htmlDonde(r) {
     const sin = r.tipo === 'sincodigo';
     return `<form class="dep-nuevo" id="dep-nuevo" data-codigo="${sin ? '' : esc(r.codigo)}" ${sin ? 'data-sincodigo="1"' : ''} novalidate>
       ${sin
-        ? `<p class="dep-nuevo-cab"><span class="chip warn">Producto sin código</span> Para lo que viene suelto, sin código de barras. El programa le da un código propio (<span class="mono">${esc(codigoLibreDe(db))}</span>) y después imprimís su etiqueta para pegarla en el producto o en el estante.</p>`
-        : `<p class="dep-nuevo-cab"><span class="chip warn">Producto nuevo</span> El código <span class="mono">${esc(r.codigo)}</span> no está cargado. Poné el nombre y elegí el estante: la próxima vez que llegue, ya vas a saber dónde va.</p>`}
+        ? `<p class="dep-nuevo-cab"><span class="chip warn">Producto sin código</span> Va a tener el código <span class="mono">${esc(codigoLibreDe(db))}</span>. <button type="button" class="ayuda-ico" data-ayuda="Para lo que viene suelto, sin código de barras. El programa le da un código propio y después imprimís su etiqueta para pegarla en el producto o en el estante.">?</button></p>`
+        : `<p class="dep-nuevo-cab"><span class="chip warn">Producto nuevo</span> El código <span class="mono">${esc(r.codigo)}</span> no está cargado. <button type="button" class="ayuda-ico" data-ayuda="Poné el nombre y elegí el estante: la próxima vez que llegue, ya vas a saber dónde va.">?</button></p>`}
       <label class="f" for="dep-n-nombre">Nombre del producto<input id="dep-n-nombre" type="text" autocomplete="off" placeholder="Ej.: Codo PVC 110 mm" value="${sin ? esc(r.nombre || '') : ''}"></label>
-      <label class="f" for="dep-n-estante">¿En qué estante va?<select id="dep-n-estante">${opcionesEstante(depUltimoEstante)}</select><small>La categoría del producto es la del estante. El precio se completa después en Productos.</small></label>
+      <label class="f" for="dep-n-estante"><span>¿En qué estante va? <button type="button" class="ayuda-ico" data-ayuda="La categoría del producto es la del estante. El precio se completa después en Productos.">?</button></span><select id="dep-n-estante">${opcionesEstante(depUltimoEstante)}</select></label>
       ${cantidad('dep-n-cant')}
       <p class="err" id="dep-n-err" role="alert"></p>
       <div class="dep-fila"><button class="btn primary btn-grande" type="submit">${sin ? 'Guardar e imprimir etiqueta' : 'Guardar producto'}</button></div>

@@ -22,11 +22,9 @@ function actualizarFormMov() {
   $('#mov-cant-label').textContent = { entrada: '¿Cuántos llegaron?', salida: '¿Cuántos sacás?', ajuste: '¿Cuántos contaste?' }[t];
   $('#mov-submit').textContent = { entrada: 'Sumar al stock', salida: 'Restar del stock', ajuste: 'Corregir el stock' }[t];
   $('#mov-submit').className = 'btn ' + { entrada: 'verde', salida: 'rojo', ajuste: 'primary' }[t];
-  $('#mov-explica').textContent = {
-    entrada: 'Elegí el producto y anotá cuántos llegaron. Se suman al stock.',
-    salida: 'Para productos que se rompieron, se usaron en el local o se devolvieron al proveedor. Las ventas no van acá: se hacen en Vender.',
-    ajuste: 'Contá cuántos hay en el estante y anotá ese número. El programa corrige el stock a esa cantidad.',
-  }[t];
+  // Solo el aviso que evita un error: las ventas no se restan acá
+  $('#mov-explica').textContent = t === 'salida' ? 'Las ventas no van acá: se hacen en Vender.' : '';
+  $('#mov-explica').hidden = t !== 'salida';
   const p = producto($('#mov-prod').value);
   $('#mov-hint').textContent = p ? `Stock actual: ${n(p.stock)} ${p.unidad}` : '';
 }
