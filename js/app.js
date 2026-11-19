@@ -3154,7 +3154,7 @@ function abrirResumenDia(dia) {
       <details class="g-datos"><summary>Ver las ${n(r.ventas.length)} ventas</summary><div class="table-wrap"><table class="tabla">
       <thead><tr><th>Hora</th><th>N.º</th><th>Vendedor</th><th>Medio</th><th class="num">Productos</th><th class="num">Total</th></tr></thead>
       <tbody>${r.ventas.map((v) => `<tr class="${v.anulada ? 'anulada' : ''}"><td>${hora(v.fecha)}</td><td class="mono">${v.numero}</td><td>${esc(v.usuario || '')}</td><td>${esc(v.medio)}${v.cliente ? `<div class="meta">${esc(v.cliente)}</div>` : ''}</td>
-        <td class="num">${n(v.items.length)}</td><td class="num">${v.anulada ? '<span class="chip danger">Anulada</span> ' : ''}${$u(v.total)}</td></tr>`).join('')}</tbody></table></div></details></section>` : ''}`;
+        <td class="num">${n(v.items.length)}</td><td class="num">${v.anulada ? '<span class="chip danger">Anulada</span> ' : ''}${$m(v.total, v.moneda)}${esUSD(v) ? `<div class="meta">${$u(enPesos(v).total)}</div>` : ''}</td></tr>`).join('')}</tbody></table></div></details></section>` : ''}`;
   const d = $('#dlg-dia');
   if (!d.open) d.showModal();
   $('#dia-cuerpo').scrollTop = 0;
