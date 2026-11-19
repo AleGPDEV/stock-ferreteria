@@ -198,6 +198,8 @@ input:focus, select:focus { border-color: var(--accent); outline: none; box-shad
 
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .toolbar input[type="search"] { flex: 1 1 220px; }
+/* Productos: los filtros de estante y estado no le quitan lugar al buscador (la lista abierta muestra el texto completo) */
+#prod-estante, #prod-estado { max-width: 230px; }
 .toolbar.compacto { margin-block: 8px 12px; }
 
 /* Tarjetas */
