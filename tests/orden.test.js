@@ -25,6 +25,7 @@ test('cada archivo de js/base, js/logica y js/pantallas está en js/orden.json',
 test('cada archivo empieza con su descripción y en modo estricto', () => {
   for (const a of orden) {
     const t = fs.readFileSync(path.join(raiz, a), 'utf8');
-    assert.match(t, /^\/\*[\s\S]*?\*\/\n'use strict';\n/, a);
+    // \r?\n: en Windows, git puede dejar los archivos con saltos de línea CRLF
+    assert.match(t, /^\/\*[\s\S]*?\*\/\r?\n'use strict';\r?\n/, a);
   }
 });
