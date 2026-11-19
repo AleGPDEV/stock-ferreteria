@@ -1285,3 +1285,7 @@ test('dólares: el ticket impreso muestra lo recibido y el vuelto en la moneda d
   const enPesos = app.htmlTicket({ ...venta, moneda: undefined, cotizacion: undefined });
   assert.doesNotMatch(enPesos, /U\$S/);
 });
+
+test('el ticket sin nombre de negocio usa el nombre del programa', () => {
+  assert.match(app.htmlTicket({ numero: 1, fecha: new Date().toISOString(), items: [], subtotal: 0, total: 0, medio: 'Efectivo', recibido: null }), /Grupo Muros/);
+});

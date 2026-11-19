@@ -1579,7 +1579,7 @@ const puedeImprimir = () => typeof window !== 'undefined' && typeof window.print
 
 function encabezadoNegocio() {
   const g = (db && db.negocio) || {};
-  return `<div class="t-c"><strong class="t-neg">${esc(g.nombre || 'Ferretería')}</strong>
+  return `<div class="t-c"><strong class="t-neg">${esc(g.nombre || NOMBRE_NEGOCIO)}</strong>
     ${g.direccion ? `<div>${esc(g.direccion)}</div>` : ''}${g.telefono ? `<div>Tel. ${esc(g.telefono)}</div>` : ''}${g.rut ? `<div>RUT ${esc(g.rut)}</div>` : ''}</div>`;
 }
 
