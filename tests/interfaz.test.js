@@ -42,3 +42,10 @@ test('barra lateral: lee lo guardado por versiones anteriores y no se rompe con 
   assert.deepEqual(leerPrefBarra('{roto'), {});
   assert.deepEqual(leerPrefBarra('[1,2]'), {});
 });
+
+test('barra lateral: en el celular (820 px o menos) nunca va plegada, aunque se haya elegido plegada', () => {
+  assert.equal(barraPlegadaPara({}, 820), false);
+  assert.equal(barraPlegadaPara({}, 760), false);
+  assert.equal(barraPlegadaPara({ angosta: 'plegada', ancha: 'plegada' }, 400), false);
+  assert.equal(barraPlegadaPara({}, 821), true); // notebook angosta: plegada
+});

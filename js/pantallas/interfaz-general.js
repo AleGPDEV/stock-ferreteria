@@ -142,6 +142,7 @@ function copiarTexto(texto, aviso) {
  * al trabajo; en las anchas, abierta. Si el usuario la abre o la pliega a mano, se recuerda en esta PC para ese
  * tamaño de pantalla (angosta o ancha). En el celular (820 px o menos) la barra va arriba y esto no se usa. */
 const BARRA_ANGOSTA = 1200;
+const BARRA_CELULAR = 820; // igual que el @media de base.css donde la barra pasa arriba
 const tamanoBarra = (ancho) => (ancho < BARRA_ANGOSTA ? 'angosta' : 'ancha');
 /** Lo guardado en esta PC: { ancha, angosta } con 'plegada' o 'abierta'. Lo de versiones anteriores (un solo valor) era de pantalla ancha. */
 function leerPrefBarra(texto) {
@@ -150,6 +151,8 @@ function leerPrefBarra(texto) {
 }
 /** ¿La barra va plegada con este ancho de ventana? Manda lo que eligió el usuario para ese tamaño; si no eligió, depende del ancho. */
 function barraPlegadaPara(pref, ancho) {
+  // En el celular la barra va arriba: plegada se perderían el usuario y el texto de «Cerrar sesión»
+  if (ancho <= BARRA_CELULAR) return false;
   const t = tamanoBarra(ancho);
   const elegida = pref && pref[t];
   if (elegida === 'plegada' || elegida === 'abierta') return elegida === 'plegada';
@@ -171,6 +174,8 @@ function iniciarBarra() {
   // Al agrandar o achicar la ventana y pasar de un tamaño al otro, se aplica lo de ese tamaño
   const mq = window.matchMedia(`(max-width: ${BARRA_ANGOSTA - 0.02}px)`);
   if (mq.addEventListener) mq.addEventListener('change', ajustar);
+  const mqCel = window.matchMedia(`(max-width: ${BARRA_CELULAR}px)`);
+  if (mqCel.addEventListener) mqCel.addEventListener('change', ajustar);
   $('#btn-barra').addEventListener('click', () => {
     const plegada = !document.querySelector('.app').classList.contains('barra-plegada');
     aplicarBarra(plegada);
