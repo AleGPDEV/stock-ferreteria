@@ -1,7 +1,7 @@
 // Proceso principal de la versión de escritorio (Windows).
 // Guarda los datos en una base SQLite y hace un respaldo comprimido por día,
 // con copia opcional a una carpeta extra (pendrive o nube).
-const { app, BrowserWindow, ipcMain, shell, Menu, dialog, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, dialog, clipboard, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -607,6 +607,49 @@ function cambiarZoom(paso) {
   if (w === ventana && almacen) { try { almacen.ponerAjuste('zoom', f); } catch (e) { /* nada */ } }
 }
 
+/* ---------- Ventanita «Abriendo…» ----------
+ * Con una base grande, abrir la base y cargar la pantalla tarda: para que no parezca que el programa no abrió,
+ * al instante se ve una ventana chica con el logo. Se cierra cuando la ventana principal está lista. */
+let abriendo = null;
+function crearAbriendo() {
+  return new Promise((listo) => {
+    try {
+      abriendo = new BrowserWindow({
+        width: 380,
+        height: 230,
+        frame: false,
+        resizable: false,
+        movable: true,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+        center: true,
+        show: true,
+        title: 'Abriendo Stock Ferretería…',
+        icon: path.join(__dirname, '..', 'build', 'icon.png'),
+        backgroundColor: nativeTheme.shouldUseDarkColors ? '#17191c' : '#eceff1',
+        webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, devTools: false },
+      });
+      abriendo.on('closed', () => { abriendo = null; });
+      // Por si la pantalla principal nunca llega a estar lista, la ventanita no queda para siempre
+      setTimeout(cerrarAbriendo, 90 * 1000).unref();
+      // Se sigue cuando la ventanita ya se dibujó (abrir la base frena el proceso principal), o a los 800 ms igual
+      const seguir = () => { clearTimeout(t); setTimeout(listo, 30); };
+      const t = setTimeout(listo, 800);
+      abriendo.webContents.once('did-finish-load', seguir);
+      abriendo.webContents.once('did-fail-load', seguir);
+      abriendo.loadFile(path.join(__dirname, 'abriendo.html'));
+    } catch (e) {
+      registro.aviso('inicio', 'No se pudo mostrar la ventana «Abriendo…»', e);
+      listo();
+    }
+  });
+}
+function cerrarAbriendo() {
+  if (abriendo && !abriendo.isDestroyed()) abriendo.destroy();
+  abriendo = null;
+}
+
 function crearVentana() {
   ventana = new BrowserWindow({
     width: 1360,
@@ -627,7 +670,7 @@ function crearVentana() {
       devTools: !app.isPackaged,
     },
   });
-  ventana.once('ready-to-show', () => { ventana.maximize(); ventana.show(); });
+  ventana.once('ready-to-show', () => { ventana.maximize(); ventana.show(); cerrarAbriendo(); });
   ventana.loadFile(path.join(__dirname, '..', 'index.html'));
   ventana.webContents.on('did-finish-load', () => {
     let f = 1;
@@ -674,10 +717,12 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => {
     if (ventana) { if (ventana.isMinimized()) ventana.restore(); ventana.focus(); }
   });
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    await crearAbriendo();
     try {
       abrirBase();
     } catch (e) {
+      cerrarAbriendo();
       anotarError('inicio', 'No se pudo abrir la base de datos', e);
       dialog.showErrorBox('Stock Ferretería', `No se pudo abrir la base de datos.\n\n${e.message}\n\nComunicate con tu proveedor. Los respaldos están en Documentos > Stock Ferreteria > Respaldos.`);
       app.quit();
