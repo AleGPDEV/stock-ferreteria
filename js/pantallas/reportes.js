@@ -207,7 +207,7 @@ function renderReportes() {
   const per = periodoReportes();
   // Ventas en dólares: los reportes las suman en pesos, a la cotización del día de cada venta
   const nota = $('#rep-usd-nota');
-  const u = ['tablero', 'ventas', 'ganancias'].includes(tabReportes) ? analisisVentas(db, per.desde, per.hasta).usd : null;
+  const u = ['tablero', 'ventas', 'ganancias'].includes(tabReportes) ? totalesEntre(db, per.dDesde, per.dHasta).usd : null;
   const enStock = tabReportes === 'stock' && db.productos.some(esUSD);
   nota.hidden = !((u && u.cant) || enStock);
   nota.textContent = u && u.cant

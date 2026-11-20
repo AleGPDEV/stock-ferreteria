@@ -91,6 +91,61 @@ function analisisVentas(d, desde, hasta) {
   return r;
 }
 
+/* ---------- Totales por día (calculados una vez) ----------
+ * El tablero compara muchos tramos (día, semana, mes y año contra su tramo anterior, 8 semanas por día de la semana).
+ * En vez de recorrer todas las ventas para cada uno, se arma una vez el total de cada día y se suman días.
+ * Es el único lugar que recorre la historia para esto: «cargar solo los últimos 12 meses» (Base y guardado)
+ * va a pedir acá la historia vieja. */
+const cacheTotalesDia = { ventas: null, cant: -1, ultima: null, anuladas: -1, mapa: null };
+/** Mapa día (AAAA-MM-DD, hora local) → { cant, total, descuentos, costo, ganancia, vendidoSinCosto, porMedio, usd }.
+ * Mismas cuentas que analisisVentas: sin anuladas, en pesos (lo de dólares a la cotización de su día) y las
+ * devoluciones con su total negativo. Se reutiliza mientras no cambien las ventas. */
+function totalesPorDia(d) {
+  const ventas = d.ventas || [];
+  let anuladas = 0;
+  for (let i = 0; i < ventas.length; i++) if (ventas[i].anulada) anuladas++; // anular no cambia la cantidad ni la última
+  const ultima = ventas.length ? ventas[ventas.length - 1].id : null;
+  const c = cacheTotalesDia;
+  if (c.mapa && c.ventas === ventas && c.cant === ventas.length && c.ultima === ultima && c.anuladas === anuladas) return c.mapa;
+  const mapa = new Map();
+  ventas.forEach((v0) => {
+    if (v0.anulada) return;
+    const v = enPesos(v0);
+    const dia = isoLocal(new Date(v.fecha));
+    let t = mapa.get(dia);
+    if (!t) mapa.set(dia, t = { cant: 0, total: 0, descuentos: 0, costo: 0, ganancia: 0, vendidoSinCosto: 0, porMedio: {}, usd: { cant: 0, total: 0, enPesos: 0 } });
+    t.cant++;
+    t.total += v.total;
+    t.descuentos += v.descuento || 0;
+    const m = t.porMedio[v.medio] || (t.porMedio[v.medio] = { cant: 0, total: 0 });
+    m.cant++; m.total += v.total;
+    if (v.usd != null) { t.usd.cant++; t.usd.total += v.usd; t.usd.enPesos += v.total; }
+    const factor = v.subtotal > 0 ? v.total / v.subtotal : 1; // reparte el descuento entre los productos
+    v.items.forEach((it) => {
+      const neto = it.subtotal * factor;
+      if (it.costo > 0) { t.costo += it.cantidad * it.costo; t.ganancia += neto - it.cantidad * it.costo; } else t.vendidoSinCosto += neto;
+    });
+  });
+  Object.assign(c, { ventas, cant: ventas.length, ultima, anuladas, mapa });
+  return mapa;
+}
+/** Los totales de los días entre desde y hasta (AAAA-MM-DD, los dos incluidos), sumados. */
+function totalesEntre(d, desde, hasta) {
+  const mapa = totalesPorDia(d);
+  const r = { cantidad: 0, total: 0, descuentos: 0, costoVendido: 0, ganancia: 0, vendidoSinCosto: 0, porMedio: {}, usd: { cant: 0, total: 0, enPesos: 0 } };
+  for (let k = desde; k <= hasta; k = sumarDias(k, 1)) {
+    const t = mapa.get(k);
+    if (!t) continue;
+    r.cantidad += t.cant; r.total += t.total; r.descuentos += t.descuentos; r.costoVendido += t.costo; r.ganancia += t.ganancia; r.vendidoSinCosto += t.vendidoSinCosto;
+    Object.entries(t.porMedio).forEach(([medio, x]) => { const m = r.porMedio[medio] || (r.porMedio[medio] = { cant: 0, total: 0 }); m.cant += x.cant; m.total += x.total; });
+    r.usd.cant += t.usd.cant; r.usd.total += t.usd.total; r.usd.enPesos += t.usd.enPesos;
+  }
+  ['total', 'descuentos', 'costoVendido', 'ganancia', 'vendidoSinCosto'].forEach((k) => { r[k] = red2(r[k]); });
+  Object.values(r.porMedio).forEach((m) => { m.total = red2(m.total); });
+  r.usd.total = red2(r.usd.total); r.usd.enPesos = red2(r.usd.enPesos);
+  return r;
+}
+
 /** Barras del gráfico: por hora si es un solo día; por día si el período es de hasta 62 días; si no, por mes. */
 function serieVentas(porDia, desde, hasta, porDiaCant = {}, porHora = null, porHoraCant = {}) {
   const ini = new Date(desde); ini.setHours(0, 0, 0, 0);
@@ -224,11 +279,11 @@ function subasYBajas(ahora, antes) {
 /** Promedio vendido por día de la semana en las «semanas» semanas que terminan en «hasta» (AAAA-MM-DD). */
 function promedioPorDiaSemana(d, hasta, semanas = 8) {
   const desde = sumarDias(hasta, -(semanas * 7 - 1));
-  const a = analisisVentas(d, inicioDia(desde), finDia(hasta));
+  const porDia = totalesPorDia(d);
   const suma = [0, 0, 0, 0, 0, 0, 0], dias = [0, 0, 0, 0, 0, 0, 0];
   for (let k = desde; k <= hasta; k = sumarDias(k, 1)) {
     const w = fechaDe(k).getDay();
-    suma[w] += a.porDia[k] || 0;
+    suma[w] += (porDia.get(k) || {}).total || 0;
     dias[w]++;
   }
   // Lunes primero; el domingo solo si hubo ventas
