@@ -40,6 +40,18 @@ const isoLocal = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() +
 const inicioDia = (s) => new Date(s + 'T00:00:00').getTime();
 const finDia = (s) => new Date(s + 'T23:59:59.999').getTime();
 const normal = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+/** Buscadores: ¿el texto tiene TODAS las palabras de la búsqueda, en cualquier orden? Sin importar tildes ni
+ * mayúsculas: «tornillo 8» encuentra «Tornillo autoperforante 8 x 1"». Una búsqueda vacía coincide con todo. */
+let busquedaAnterior = null, palabrasAnteriores = [];
+function coincide(texto, busqueda) {
+  if (busqueda !== busquedaAnterior) { // la misma búsqueda se compara con miles de productos: se parte una sola vez
+    busquedaAnterior = busqueda;
+    palabrasAnteriores = normal(busqueda).split(/\s+/).filter(Boolean);
+  }
+  if (!palabrasAnteriores.length) return true;
+  const t = normal(texto);
+  return palabrasAnteriores.every((p) => t.includes(p));
+}
 
 let db;
 let sesion = null; // usuario que ingresó

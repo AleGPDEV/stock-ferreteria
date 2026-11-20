@@ -177,7 +177,7 @@ function renderResultados() {
   let lista = db.productos.filter((p) => (!cajaCat || (p.categoria || SIN_CATEGORIA) === cajaCat)
     && (!prov || p.proveedorId === prov)
     && (!conStock || p.stock > 0)
-    && (!q || normal(`${textoCodigos(p)} ${p.nombre} ${p.categoria} ${provs.get(p.proveedorId) || ''} ${p.ubicacion}`).includes(q)));
+    && (!q || coincide(`${textoCodigos(p)} ${p.nombre} ${p.categoria} ${provs.get(p.proveedorId) || ''} ${p.ubicacion}`, q)));
 
   const porNombre = (a, b) => a.nombre.localeCompare(b.nombre);
   if (orden === 'vendidos') {

@@ -127,7 +127,7 @@ function etiquetasFiltradas(todos = itemsEtiquetas()) {
   const q = normal($('#etq-buscar').value.trim());
   const fu = $('#etq-ubic').value;
   const sinFab = etq.tipo === 'producto' && $('#etq-sinfab').checked;
-  return todos.filter((x) => (!q || normal(`${x.nombre} ${x.detalle}`).includes(q)) && (etq.tipo !== 'producto' || !fu || x.ubic === fu) && (!sinFab || x.sinFabrica));
+  return todos.filter((x) => (!q || coincide(`${x.nombre} ${x.detalle}`, q)) && (etq.tipo !== 'producto' || !fu || x.ubic === fu) && (!sinFab || x.sinFabrica));
 }
 
 function renderEtiquetas() {
@@ -337,7 +337,7 @@ function iniciarDeposito() {
   $('#dep-resultado').addEventListener('input', (e) => {
     if (e.target.id !== 'dep-v-buscar') return;
     const q = normal(e.target.value.trim());
-    const lista = q.length < 2 ? [] : db.productos.filter((p) => normal(`${textoCodigos(p)} ${p.nombre}`).includes(q)).slice(0, 12);
+    const lista = q.length < 2 ? [] : db.productos.filter((p) => coincide(`${textoCodigos(p)} ${p.nombre}`, q)).slice(0, 12);
     $('#dep-v-lista').innerHTML = lista.map((p) => `<li><button type="button" class="dep-item" data-dep-vincular="${p.id}"><span class="dep-item-txt"><strong>${esc(p.nombre)}</strong><span class="meta"><span class="mono">${esc(p.codigo)}</span>${p.ubicacion ? ' · ' + esc(p.ubicacion) : ''}</span></span><span class="dep-item-ubi">Es este</span></button></li>`).join('')
       || (q.length >= 2 ? '<li class="vacio">No encontré ninguno.</li>' : '');
   });

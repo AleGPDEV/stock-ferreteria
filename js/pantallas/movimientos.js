@@ -64,7 +64,7 @@ function movimientosFiltrados() {
     if (hasta && t > finDia(hasta)) return false;
     if (tipo === 'venta' && !(m.ventaId && m.tipo === 'salida')) return false;
     if (tipo && tipo !== 'venta' && (m.tipo !== tipo || (m.ventaId && m.tipo === 'salida'))) return false;
-    if (q && !normal(`${m.producto} ${m.codigo} ${m.nota}`).includes(q)) return false;
+    if (q && !coincide(`${m.producto} ${m.codigo} ${m.nota}`, q)) return false;
     return true;
   }).sort((a, b) => b.fecha.localeCompare(a.fecha));
 }
@@ -93,7 +93,7 @@ function filtrarCombo() {
   const q = elegido && texto === textoCombo(elegido) ? '' : normal(texto);
   const provs = new Map(db.proveedores.map((v) => [v.id, v.nombre]));
   const todos = db.productos
-    .filter((p) => !q || normal(`${textoCodigos(p)} ${p.nombre} ${p.categoria} ${provs.get(p.proveedorId) || ''} ${p.ubicacion}`).includes(q))
+    .filter((p) => !q || coincide(`${textoCodigos(p)} ${p.nombre} ${p.categoria} ${provs.get(p.proveedorId) || ''} ${p.ubicacion}`, q))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
   comboOps = todos.slice(0, 60);
   $('#mov-prod-lista').innerHTML = comboOps.length

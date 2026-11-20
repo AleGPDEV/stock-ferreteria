@@ -170,8 +170,7 @@ function dondeEsta(d, texto) {
   if (p) return { tipo: 'producto', producto: p };
   const u = buscarUbic(k);
   if (u) return { tipo: 'ubicacion', ubicacion: u };
-  const q = normal(t);
-  const productos = d.productos.filter((x) => normal(`${textoCodigos(x)} ${x.nombre} ${x.categoria} ${x.ubicacion}`).includes(q))
+  const productos = d.productos.filter((x) => coincide(`${textoCodigos(x)} ${x.nombre} ${x.categoria} ${x.ubicacion}`, t))
     .sort((a, b) => ordenNatural(a.nombre, b.nombre));
   if (productos.length === 1) return { tipo: 'producto', producto: productos[0] };
   if (productos.length) return { tipo: 'lista', productos };
