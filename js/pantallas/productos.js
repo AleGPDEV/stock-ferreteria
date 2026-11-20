@@ -24,7 +24,7 @@ function renderProductos() {
   const est = $('#prod-estado').value;
   const estante = selEst.value;
   const lista = db.productos
-    .filter((p) => !q || normal(`${textoCodigos(p)} ${p.nombre} ${p.ubicacion} ${nombreProv(p.proveedorId)}`).includes(q))
+    .filter((p) => !q || coincide(`${textoCodigos(p)} ${p.nombre} ${p.ubicacion} ${nombreProv(p.proveedorId)}`, q))
     .filter((p) => !cat || p.categoria === cat)
     .filter((p) => enEstante(p, estante))
     .filter((p) => !est || (est === 'reponer' ? estado(p) !== 'ok' : est === 'sincosto' ? !(p.costo > 0) : est === 'sinprecio' ? !(p.precio > 0) : est === 'sinfoto' ? !tieneFoto(p) : est === 'bajocosto' ? precioBajoCosto(p) : est === 'revisar' ? !!p.revisar : estado(p) === est))
@@ -301,7 +301,7 @@ function iniciarProductos() {
   // Unir con otro producto (el mismo artículo cargado dos veces)
   $('#p-unir-buscar').addEventListener('input', () => {
     const q = normal($('#p-unir-buscar').value);
-    const res = q.length < 2 ? [] : db.productos.filter((p) => p.id !== editandoProd && (normal(p.nombre).includes(q) || normal(textoCodigos(p)).includes(q))).slice(0, 8);
+    const res = q.length < 2 ? [] : db.productos.filter((p) => p.id !== editandoProd && coincide(`${textoCodigos(p)} ${p.nombre}`, q)).slice(0, 8);
     $('#p-unir-res').innerHTML = res.map((p) => `<li><button type="button" class="link-btn" data-unir="${p.id}">${esc(p.nombre)}</button> <span class="mono">${esc(p.codigo)}</span> <span class="muted">· stock ${n(p.stock)}${p.proveedorId ? ` · ${esc(nombreProveedorDe(db, p.proveedorId))}` : ''}</span></li>`).join('')
       || (q.length >= 2 ? '<li class="muted">No encontré ningún producto con eso.</li>' : '');
   });
