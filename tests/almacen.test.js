@@ -175,3 +175,45 @@ test('QA 2: si falta la configuración pero hay datos, la base no se toma como v
   assert.equal(leer(al).productos.length, d.productos.length);
   al.cerrar();
 });
+
+test('chequeo del archivo: una base sana da ok', () => {
+  const al = nueva();
+  assert.deepEqual(al.revisarArchivo(), []);
+  guardar(al, null, app.semilla());
+  assert.deepEqual(al.revisarArchivo(), []);
+  al.cerrar();
+});
+
+test('chequeo del archivo: un daño que deja leer los datos igual se detecta', () => {
+  // Una base con varias páginas, cerrada (todo queda en el archivo principal)
+  const ruta = path.join(tmp, 'para-romper.sqlite');
+  let al = new Almacen(ruta);
+  const d = app.semilla();
+  for (let i = 0; i < 30; i++) d.productos.push({ ...d.productos[0], id: 'largo' + i, nombre: 'Producto de nombre largo '.repeat(20) + i });
+  guardar(al, null, d);
+  al.cerrar();
+  const original = fs.readFileSync(ruta);
+  const tamPagina = original.readUInt16BE(16) || 65536;
+  // Se pisa el encabezado de una página por vez (como un corte de luz a mitad de escritura) hasta encontrar
+  // un daño con el que la base abre y se lee, pero el archivo está roto: ese es el que tiene que atrapar el chequeo
+  let detectado = null;
+  for (let p = 1; p < original.length / tamPagina && !detectado; p++) {
+    for (const lugar of [3, 5]) {
+      const roto = Buffer.from(original);
+      roto.writeUInt16BE(0xfff0, p * tamPagina + lugar);
+      const r = path.join(tmp, `rota-${p}-${lugar}.sqlite`);
+      fs.writeFileSync(r, roto);
+      let x;
+      try { x = new Almacen(r); } catch (e) { continue; } // tan roto que no abre: eso ya lo atrapa el arranque
+      try {
+        let seLee = true;
+        try { x.leerJson(); } catch (e) { seLee = false; }
+        let problemas;
+        try { problemas = x.revisarArchivo(); } catch (e) { problemas = [String(e.message)]; } // main.js lo toma igual como problema
+        if (seLee && problemas.length) { detectado = problemas; break; }
+      } finally { try { x.cerrar(); } catch (e) { /* una base rota puede fallar al cerrar */ } }
+    }
+  }
+  assert.ok(detectado, 'el chequeo tiene que encontrar algún daño escondido');
+  assert.ok(detectado.every((t) => typeof t === 'string' && t !== 'ok'));
+});

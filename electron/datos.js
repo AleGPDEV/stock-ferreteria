@@ -66,6 +66,15 @@ class Almacen {
   }
 
   /**
+   * Chequeo rápido del archivo de la base (PRAGMA quick_check): páginas, índices y estructura.
+   * Devuelve [] si está bien, o hasta 20 textos con los problemas. Si el archivo está muy roto, SQLite tira un error.
+   */
+  revisarArchivo() {
+    const r = this.db.pragma('quick_check(20)', { simple: false }).map((x) => String(Object.values(x)[0]));
+    return r.length === 1 && r[0] === 'ok' ? [] : r;
+  }
+
+  /**
    * Busca filas que no se pueden leer (texto que no es un objeto JSON válido).
    * Devuelve [{ tabla, id }]. Si la base misma está rota, SQLite tira un error.
    */

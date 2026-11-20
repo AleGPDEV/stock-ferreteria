@@ -12,6 +12,7 @@ function mostrarDanado() {
     filas: `Hay ${i.cantidad === 1 ? 'un dato' : `${i.cantidad || 'algunos'} datos`} guardado${i.cantidad === 1 ? '' : 's'} que no se ${i.cantidad === 1 ? 'puede' : 'pueden'} leer. Puede pasar por un corte de luz o un problema del disco.`,
     base: 'El archivo de la base de datos no se puede abrir. Puede pasar por un corte de luz o un problema del disco.',
     json: 'Los datos guardados no se pueden leer. Puede pasar por un corte de luz o un problema del disco.',
+    archivo: 'El archivo de la base tiene partes dañadas. Puede pasar por un corte de luz o un problema del disco. Restaurá el respaldo más nuevo.',
   };
   $('#danado-texto').textContent = textos[i.error] || textos.json;
   const det = [];
@@ -30,6 +31,10 @@ function mostrarDanado() {
 }
 
 function iniciarDanado() {
+  // Si el chequeo diario de la PC encuentra el archivo de la base dañado con el programa abierto, se pasa a esta pantalla
+  if (escritorio() && window.almacen.alDanarBase) {
+    window.almacen.alDanarBase((info) => { marcarDanados(info || { error: 'archivo' }); mostrarDanado(); });
+  }
   $('#danado-archivo').addEventListener('change', (e) => {
     const file = e.target.files[0];
     e.target.value = '';
