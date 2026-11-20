@@ -39,19 +39,19 @@ tocar para cada cosa y cómo se cargan). Cada chat trabaja en **una** sección:
 
 | Sección | Archivos |
 |---|---|
-| **Base y guardado** | `js/base/datos-y-guardado.js`, `js/pantallas/datos-danados.js`, `js/pantallas/respaldo.js`, `electron/datos.js`, `electron/main.js` (respaldos y fotos) |
-| **Caja y ventas** | `js/logica/ventas-y-stock.js`, `js/logica/caja.js`, `js/pantallas/caja.js`, `js/pantallas/ticket-e-impresion.js`, `js/pantallas/cierre-de-caja.js` |
-| **Productos y stock** | `js/logica/productos.js`, `js/pantallas/productos.js`, `js/pantallas/fotos.js`, `js/pantallas/movimientos.js`, `js/pantallas/proveedores.js` |
-| **Importar y exportar** | `js/logica/importar-planilla.js`, `js/pantallas/importar-excel.js`, `js/pantallas/exportar-excel.js` |
-| **Reportes** | `js/logica/reportes.js`, `js/pantallas/reportes.js`, `js/pantallas/reportes-tablero.js`, `js/pantallas/reportes-pestanas.js` |
-| **Depósito y etiquetas** | `js/logica/deposito.js`, `js/logica/etiquetas.js`, `js/pantallas/deposito.js`, `js/pantallas/etiquetadora.js`, `js/etiqueta-tspl.js`, `js/codigo-barras.js`, `electron/etiquetadora.js` |
-| **Celular** | `js/logica/celular.js`, `js/pantallas/celular.js`, `electron/servidor-celular.js`, `herramientas/fuentes/etiquetador.html`, `celular/` |
+| **Base y guardado** | `js/base/datos-y-guardado.js`, `js/pantallas/datos-danados.js`, `js/pantallas/respaldo.js`, `electron/datos.js`, `electron/main.js` (respaldos y fotos), `css/pantallas/configuracion.css` (copias) |
+| **Caja y ventas** | `js/logica/ventas-y-stock.js`, `js/logica/caja.js`, `js/pantallas/caja.js`, `js/pantallas/ticket-e-impresion.js`, `js/pantallas/cierre-de-caja.js`, `css/pantallas/caja.css` |
+| **Productos y stock** | `js/logica/productos.js`, `js/pantallas/productos.js`, `js/pantallas/fotos.js`, `js/pantallas/movimientos.js`, `js/pantallas/proveedores.js`, `css/pantallas/productos.css`, `css/pantallas/movimientos.css` |
+| **Importar y exportar** | `js/logica/importar-planilla.js`, `js/pantallas/importar-excel.js`, `js/pantallas/exportar-excel.js`, `css/pantallas/importar.css` |
+| **Reportes** | `js/logica/reportes.js`, `js/pantallas/reportes.js`, `js/pantallas/reportes-tablero.js`, `js/pantallas/reportes-pestanas.js`, `css/pantallas/reportes.css` |
+| **Depósito y etiquetas** | `js/logica/deposito.js`, `js/logica/etiquetas.js`, `js/pantallas/deposito.js`, `js/pantallas/etiquetadora.js`, `js/etiqueta-tspl.js`, `js/codigo-barras.js`, `electron/etiquetadora.js`, `css/pantallas/deposito.css` |
+| **Celular** | `js/logica/celular.js`, `js/pantallas/celular.js`, `electron/servidor-celular.js`, `herramientas/fuentes/etiquetador.html`, `celular/`, `css/pantallas/celular.css` |
 | **Herramientas** | `js/logica/puente-cargador.js`, `herramientas/fuentes/cargador.html`, `herramientas/fuentes/lector*`, `herramientas/armar.js` |
-| **Usuarios e ingreso** | `js/base/usuarios-y-pin.js`, `js/pantallas/ingreso.js`, `js/pantallas/configuracion.js` |
-| **Interfaz general** | `js/base/utilidades.js`, `js/pantallas/interfaz-general.js`, `js/pantallas/panel.js`, `css/styles.css` (estilos generales) |
+| **Usuarios e ingreso** | `js/base/usuarios-y-pin.js`, `js/pantallas/ingreso.js`, `js/pantallas/configuracion.js`, `css/pantallas/ingreso.css` |
+| **Interfaz general** | `js/base/utilidades.js`, `js/pantallas/interfaz-general.js`, `js/pantallas/panel.js`, `css/base.css` (estilos de todo el programa) |
 | **Publicación** | `.github/`, `build/`, `package.json` (scripts y versión): **solo el líder** |
 
-**Archivos compartidos:** `index.html`, `css/styles.css`, `js/arranque.js` (al sumar un `iniciarAlgo()` o una
+**Archivos compartidos:** `index.html`, `css/base.css`, `js/arranque.js` (al sumar un `iniciarAlgo()` o una
 función a `module.exports`) y `js/orden.json` los tocan casi todos. Ahí cada sección cambia solo lo suyo (el
 marcado y los estilos de su pantalla, su línea en `arranque.js`), lo más chico posible, y trae lo último de `main`
 seguido.
