@@ -106,7 +106,7 @@ const pcDePrueba = crearServidorCelular({ clave: () => ({ token: 'token-de-prueb
     return { a, b, msj: document.getElementById('mv-msj').textContent };
   }, cortoC1);
   r.martilloUbicacion = d.productos.find((p) => p.codigo === 'MAR-16').ubicacion;
-  r.sinToken = await page.evaluate(async () => { datos.pc.token = 'viejo'; await revisarPC(); const e = pc.estado; datos.pc.token = 'token-de-prueba'; return e; });
+  r.sinToken = await page.evaluate(async () => { while (revisandoPC) await new Promise((ok) => setTimeout(ok, 50)); /* si había una revisión en curso, revisarPC() no haría nada */ datos.pc.token = 'viejo'; await revisarPC(); const e = pc.estado; datos.pc.token = 'token-de-prueba'; return e; });
   // Lo cargado queda guardado al cerrar y volver a abrir la app
   await device.shell('am force-stop uy.grupomuros.etiquetador');
   await espera(1000);
