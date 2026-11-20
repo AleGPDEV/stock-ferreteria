@@ -1,4 +1,4 @@
-/* Usuarios y PIN: SHA-256, crear y editar usuarios, verificar el PIN, bloqueos por intentos fallidos
+/* Usuarios y PIN: PBKDF2 (y el SHA-256 viejo, para migrar), crear y editar usuarios, verificar el PIN, bloqueos por intentos fallidos
  * y clave de recuperación del administrador. Sin pantalla (la pantalla está en pantallas/ingreso.js y pantallas/configuracion.js). */
 'use strict';
 
@@ -46,23 +46,56 @@ function sha256(texto) {
 
 const ROLES = { admin: 'Administrador', empleado: 'Empleado' };
 const pinValido = (p) => /^\d{4,6}$/.test(String(p));
+// Formato viejo (SHA-256 con sal): con 4 a 6 números se prueban todos en menos de un segundo. Queda para leer los PIN
+// guardados antes y para los usuarios iniciales (1234 y 0000, que son públicos); al entrar bien se pasan a PBKDF2.
 const hashPin = (pin, sal) => sha256(`${sal}:${pin}`);
+
+/* PBKDF2-SHA256 con muchas vueltas (Web Crypto: anda en la pantalla y en Node): cada intento tarda ~0,1 s en vez de
+ * microsegundos. Se guarda «pbkdf2$<vueltas>$<base64>», así las vueltas se pueden cambiar sin romper lo guardado. */
+const VUELTAS_PIN = 600000;
+const esPbkdf2 = (h) => typeof h === 'string' && h.startsWith('pbkdf2$');
+async function hashPinFuerte(pin, sal, vueltas = VUELTAS_PIN) {
+  const cod = new TextEncoder();
+  const clave = await globalThis.crypto.subtle.importKey('raw', cod.encode(String(pin)), 'PBKDF2', false, ['deriveBits']);
+  const bits = await globalThis.crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: cod.encode(String(sal)), iterations: vueltas }, clave, 256);
+  return `pbkdf2$${vueltas}$${btoa(String.fromCharCode(...new Uint8Array(bits)))}`;
+}
+/** ¿pin corresponde a guardado (formato nuevo o viejo)? */
+async function pinCoincide(pin, sal, guardado) {
+  if (!guardado) return false;
+  if (!esPbkdf2(guardado)) return hashPin(pin, sal) === guardado;
+  const vueltas = Number(guardado.split('$')[1]);
+  if (!(vueltas > 0)) return false;
+  return (await hashPinFuerte(pin, sal, vueltas)) === guardado;
+}
 
 /* Clave de recuperación: la crea el administrador una vez (12 letras y números) y se anota en papel.
  * Sirve para poner un PIN nuevo si se olvida el del administrador. Se guarda solo su hash. */
 const LETRAS_CLAVE = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sin 0/O ni 1/I/L, que se confunden
 const normalizarClave = (t) => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-function nuevaClaveRecuperacion(d) {
+async function nuevaClaveRecuperacion(d) {
   const r = new Uint8Array(12);
   globalThis.crypto.getRandomValues(r);
   const t = Array.from(r, (x) => LETRAS_CLAVE[x % LETRAS_CLAVE.length]).join('');
   const sal = uid();
-  d.recuperacion = { sal, hash: hashPin(t, sal), creada: new Date().toISOString() };
+  d.recuperacion = { sal, hash: await hashPinFuerte(t, sal), creada: new Date().toISOString() };
   return `${t.slice(0, 4)}-${t.slice(4, 8)}-${t.slice(8)}`;
 }
-const verificarRecuperacion = (d, texto) => !!(d.recuperacion && d.recuperacion.hash)
-  && hashPin(normalizarClave(texto), d.recuperacion.sal) === d.recuperacion.hash;
-const verificarPin = (u, pin) => !!u && hashPin(String(pin), u.sal) === u.pin;
+/** ¿Es la clave de recuperación? Si estaba guardada con el formato viejo, queda pasada a PBKDF2 (hay que guardar). */
+async function verificarRecuperacion(d, texto) {
+  const r = d.recuperacion;
+  if (!r || !r.hash) return false;
+  const clave = normalizarClave(texto);
+  if (!(await pinCoincide(clave, r.sal, r.hash))) return false;
+  if (!esPbkdf2(r.hash)) r.hash = await hashPinFuerte(clave, r.sal);
+  return true;
+}
+/** ¿Es el PIN de u? Si estaba guardado con el formato viejo, queda pasado a PBKDF2 con la misma sal (hay que guardar). */
+async function verificarPin(u, pin) {
+  if (!u || !(await pinCoincide(String(pin), u.sal, u.pin))) return false;
+  if (!esPbkdf2(u.pin)) u.pin = await hashPinFuerte(String(pin), u.sal);
+  return true;
+}
 
 /* Límite de intentos de PIN: después de 5 errores seguidos, hay que esperar 5 minutos (y otra vez con cada error más). */
 const INTENTOS_PIN = 5;
@@ -99,9 +132,14 @@ function acertarPin(d, id) {
 }
 const textoEspera = (ms) => (ms > 60000 ? `${Math.ceil(ms / 60000)} minutos` : `${Math.ceil(ms / 1000)} segundos`);
 
-function crearUsuario(nombre, rol, pin, porDefecto = false) {
+async function crearUsuario(nombre, rol, pin) {
   const sal = uid();
-  return { id: uid(), nombre, rol, sal, pin: hashPin(pin, sal), pinPorDefecto: porDefecto };
+  return { id: uid(), nombre, rol, sal, pin: await hashPinFuerte(pin, sal), pinPorDefecto: false };
+}
+/** Los usuarios iniciales (PIN 1234 y 0000, públicos): sin esperar, con el formato viejo; pasan a PBKDF2 al entrar. */
+function crearUsuarioInicial(nombre, rol, pin) {
+  const sal = uid();
+  return { id: uid(), nombre, rol, sal, pin: hashPin(pin, sal), pinPorDefecto: true };
 }
 
 /** La primera vez crea «Administrador» (PIN 1234) y «Empleado» (PIN 0000). Siempre deja al menos un administrador. */
@@ -110,18 +148,19 @@ function asegurarUsuarios(d) {
   let cambio = false;
   if (d.negocio && d.negocio.nombre === 'Ferretería de prueba') { d.negocio.nombre = NOMBRE_NEGOCIO; cambio = true; }
   if (!Array.isArray(d.usuarios) || !d.usuarios.length) {
-    d.usuarios = [crearUsuario('Administrador', 'admin', '1234', true), crearUsuario('Empleado', 'empleado', '0000', true)];
+    d.usuarios = [crearUsuarioInicial('Administrador', 'admin', '1234'), crearUsuarioInicial('Empleado', 'empleado', '0000')];
     return true;
   }
   if (!d.usuarios.some((u) => u.rol === 'admin')) {
-    d.usuarios.unshift(crearUsuario('Administrador', 'admin', '1234', true));
+    d.usuarios.unshift(crearUsuarioInicial('Administrador', 'admin', '1234'));
     return true;
   }
   return cambio;
 }
 
-/** Crea o modifica un usuario. datos: { nombre, rol, pin }. Al editar, el PIN vacío no cambia. */
-function guardarUsuario(d, datos, id) {
+/** Crea o modifica un usuario. datos: { nombre, rol, pin }. Al editar, el PIN vacío no cambia.
+ * Es async por PBKDF2: se valida todo antes de calcular el PIN y no se toca d hasta tenerlo. */
+async function guardarUsuario(d, datos, id) {
   const nombre = String(datos.nombre || '').trim();
   const rol = datos.rol;
   const pin = String(datos.pin || '');
@@ -134,10 +173,12 @@ function guardarUsuario(d, datos, id) {
   if (u && u.rol === 'admin' && rol !== 'admin' && !d.usuarios.some((x) => x.id !== id && x.rol === 'admin')) {
     return { error: 'Tiene que quedar al menos un administrador.' };
   }
-  if (!u) { u = crearUsuario(nombre, rol, pin); d.usuarios.push(u); return { usuario: u }; }
+  if (!u) { u = await crearUsuario(nombre, rol, pin); d.usuarios.push(u); return { usuario: u }; }
+  const sal = pin ? uid() : '';
+  const hash = pin ? await hashPinFuerte(pin, sal) : '';
   u.nombre = nombre;
   u.rol = rol;
-  if (pin) { u.sal = uid(); u.pin = hashPin(pin, u.sal); u.pinPorDefecto = false; }
+  if (pin) { u.sal = sal; u.pin = hash; u.pinPorDefecto = false; }
   return { usuario: u };
 }
 
