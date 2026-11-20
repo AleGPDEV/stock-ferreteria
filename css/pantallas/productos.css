@@ -1,0 +1,55 @@
+/* Pantalla Productos: tabla, filtros, fotos y la ficha del producto (códigos de proveedor y unir). */
+/* Productos: los filtros de estante y estado no le quitan lugar al buscador (la lista abierta muestra el texto completo) */
+#prod-estante, #prod-estado { max-width: 230px; }
+
+/* Productos: si no entra, los botones pasan al renglón de abajo en lugar de cortar la tabla */
+.tabla .acc-botones { display: flex; flex-wrap: nowrap; justify-content: flex-end; gap: 6px; }
+
+.tabla .acc-botones .btn.sm { padding: 5px 10px; }
+.tabla .acc-botones .btn.ghost { padding-inline: 8px; }
+.tabla .acc-botones .btn + .btn { margin-left: 0; }
+/* Pantallas angostas (1024 px con la barra abierta): menos aire entre columnas y los botones uno abajo del otro */
+@media (max-width: 1180px) {
+  .tabla-prod th, .tabla-prod td { padding-inline: 6px; }
+  .tabla-prod .nom { min-width: 120px; }
+  .tabla-prod .acc-botones { flex-wrap: wrap; }
+  .tabla-prod .acc-botones .btn { padding-inline: 8px; }
+  .tabla-prod th { letter-spacing: 0; }
+}
+
+/* Fotos de los productos */
+.foto { display: block; }
+
+.foto[hidden] { display: none; }
+.con-foto { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.con-foto > div { min-width: 0; }
+.mini { width: 48px; height: 48px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); flex: none; cursor: zoom-in; }
+.tl-foto { width: 34px; height: 34px; display: inline-block; vertical-align: middle; margin-right: 8px; }
+.p-foto { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; border: 1px dashed var(--line); border-radius: 10px; padding: 12px; }
+.p-foto.arrastrando { border-color: var(--accent); background: var(--accent-soft); }
+.p-foto-prev { width: 130px; height: 130px; border-radius: 10px; background: var(--surface-2); display: grid; place-items: center; overflow: hidden; flex: none; color: var(--muted); font-size: 13px; }
+.p-foto-prev img { width: 100%; height: 100%; object-fit: contain; background: var(--surface); }
+.p-foto-acc { display: flex; flex-direction: column; gap: 8px; flex: 1 1 220px; min-width: 0; }
+.p-foto-tit { font-weight: 600; }
+.p-foto-acc .err:empty { display: none; }
+.dlg-foto { width: min(720px, calc(100vw - 32px)); }
+.dlg-foto img { display: block; max-width: 100%; max-height: 65vh; margin: 0 auto; border-radius: 10px; object-fit: contain; }
+
+.qm-sug { line-height: 1.5; }
+
+/* Ficha del producto: códigos de proveedor y unir */
+.codprov { border: 1px solid var(--line); border-radius: var(--r-ctrl); padding: 10px 12px 12px; margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+.codprov legend { font-weight: 600; padding: 0 4px; }
+.codprov p { margin: 0; font-size: 14px; }
+.codprov-l { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.codprov-l li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 15px; }
+.codprov-l li .btn { margin-left: auto; }
+.codprov-nuevo { display: flex; gap: 8px; flex-wrap: wrap; }
+.codprov-nuevo select { flex: 1 1 160px; min-width: 0; }
+.codprov-nuevo input { flex: 1 1 140px; min-width: 0; }
+.unir summary { cursor: pointer; color: var(--accent); font-weight: 600; width: fit-content; }
+.unir[open] { display: flex; flex-direction: column; gap: 8px; }
+.unir p { margin: 0; font-size: 14px; }
+.unir-res { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.unir input { width: 100%; }

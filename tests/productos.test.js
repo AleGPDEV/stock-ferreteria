@@ -70,3 +70,27 @@ test('filtro por estante: todos, sin estante y un estante (sin importar mayúscu
   // Un estante llamado como el valor de «Sin estante» no se confunde
   assert.equal(enEstante({ ubicacion: SIN_ESTANTE }, SIN_ESTANTE), false);
 });
+
+/* global alDejarDeEscribir */
+test('buscadores: buscan cuando se deja de escribir, no en cada tecla', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const el = new EventTarget(); el.value = '';
+  let veces = 0;
+  alDejarDeEscribir(el, () => { veces++; });
+  const tecla = (v) => { el.value = v; el.dispatchEvent(new Event('input')); };
+  tecla('t'); tecla('to'); tecla('tor');
+  assert.equal(veces, 0, 'mientras se escribe no busca');
+  t.mock.timers.tick(149);
+  assert.equal(veces, 0);
+  t.mock.timers.tick(1);
+  assert.equal(veces, 1, 'busca una sola vez, al terminar');
+  // Enter (el lector de códigos) busca enseguida
+  tecla('7790001112223');
+  const enter = new Event('keydown'); enter.key = 'Enter'; el.dispatchEvent(enter);
+  assert.equal(veces, 2);
+  t.mock.timers.tick(500);
+  assert.equal(veces, 2, 'y no vuelve a buscar después');
+  // Borrar todo muestra la lista completa enseguida
+  tecla('');
+  assert.equal(veces, 3);
+});

@@ -170,7 +170,8 @@ function iniciarMovimientos() {
   iniciarCombo();
   $('#mov-desde').value = isoLocal(new Date(Date.now() - 30 * DIA));
   $('#mov-hasta').value = isoLocal();
-  ['#mov-desde', '#mov-hasta', '#mov-tipo', '#mov-buscar'].forEach((s) => $(s).addEventListener('input', renderMovimientos));
+  ['#mov-desde', '#mov-hasta', '#mov-tipo'].forEach((s) => $(s).addEventListener('input', renderMovimientos));
+  alDejarDeEscribir($('#mov-buscar'), renderMovimientos);
   $$('input[name="tipo"]').forEach((r) => r.addEventListener('change', actualizarFormMov));
   $('#mov-prod').addEventListener('change', () => {
     const p = producto($('#mov-prod').value);

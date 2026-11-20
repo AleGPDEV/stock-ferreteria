@@ -152,7 +152,8 @@ Prueban la lógica de stock, cobro, descuentos, anulación, actualización de pr
 
 ```
 index.html                Pantallas y formularios
-css/styles.css            Estilos (tema claro y oscuro automático)
+css/base.css              Estilos de todo el programa (tema claro y oscuro automático)
+css/pantallas/            Estilos de cada pantalla (se cargan después de base.css)
 js/                       El programa, un archivo por sección (ver «Mapa del código» abajo)
 js/codigo-barras.js       Código de barras Code 128 (etiquetas del Depósito), sin librerías
 css/fuentes/              Letras incluidas (Barlow, Barlow Semi Condensed, IBM Plex Mono; licencia OFL): se ven igual sin internet
@@ -181,6 +182,7 @@ El programa (la pantalla) está repartido en un archivo por sección, de 40 a 55
 - `js/logica/`: las reglas del negocio **sin pantalla** (cobrar, stock, caja, importar, reportes, depósito, celular). Es lo que prueban `tests/`.
 - `js/pantallas/`: lo que se dibuja y los botones de cada pantalla.
 - `js/arranque.js`: `iniciar()` conecta todas las pantallas al abrir el programa. Va último.
+- `css/base.css`: los estilos de todo el programa (colores, botones, tablas, diálogos). `css/pantallas/<pantalla>.css`: los de cada pantalla. `index.html` carga `base.css` primero y después los de las pantallas, así una pantalla puede ajustar una regla general sin pisar a las demás. Una regla nueva va en el archivo de su pantalla; en `base.css` solo si la usan varias.
 
 | Si querés cambiar… | Lógica (sin pantalla) | Pantalla |
 | --- | --- | --- |
@@ -205,7 +207,7 @@ El programa (la pantalla) está repartido en un archivo por sección, de 40 a 55
 
 **Archivo nuevo.** Va en la carpeta que corresponda, empieza con un comentario que diga qué tiene y `'use strict';`, y se agrega a `js/orden.json` y a `index.html` (antes de `js/arranque.js`). Si tiene una pantalla, su `iniciarAlgo()` se llama desde `iniciar()` en `js/arranque.js`. Las funciones que se prueban se agregan al `module.exports` del final de `js/arranque.js`.
 
-**Trabajar en paralelo.** Para que dos personas (o dos chats) no se pisen, cada uno trabaja en una fila distinta de la tabla. Los archivos que tocan casi todos los cambios son `js/arranque.js` (al agregar un `iniciarAlgo()` o una función a `module.exports`), `index.html` y `css/styles.css`: ahí conviene cambiar poco y combinar seguido con `main`.
+**Trabajar en paralelo.** Para que dos personas (o dos chats) no se pisen, cada uno trabaja en una fila distinta de la tabla. Los archivos que tocan casi todos los cambios son `js/arranque.js` (al agregar un `iniciarAlgo()` o una función a `module.exports`), `index.html` y `css/base.css`: ahí conviene cambiar poco y combinar seguido con `main`.
 
 ## Ideas para más adelante
 

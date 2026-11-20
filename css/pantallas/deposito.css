@@ -1,0 +1,143 @@
+/* Pantalla Depósito: ¿dónde está?, estantes, recibir y etiquetas (muestra en pantalla y al imprimir). */
+/* Sugerencias de «¿Dónde está?» en Depósito */
+.dep-sugerencias { max-height: 420px; }
+
+.dep-sug mark { background: none; color: inherit; font-weight: 800; }
+.dep-sug-txt { display: flex; flex-direction: column; min-width: 0; }
+.dep-sug-txt > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.dep-sug .meta { font-size: 13px; color: var(--muted); font-weight: 400; }
+.dep-sug .chip { font-size: 11.5px; margin-right: 4px; }
+
+/* ---------- Depósito: dónde está cada producto y etiquetas ---------- */
+.dep-buscar { font-size: 20px; padding: 12px 48px 12px 14px; }
+
+.dep-resultado .meta, .dep-ubicaciones .meta, .etq-lista .meta, .etq-pie .meta, #v-deposito .card-h .meta { color: var(--muted); font-size: 14px; font-weight: 400; }
+.dep-prod { display: flex; flex-direction: column; gap: 12px; }
+.dep-prod-cab { display: flex; gap: 14px; align-items: center; }
+.dep-prod-cab .foto { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; }
+.dep-prod-nom { font-size: 22px; font-weight: 700; line-height: 1.25; }
+.dep-ubi { display: flex; flex-direction: column; gap: 2px; padding: 14px 18px; border-radius: var(--r); background: var(--accent-soft); color: var(--accent); }
+.dep-ubi.sin { background: var(--surface-2); color: var(--muted); }
+.dep-ubi-lbl { font-family: var(--f-num); font-size: 17px; font-weight: 600; }
+.dep-ubi-txt { font-size: 34px; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
+.dep-ubi.sin .dep-ubi-txt { font-size: 22px; }
+.dep-datos { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 18px; }
+.dep-lugar-cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; color: var(--accent); }
+.dep-lista { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dep-item { width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--fg); font: inherit; cursor: pointer; }
+.dep-item:hover { background: var(--surface-2); }
+.dep-item .foto { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; }
+.dep-item-txt { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.dep-item-ubi { font-weight: 700; font-size: 18px; color: var(--accent); white-space: nowrap; }
+.dep-ubicaciones { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.dep-ubic { display: flex; flex-direction: column; gap: 2px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.dep-ubic:hover { border-color: var(--accent); background: var(--accent-soft); }
+.dep-ubic strong { font-size: 18px; overflow-wrap: anywhere; }
+.dep-ubic span { color: var(--muted); font-size: 14px; }
+#etq-dlg { width: min(860px, calc(100vw / var(--zoom, 1) - 32px)); }
+#etq-dlg[open] { display: flex; flex-direction: column; }
+.etq-b { display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+.etq-saltear input { max-width: 120px; }
+.etq-config { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.etq-config-txt { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+#etq-ajustes-dlg { width: min(760px, calc(100vw / var(--zoom, 1) - 32px)); }
+.etq-filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.etq-filtros input[type=search] { flex: 1; min-width: 180px; }
+#etq-filtro-ubic:not([hidden]) { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.etq-sinfab { font-size: 13px; white-space: nowrap; }
+.etq-lista { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; max-height: 300px; min-height: 140px; overflow: auto; flex: none; }
+.etq-lista li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.etq-lista li:last-child { border-bottom: 0; }
+.etq-lista li.sel { background: var(--accent-soft); }
+.etq-lista .check span { display: flex; flex-direction: column; }
+.etq-copias { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); white-space: nowrap; }
+.etq-copias input { width: 72px; text-align: right; }
+.etq-pie { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+/* Muestra en pantalla, en tamaño real y siempre sobre blanco (como el papel) */
+.etq-muestra { background: #fff; color: #000; border: 1px dashed var(--line); }
+
+.etq-muestra:empty { display: none; }
+.etq-muestra.a4 .et { width: 70mm; height: 37mm; }
+.etq-muestra.rollo .et { width: 50mm; height: 25mm; }
+/* Hoja A4 común: la muestra es la hoja entera, en chico */
+.etq-muestra.hoja { border: 0; background: none; flex: none; }
+
+.etq-muestra.hoja .pagina { zoom: .2; width: 210mm; height: 297mm; box-sizing: border-box; display: grid; background: #fff; box-shadow: 0 0 0 1px var(--line); }
+
+/* La etiqueta: igual en la muestra y al imprimir */
+.et { box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; gap: 1mm; padding: 2.5mm 3.5mm; font-family: Arial, Helvetica, sans-serif; color: #000; background: #fff; }
+
+.et .cb { display: block; }
+.et-nom { font-weight: 700; font-size: 11pt; line-height: 1.15; max-height: 2.35em; overflow: hidden; }
+.et-pie { display: flex; justify-content: space-between; align-items: baseline; gap: 2mm; }
+.et-cod { font-family: var(--f-mono); font-size: 9pt; }
+.et-ubi { font-weight: 700; font-size: 13pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.et-sin { font-size: 9pt; }
+.et-titulo { font-size: 8pt; text-transform: uppercase; letter-spacing: .08em; }
+.et-lugar-nom { font-weight: 700; font-size: 20pt; line-height: 1.05; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.et-lista { font-size: 7.5pt; line-height: 1.2; max-height: 2.4em; overflow: hidden; }
+.rollo .et { padding: 1.2mm 2.5mm; gap: .5mm; }
+.rollo .et-nom { font-size: 8pt; max-height: 2.3em; }
+.rollo .et-cod { font-size: 7pt; }
+.rollo .et-ubi { font-size: 9pt; }
+.rollo .et-lugar-nom { font-size: 14pt; }
+.rollo .et-titulo { font-size: 6.5pt; }
+@media print {
+  #impresion.etiquetas { width: auto; max-width: none; font: 10pt/1.2 Arial, Helvetica, sans-serif; }
+  #impresion.etiquetas .pagina { break-after: page; overflow: hidden; }
+  #impresion.etiquetas .pagina:last-child { break-after: auto; }
+  #impresion.etiquetas .pagina.a4 { width: 210mm; height: 296mm; padding: .5mm 0 0; display: grid; grid-template-columns: repeat(3, 70mm); grid-auto-rows: 37mm; box-sizing: border-box; }
+  #impresion.etiquetas .pagina.rollo { width: 50mm; height: 25mm; }
+  #impresion.etiquetas .pagina.hoja { width: 210mm; height: 296mm; display: grid; box-sizing: border-box; }
+  #impresion.etiquetas .a4 .et { width: 70mm; height: 37mm; }
+  #impresion.etiquetas .rollo .et { width: 50mm; height: 25mm; }
+}
+/* Depósito: estantes con categoría, recibir y producto nuevo */
+.dep-ubi-cat { font-size: 17px; font-weight: 600; }
+
+.dep-fila { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.dep-fila input, .dep-fila select { flex: 1; min-width: 140px; }
+.dep-cant input { max-width: 160px; }
+.dep-acciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px 20px; padding-top: 12px; border-top: 1px solid var(--line); }
+.dep-acciones .err, .dep-nuevo .err { grid-column: 1 / -1; margin: 0; }
+.dep-acciones .err:empty, .dep-nuevo .err:empty { display: none; }
+.dep-nuevo { display: flex; flex-direction: column; gap: 12px; max-width: 640px; }
+.dep-nuevo-cab { margin: 0; font-size: 16px; }
+.dep-vincular summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.dep-vincular input { width: 100%; margin-top: 8px; }
+.dep-ubic em { font-style: normal; font-weight: 600; color: var(--accent); font-size: 14px; }
+
+/* Depósito: estante con nombre largo (dos renglones, letra más chica) y su número corto bajo las barras */
+.et-lugar-nom.largo { white-space: normal; font-size: 13pt; line-height: 1.1; max-height: 2.25em; text-overflow: clip; }
+
+.rollo .et-lugar-nom.largo { font-size: 9pt; }
+.et-id { text-align: center; line-height: 1; }
+.rollo .et-id { font-size: 6.5pt; }
+
+/* Etiquetas en hoja A4 común: el contenido crece con --k (1 = etiqueta de 70 × 37 mm) */
+.pagina.hoja .celda { display: flex; align-items: flex-start; justify-content: center; min-width: 0; min-height: 0; }
+
+.pagina.hoja .et-marco { box-sizing: border-box; border: .25mm dashed #9aa3ad; }
+.pagina.hoja .et { width: 100%; height: 100%; padding: calc(2.5mm * var(--k)) calc(3.5mm * var(--k)); gap: calc(1mm * var(--k)); }
+.pagina.hoja .et-nom { font-size: calc(11pt * var(--k)); }
+.pagina.hoja .et-cod { font-size: calc(9pt * var(--k)); }
+.pagina.hoja .et-ubi { font-size: calc(13pt * var(--k)); }
+.pagina.hoja .et-sin { font-size: calc(9pt * var(--k)); }
+.pagina.hoja .et-titulo { font-size: calc(8pt * var(--k)); }
+.pagina.hoja .et-lugar-nom { font-size: calc(20pt * var(--k)); }
+.pagina.hoja .et-lugar-nom.largo { font-size: calc(13pt * var(--k)); }
+.pagina.hoja .et-lista { font-size: calc(7.5pt * var(--k)); }
+.pagina.hoja .et-id { font-size: calc(9pt * var(--k)); }
+
+/* Etiquetas de rollo de otra medida (impresora térmica): una por página, contenido escalado con --k */
+.pagina.hoja.rollo-m { display: block; box-sizing: border-box; overflow: hidden; background: #fff; }
+
+.pagina.hoja.rollo-m .et { width: 100%; height: 100%; box-sizing: border-box; }
+.etq-muestra.rollo-m { border: 0; background: none; }
+.etq-muestra.rollo-m .pagina { box-shadow: 0 0 0 1px var(--line); border-radius: 2mm; }
+.etq-rollo { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px 28px; }
+.etq-rollo-otra:not([hidden]) { display: flex; gap: 10px; }
+.etq-rollo small { color: var(--muted); font-size: 13px; }
+.etq-directo:not([hidden]) { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; align-items: end; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.etq-directo .etq-d-imp, .etq-directo .etq-d-girar { grid-column: 1 / -1; }
+.etq-directo .etq-d-prueba { justify-self: start; }
