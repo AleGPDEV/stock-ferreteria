@@ -261,12 +261,13 @@ function renderVentasHoy() {
   const esHoy = dia === isoLocal();
   const lista = ventasDelDia(dia).sort((a, b) => b.fecha.localeCompare(a.fecha));
   const validas = lista.filter((v) => !v.anulada);
+  const cobradas = validas.filter((v) => !esDevolucion(v)), devs = validas.length - cobradas.length;
   const enPes = validas.filter((v) => !esUSD(v)), enUSD = validas.filter(esUSD);
   const total = enPes.reduce((s, v) => s + v.total, 0);
   const porMedio = {};
   enPes.forEach((v) => { porMedio[v.medio] = (porMedio[v.medio] || 0) + v.total; });
   $('#ventas-hoy-resumen').textContent = validas.length
-    ? `${validas.length} ${validas.length === 1 ? 'venta' : 'ventas'} · ${$u(total)} · ` + Object.entries(porMedio).map(([m, t]) => `${m} ${$u(t)}`).join(' · ')
+    ? `${cobradas.length} ${cobradas.length === 1 ? 'venta' : 'ventas'}${devs ? ` · ${devs} ${devs === 1 ? 'devolución' : 'devoluciones'}` : ''} · ${$u(total)} · ` + Object.entries(porMedio).map(([m, t]) => `${m} ${$u(t)}`).join(' · ')
       + (enUSD.length ? ` · En dólares: ${$usd(enUSD.reduce((s, v) => s + v.total, 0))}` : '')
     : (esHoy ? 'Todavía no hay ventas hoy.' : 'No hubo ventas ese día.');
   $('#btn-cierre').disabled = !validas.length;
@@ -277,13 +278,81 @@ function renderVentasHoy() {
           <tr${v.anulada ? ' class="muted"' : ''}>
             <td class="mono">${String(v.numero).padStart(4, '0')}</td>
             <td class="num">${hora(v.fecha)}${v.usuario ? `<div class="meta">${esc(v.usuario)}</div>` : ''}</td>
-            <td><div>${v.items.map((it) => `${n(it.cantidad)} × ${esc(it.nombre)}`).join('<br>')}</div>${v.cliente ? `<div class="meta">${esc(v.cliente)}</div>` : ''}</td>
+            <td>${esDevolucion(v) ? `<div><span class="chip warn">Devolución</span> de la venta N.º ${String(v.numeroOriginal).padStart(4, '0')}</div>` : ''}<div>${v.items.map((it) => `${n(Math.abs(it.cantidad))} × ${esc(it.nombre)}`).join('<br>')}</div>${v.cliente ? `<div class="meta">${esc(v.cliente)}</div>` : ''}${detalleDevuelto(v)}</td>
             <td>${esc(v.medio)}${v.vuelto != null ? `<div class="meta">Vuelto ${$m(v.vuelto, v.moneda)}</div>` : ''}</td>
             <td class="num"><strong>${$m(v.total, v.moneda)}</strong>${esUSD(v) ? `<div class="meta">Dólar a ${$u(v.cotizacion)}</div>` : ''}${v.descuento ? `<div class="meta">Descuento ${n(v.descuentoPct)} %</div>` : ''}</td>
-            <td class="acc">${puedeImprimir() ? `<button class="btn sm" type="button" data-ticket="${v.id}">Imprimir</button>` : ''}${v.anulada ? '<span class="chip neutro">Anulada</span>' : (esAdmin() ? `<button class="btn sm danger" type="button" data-anular="${v.id}">Anular</button>` : '')}</td>
+            <td class="acc">${puedeImprimir() ? `<button class="btn sm" type="button" data-ticket="${v.id}">Imprimir</button>` : ''}${v.anulada ? '<span class="chip neutro">Anulada</span>' : botonesVenta(v)}</td>
           </tr>`).join('')}</tbody>
       </table></div>`
     : '';
+}
+
+/* Devoluciones parciales: botones en la lista de ventas del día y la ventana «Devolver productos» */
+/** Lo que queda por devolver de cada renglón de una venta (vacío si ya se devolvió todo). */
+function quedaPorDevolver(v) {
+  const ya = devueltoDe(db, v);
+  return v.items.map((it, i) => ({ i, it, queda: red(it.cantidad - (ya[i] || 0)) })).filter((x) => x.queda > 1e-9);
+}
+function botonesVenta(v) {
+  if (!esAdmin() || esDevolucion(v)) return '';
+  const devolver = quedaPorDevolver(v).length ? `<button class="btn sm" type="button" data-devolver="${v.id}">Devolver</button>` : '';
+  const anular = devolucionesDe(db, v).length ? '' : `<button class="btn sm danger" type="button" data-anular="${v.id}">Anular</button>`;
+  return devolver + anular;
+}
+function detalleDevuelto(v) {
+  if (esDevolucion(v) || v.anulada) return '';
+  const devs = devolucionesDe(db, v);
+  return devs.length ? `<div class="meta">Devuelto en ${devs.map((x) => `N.º ${String(x.numero).padStart(4, '0')}`).join(', ')}</div>` : '';
+}
+let devolviendo = null;
+function abrirDevolver(v) {
+  devolviendo = v;
+  $('#dev-venta').textContent = `Venta N.º ${String(v.numero).padStart(4, '0')} · ${fechaHora(v.fecha)} · ${v.medio} · ${$m(v.total, v.moneda)}${v.descuento ? ` (con ${n(v.descuentoPct)} % de descuento)` : ''}`;
+  $('#dev-items').innerHTML = quedaPorDevolver(v).map(({ i, it, queda }) => `<tr>
+      <td>${esc(it.nombre)}<div class="meta">${$m(it.precio, v.moneda)} c/u</div></td>
+      <td class="num">${n(queda)} ${esc(it.unidad)}</td>
+      <td class="num"><label class="visually-hidden" for="dev-c-${i}">Cuánto devuelve de ${esc(it.nombre)}</label><input id="dev-c-${i}" data-renglon="${i}" type="number" min="0" max="${queda}" step="any" inputmode="decimal" placeholder="0"></td>
+    </tr>`).join('');
+  const medios = $$('input[name="medio"]').map((r) => r.value);
+  if (!medios.includes(v.medio)) medios.unshift(v.medio);
+  $('#dev-medio').innerHTML = medios.map((m) => `<option${m === v.medio ? ' selected' : ''}>${esc(m)}</option>`).join('');
+  $('#dev-err').textContent = '';
+  totalDevolver();
+  $('#dlg-devolver').showModal();
+  const primero = $('#dev-items input'); if (primero) primero.focus();
+}
+function renglonesDevolver() {
+  return $$('#dev-items input').map((el) => ({ renglon: Number(el.dataset.renglon), cantidad: Number(el.value) || 0 })).filter((r) => r.cantidad);
+}
+function totalDevolver() {
+  const v = devolviendo;
+  if (!v) return;
+  const factor = v.subtotal > 0 ? v.total / v.subtotal : 1;
+  const total = renglonesDevolver().reduce((s, r) => s + (v.items[r.renglon] ? r.cantidad * v.items[r.renglon].precio : 0), 0) * factor;
+  $('#dev-total').textContent = $m(red2(total), v.moneda);
+}
+function iniciarDevoluciones() {
+  $('#ventas-hoy').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-devolver]');
+    if (!b || !esAdmin()) return;
+    const v = db.ventas.find((x) => x.id === b.dataset.devolver);
+    if (v) abrirDevolver(v);
+  });
+  $('#dev-items').addEventListener('input', () => { $('#dev-err').textContent = ''; totalDevolver(); });
+  $('#form-devolver').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const v = devolviendo;
+    if (!v || !esAdmin()) return;
+    const r = devolverVenta(db, v.id, renglonesDevolver(), $('#dev-medio').value, sesion ? sesion.nombre : '');
+    if (r.error) { $('#dev-err').textContent = r.error; return; }
+    if (!guardar()) return;
+    $('#dlg-devolver').close();
+    devolviendo = null;
+    render();
+    const d = r.devolucion;
+    toast(`Devolución N.º ${String(d.numero).padStart(4, '0')}: los productos volvieron al stock y se devuelven ${$m(-d.total, d.moneda)} (${d.medio.toLowerCase()}).`);
+    if (puedeImprimir() && (await confirmar('¿Imprimir el comprobante de la devolución?', 'Imprimir'))) imprimir(htmlTicket(d));
+  });
 }
 
 /* Producto que no está cargado: se agrega con nombre y precio sin salir de la venta */
@@ -377,6 +446,7 @@ function iniciarAltaRapida() {
 
 function iniciarCaja() {
   iniciarAltaRapida();
+  iniciarDevoluciones();
   const buscar = $('#caja-buscar');
   const refiltrar = () => { cajaLimite = PASO_LISTA; renderResultados(); };
   buscar.addEventListener('input', refiltrar);

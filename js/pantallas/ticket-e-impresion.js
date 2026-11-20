@@ -12,6 +12,7 @@ function encabezadoNegocio() {
 }
 
 function htmlTicket(v) {
+  if (esDevolucion(v)) return htmlDevolucion(v);
   const g = (db && db.negocio) || {};
   const fila = (a, b, cls = '') => `<div class="t-fila ${cls}"><span>${a}</span><span>${b}</span></div>`;
   return `${encabezadoNegocio()}<hr>
@@ -29,6 +30,23 @@ function htmlTicket(v) {
     <div class="t-c t-chico">Comprobante interno. No válido como factura.</div>`;
 }
 
+/** Comprobante de una devolución parcial: los importes se muestran en positivo («se devuelve»). */
+function htmlDevolucion(v) {
+  const fila = (a, b, cls = '') => `<div class="t-fila ${cls}"><span>${a}</span><span>${b}</span></div>`;
+  return `${encabezadoNegocio()}<hr>
+    <div class="t-c"><strong>DEVOLUCIÓN</strong></div>
+    ${fila(`N.º ${String(v.numero).padStart(4, '0')}`, fechaHora(v.fecha))}
+    <div>De la venta N.º ${String(v.numeroOriginal).padStart(4, '0')}</div>
+    ${v.cliente ? `<div>Cliente: ${esc(v.cliente)}</div>` : ''}
+    ${v.usuario ? `<div>Atendió: ${esc(v.usuario)}</div>` : ''}<hr>
+    ${v.items.map((it) => `<div>${esc(it.nombre)}</div>${fila(`${n(-it.cantidad)} ${esc(it.unidad)} × ${$m(it.precio, v.moneda)}`, $m(-it.subtotal, v.moneda))}`).join('')}<hr>
+    ${v.descuento ? fila('Subtotal', $m(-v.subtotal, v.moneda)) + fila(`Descuento de la venta ${n(v.descuentoPct)} %`, '−' + $m(-v.descuento, v.moneda)) : ''}
+    ${fila('SE DEVUELVE', $m(-v.total, v.moneda), 't-total')}
+    ${esUSD(v) ? '<div class="t-c t-chico">Importes en dólares estadounidenses (U$S)</div>' : ''}
+    ${fila('Se devuelve con', esc(v.medio))}<hr>
+    <div class="t-c t-chico">Comprobante interno. No válido como factura.</div>`;
+}
+
 function htmlCierre(dia) {
   const lista = ventasDelDia(dia);
   const todas = lista.filter((v) => !v.anulada);
@@ -40,7 +58,8 @@ function htmlCierre(dia) {
   const fila = (a, b, cls = '') => `<div class="t-fila ${cls}"><span>${a}</span><span>${b}</span></div>`;
   return `${encabezadoNegocio()}<hr>
     <div class="t-c"><strong>CIERRE DE CAJA</strong><div>${new Date(dia + 'T12:00:00').toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div></div><hr>
-    ${fila('Ventas cobradas', todas.length)}
+    ${fila('Ventas cobradas', todas.filter((v) => !esDevolucion(v)).length)}
+    ${todas.some(esDevolucion) ? fila('Devoluciones', todas.filter(esDevolucion).length) : ''}
     ${fila('Ventas anuladas', lista.length - todas.length)}<hr>
     ${Object.entries(porMedio).map(([m, t]) => fila(esc(m), $u(t))).join('')}<hr>
     ${fila('TOTAL', $u(validas.reduce((s, v) => s + v.total, 0)), 't-total')}

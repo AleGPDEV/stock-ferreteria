@@ -1,4 +1,4 @@
-/* Ventas y stock (sin pantalla): registrar movimientos de stock, cobrar una venta y anularla. */
+/* Ventas y stock (sin pantalla): registrar movimientos de stock, cobrar una venta, anularla y devolver una parte. */
 'use strict';
 
 /**
@@ -147,6 +147,8 @@ function devolucionEnOtraCaja(d, v) {
 function anularVenta(d, ventaId, opc = {}) {
   const v = d.ventas.find((x) => x.id === ventaId);
   if (!v || v.anulada) return 'La venta no existe o ya está anulada.';
+  if (esDevolucion(v)) return 'Una devolución no se anula. Si fue un error, volvé a cobrar esos productos.';
+  if (devolucionesDe(d, v).length) return `La venta N.º ${v.numero} ya tiene devoluciones: devolvé lo que queda en lugar de anularla.`;
   if (opc.devolucion) {
     const dev = devolucionEnOtraCaja(d, v);
     if (!dev || !dev.caja) return 'No hay una caja abierta para anotar la devolución.';
@@ -163,4 +165,90 @@ function anularVenta(d, ventaId, opc = {}) {
     v.devolucionCajaId = cajaAbierta(d).id;
   }
   return null;
+}
+
+/* ---------- Devoluciones parciales ----------
+ * Una devolución es un registro nuevo en d.ventas, con cantidades e importes en negativo:
+ * { tipo: 'devolucion', ventaOriginal: <id>, numeroOriginal, items, subtotal, total, medio, cajaId, … }.
+ * La venta original no se toca (de una venta guardada solo se guarda el cambio de «anulada»).
+ * Como el total es negativo, el efectivo esperado de la caja y los totales de los reportes la restan solos. */
+
+const esDevolucion = (v) => !!v && v.tipo === 'devolucion';
+
+/** Devoluciones (no anuladas) de una venta. */
+function devolucionesDe(d, v) {
+  return d.ventas.filter((x) => esDevolucion(x) && x.ventaOriginal === v.id && !x.anulada);
+}
+
+/** Cuánto se devolvió ya de cada renglón de la venta: { [índice del renglón]: cantidad (positiva) }. */
+function devueltoDe(d, v) {
+  const r = {};
+  for (const dev of devolucionesDe(d, v)) {
+    for (const it of dev.items) r[it.renglon] = red((r[it.renglon] || 0) - Number(it.cantidad));
+  }
+  return r;
+}
+
+/**
+ * Devuelve una parte de una venta. renglones: [{ renglon: índice en v.items, cantidad }] (cantidades positivas).
+ * medio: cómo se le devuelve la plata (puede ser distinto al de la venta). Repone el stock de cada renglón.
+ * Devuelve { devolucion } o { error }.
+ */
+function devolverVenta(d, ventaId, renglones, medio, usuario) {
+  const v = d.ventas.find((x) => x.id === ventaId);
+  if (!v) return { error: 'La venta no existe.' };
+  if (esDevolucion(v)) return { error: 'Eso ya es una devolución.' };
+  if (v.anulada) return { error: `La venta N.º ${v.numero} está anulada: no hay nada para devolver.` };
+  const caja = cajaAbierta(d);
+  if (!caja) return { error: 'Abrí la caja para anotar la devolución.' };
+  if (!String(medio || '').trim()) return { error: 'Elegí cómo le devolvés la plata.' };
+  const ya = devueltoDe(d, v);
+  const pedidos = (renglones || []).map((r) => ({ renglon: Number(r.renglon), cantidad: red(Number(r.cantidad) || 0) })).filter((r) => r.cantidad !== 0);
+  if (!pedidos.length) return { error: 'Escribí cuánto devuelve de algún producto.' };
+  const vistos = new Set();
+  for (const r of pedidos) {
+    const it = v.items[r.renglon];
+    if (!it || vistos.has(r.renglon)) return { error: 'Revisá los productos a devolver.' };
+    vistos.add(r.renglon);
+    if (!(r.cantidad > 0)) return { error: `Revisá la cantidad de ${it.nombre}.` };
+    const queda = red(it.cantidad - (ya[r.renglon] || 0));
+    if (r.cantidad > queda + 1e-9) return { error: queda > 0 ? `De ${it.nombre} se pueden devolver hasta ${n(queda)} ${it.unidad}.` : `${it.nombre} ya se devolvió entero.` };
+  }
+  // El descuento de la venta se reparte igual: se devuelve lo que el cliente pagó de verdad por esos productos
+  const factor = v.subtotal > 0 ? v.total / v.subtotal : 1;
+  const items = pedidos.map((r) => {
+    const it = v.items[r.renglon];
+    return { renglon: r.renglon, productoId: it.productoId, codigo: it.codigo, nombre: it.nombre, unidad: it.unidad, cantidad: -r.cantidad, precio: it.precio, costo: it.costo, subtotal: -red2(r.cantidad * it.precio) };
+  });
+  const subtotal = red2(items.reduce((s, it) => s + it.subtotal, 0));
+  const total = red2(subtotal * factor);
+  d.numVenta = (d.numVenta || 0) + 1;
+  const dev = {
+    id: uid(),
+    tipo: 'devolucion',
+    numero: d.numVenta,
+    fecha: new Date().toISOString(),
+    ventaOriginal: v.id,
+    numeroOriginal: v.numero,
+    items,
+    subtotal,
+    descuentoPct: v.descuentoPct || 0,
+    descuento: red2(subtotal - total),
+    total,
+    ...(esUSD(v) ? { moneda: 'USD', cotizacion: v.cotizacion } : {}),
+    medio: String(medio).trim(),
+    recibido: null,
+    vuelto: null,
+    cliente: v.cliente || '',
+    usuario: usuario || (sesion ? sesion.nombre : ''),
+    cajaId: caja.id,
+    anulada: false,
+  };
+  for (const it of items) {
+    if (d.productos.some((p) => p.id === it.productoId)) {
+      registrar(d, { tipo: 'entrada', productoId: it.productoId, cantidad: -it.cantidad, costoUnit: 0, nota: `Devolución de la venta N.º ${v.numero}`, origen: 'devolucion', ventaId: dev.id, fecha: dev.fecha, usuario: dev.usuario });
+    }
+  }
+  d.ventas.push(dev);
+  return { devolucion: dev };
 }
