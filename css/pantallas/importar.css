@@ -1,0 +1,10 @@
+/* Importar desde Excel: filas dudosas y avisos. */
+.imp-otro-prov ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; }
+
+/* Importar: filas dudosas con su elección */
+.imp-dudosas-l { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+
+.imp-dudosas-l li { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-ctrl); padding: 8px 10px; }
+.imp-dudosas-l li > div { min-width: 0; flex: 1 1 220px; }
+.imp-dudosas-l select { padding-block: 6px; max-width: 100%; }
+.imp-deposito-av ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; }

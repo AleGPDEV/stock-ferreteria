@@ -5,7 +5,17 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<link rel="stylesheet" href="css/styles.css">
+<!-- Estilos: css/base.css (todo el programa) y uno por pantalla en css/pantallas/. El orden importa: base primero. -->
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/pantallas/caja.css">
+<link rel="stylesheet" href="css/pantallas/productos.css">
+<link rel="stylesheet" href="css/pantallas/movimientos.css">
+<link rel="stylesheet" href="css/pantallas/importar.css">
+<link rel="stylesheet" href="css/pantallas/reportes.css">
+<link rel="stylesheet" href="css/pantallas/deposito.css">
+<link rel="stylesheet" href="css/pantallas/ingreso.css">
+<link rel="stylesheet" href="css/pantallas/configuracion.css">
+<link rel="stylesheet" href="css/pantallas/celular.css">
 </head>
 <body>
 
@@ -474,6 +484,7 @@
       </div>
     </section>
 
+    <!-- CONFIGURACIÓN -->
     <section id="v-ajustes" class="vista" hidden>
       <header class="vh">
         <div><h1>Configuración</h1></div>
@@ -666,7 +677,7 @@
   <footer class="dlg-f"><button type="button" class="btn" id="rec-clave-copiar">Copiar</button><span class="sp"></span><button type="button" class="btn primary" data-cerrar>Ya la anoté</button></footer>
 </dialog>
 
-<!-- Foto grande -->
+<!-- Resumen de un día (Reportes) -->
 <dialog id="dlg-dia" class="dlg-dia" aria-labelledby="dia-titulo">
   <header class="dlg-h dia-h">
     <button class="btn flecha" type="button" id="dia-ant" title="Día anterior" aria-label="Día anterior"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
@@ -677,6 +688,7 @@
   <footer class="dlg-f"><button type="button" class="btn" id="dia-reportes">Ver este día en Reportes</button><span class="sp"></span><button type="button" class="btn primary" data-cerrar>Cerrar</button></footer>
 </dialog>
 
+<!-- Foto grande -->
 <dialog id="dlg-foto" class="dlg-foto" aria-labelledby="foto-titulo">
   <header class="dlg-h"><h2 id="foto-titulo"></h2><p class="sub" id="foto-sub"></p></header>
   <div class="dlg-b"><img id="foto-grande" alt=""></div>
@@ -824,7 +836,7 @@
   </form>
 </dialog>
 
-<!-- Importar productos -->
+<!-- Estante nuevo (Depósito) -->
 <dialog id="dlg-estante" class="dlg-chico" aria-labelledby="est-titulo">
   <form id="est-form" novalidate>
     <header class="dlg-h"><h2 id="est-titulo">Nuevo estante</h2></header>
@@ -842,6 +854,7 @@
   </form>
 </dialog>
 
+<!-- Etiquetas (Depósito) -->
 <dialog id="etq-dlg" class="dlg-ancho" aria-labelledby="etq-titulo">
   <header class="dlg-h">
     <h2 id="etq-titulo">Imprimir etiquetas</h2>
@@ -869,6 +882,7 @@
   </footer>
 </dialog>
 
+<!-- ¿En qué imprimís? Ajustes de etiquetas (Depósito) -->
 <dialog id="etq-ajustes-dlg" aria-labelledby="etq-ajustes-titulo">
   <header class="dlg-h">
     <h2 id="etq-ajustes-titulo">Cómo se imprimen las etiquetas</h2>
@@ -906,6 +920,7 @@
   </footer>
 </dialog>
 
+<!-- Importar productos desde Excel -->
 <dialog id="dlg-import" aria-labelledby="imp-titulo">
   <header class="dlg-h">
     <h2 id="imp-titulo">Importar productos desde Excel <button type="button" class="ayuda-ico" data-ayuda="Sirve para cargar muchos productos de una vez. La planilla lleva un producto por fila y estas columnas: Código, Producto, Categoría, Unidad, Proveedor, Ubicación, Stock, Stock mínimo, Costo y Precio. Para productos nuevos hace falta la columna Producto; para actualizar precios alcanza con Código y Precio.">?</button></h2>

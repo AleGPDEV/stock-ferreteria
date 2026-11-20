@@ -29,3 +29,12 @@ test('cada archivo empieza con su descripción y en modo estricto', () => {
     assert.match(t, /^\/\*[\s\S]*?\*\/\r?\n'use strict';\r?\n/, a);
   }
 });
+
+test('index.html carga css/base.css primero y todos los estilos de css/pantallas/', () => {
+  const html = fs.readFileSync(path.join(raiz, 'index.html'), 'utf8');
+  const hojas = [...html.matchAll(/<link rel="stylesheet" href="(css\/[^"]+)">/g)].map((m) => m[1]);
+  assert.equal(hojas[0], 'css/base.css', 'base.css va primero: las pantallas pisan sus reglas generales');
+  const pantallas = fs.readdirSync(path.join(raiz, 'css', 'pantallas')).filter((f) => f.endsWith('.css')).map((f) => `css/pantallas/${f}`);
+  assert.deepEqual([...hojas.slice(1)].sort(), pantallas.sort());
+  assert.ok(!fs.existsSync(path.join(raiz, 'css', 'styles.css')), 'css/styles.css ya no existe: los estilos van en base.css o en css/pantallas/');
+});

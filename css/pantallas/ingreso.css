@@ -1,0 +1,50 @@
+/* Pantalla de ingreso (usuario y PIN), datos dañados y clave de recuperación. */
+/* Pantallas sobre el programa (datos dañados) */
+.bloqueo { z-index: 45; }
+
+.bloq-texto { font-size: 16px; text-align: center; }
+
+/* Clave de recuperación */
+.rec-bloque { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
+
+.rec-bloque > div { flex: 1 1 280px; min-width: 0; }
+.rec-bloque .sub { max-width: none; margin-top: 4px; }
+.rec-clave { font-size: 28px; font-weight: 600; letter-spacing: .12em; text-align: center; padding: 16px; border: 2px dashed var(--accent); border-radius: 10px; user-select: all; margin: 0; }
+#rec-codigo { font-family: var(--f-mono); font-size: 20px; letter-spacing: .08em; text-transform: uppercase; }
+#rec-campos[hidden] { display: none; }
+
+/* Pantalla de ingreso */
+.login {
+  position: fixed; inset: 0; z-index: 40; overflow-y: auto;
+  background: var(--side-bg);
+  display: grid; place-items: center;
+  padding-block: max(24px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+.login-caja {
+  width: min(440px, 100%); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--sombra-flota); border-radius: 14px;
+  padding: 28px; display: flex; flex-direction: column; gap: 20px;
+}
+.login-logo { width: 52px; height: 52px; align-self: center; }
+.login-logo-img { width: 104px; height: 104px; border-radius: 50%; }
+.login-caja { border-top: 6px solid var(--accent); }
+.login h1 { text-align: center; margin-top: -8px; font-size: 32px; }
+.login-paso { display: flex; flex-direction: column; gap: 14px; }
+.login-usuarios { display: flex; flex-direction: column; gap: 10px; }
+.login-user {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left;
+  padding: 16px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+  font: inherit; font-family: var(--f-num); font-size: 22px; font-weight: 600; color: var(--fg); cursor: pointer;
+}
+.login-user { background: var(--surface); }
+.login-user:hover, .login-user:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.login-user small { font-family: var(--f-ui); font-size: 14.5px; font-weight: 500; color: var(--muted); }
+#login-pin { font-size: 34px; letter-spacing: .5em; text-align: center; padding: 12px; font-family: var(--f-num); font-weight: 600; }
+.login-acc { display: flex; gap: 10px; flex-wrap: wrap; }
+.login-olvide { align-self: center; }
+.login-rec textarea { font-family: var(--f-mono); font-size: 13px; }
+.login .login-caja { max-height: calc(100vh - 32px); overflow-y: auto; }
+.danado-acc { display: flex; flex-direction: column; gap: 10px; }
+.danado-acc .btn { justify-content: center; text-align: center; }
+#danado-detalle { font-size: 12.5px; overflow-wrap: anywhere; }
