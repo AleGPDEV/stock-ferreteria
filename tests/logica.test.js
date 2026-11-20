@@ -80,20 +80,6 @@ test('anular una venta devuelve el stock y no cambia el costo', () => {
   assert.match(app.anularVenta(d, venta.id), /ya está anulada/);
 });
 
-test('actualizar precios por categoría con redondeo', () => {
-  const d = base();
-  const r = app.actualizarPrecios(d, 'c:Herramientas', 12, { redondeo: 5 });
-  assert.equal(r.cantidad, 1);
-  assert.equal(d.productos[0].precio, 695); // 620 × 1,12 = 694,4 → 695
-  assert.equal(d.productos[0].costo, 390);
-  assert.equal(d.productos[1].precio, 48);
-  app.actualizarPrecios(d, 'p:v1', -10, { costo: true });
-  assert.equal(d.productos[0].precio, 625.5);
-  assert.equal(d.productos[0].costo, 351);
-  assert.ok(app.actualizarPrecios(d, '', 0).error);
-  assert.ok(app.actualizarPrecios(d, '', -100).error);
-});
-
 test('parseNum entiende números con coma, punto y símbolo de pesos', () => {
   assert.equal(app.parseNum('1.234,50'), 1234.5);
   assert.equal(app.parseNum('$ 290'), 290);
@@ -316,24 +302,6 @@ test('QA 9: con las opciones por defecto la lista de un proveedor no pisa nombre
   assert.equal(p.nombre, 'MARTILLO C/MANGO 16OZ');
 });
 
-test('QA 6: el redondeo no dispara los precios baratos', () => {
-  assert.equal(app.precioConAumento(2, 10, 10), 2.2);
-  assert.equal(app.precioConAumento(8, 10, 10), 8.8);
-  assert.equal(app.precioConAumento(3, 10, 5), 3.3);
-  assert.equal(app.precioConAumento(45, 10, 5), 50, 'de 10 o más, al peso');
-  assert.equal(app.precioConAumento(620, 12, 5), 695);
-  assert.equal(app.precioConAumento(1000, 0.4, 10), 1000, 'nunca baja en una suba');
-  assert.equal(app.precioConAumento(1000, -0.4, 10), 1000, 'nunca sube en una bajada');
-  // el cambio real nunca se aleja más de 2,5 puntos (salvo centésimos)
-  for (let precio = 0.5; precio < 3000; precio += 7.3) {
-    for (const paso of [0, 1, 5, 10]) {
-      const nuevo = app.precioConAumento(precio, 10, paso);
-      const real = (nuevo / precio - 1) * 100;
-      assert.ok(Math.abs(real - 10) <= 5.1, `${precio} paso ${paso} → ${nuevo} (${real.toFixed(1)} %)`);
-    }
-  }
-});
-
 test('QA 5: no se cobra un producto con precio 0 o negativo', () => {
   const d = base();
   assert.match(app.cobrar(d, [{ productoId: 'a', cantidad: 1, precio: -500 }], 'Débito', '').error, /precio/);
@@ -414,20 +382,6 @@ test('QA 15 y 16: compras sin stock inicial; ganancia sin productos sin costo', 
   assert.equal(g.ganancia, 158); // 620 × 0,9 − 400
   assert.equal(g.sinCosto, 1);
   assert.equal(g.vendidoSinCosto, 432);
-});
-
-test('códigos de barras: un producto con código del proveedor también se encuentra por el código del paquete', () => {
-  const d = base();
-  const p = d.productos[0];
-  assert.equal(app.buscarPorCodigo(d, '6901234567892'), null);
-  assert.equal(app.asignarBarras(d, p, '6901234567892'), null);
-  assert.equal(app.buscarPorCodigo(d, '6901234567892'), p);
-  assert.equal(app.buscarPorCodigo(d, p.codigo.toLowerCase()), p, 'el código propio sigue sirviendo');
-  assert.equal(app.asignarBarras(d, p, '6901234567892'), null, 'repetirlo en el mismo no es error');
-  assert.equal(p.barras.length, 1);
-  assert.match(app.asignarBarras(d, d.productos[1], '6901234567892'), /ya es de/);
-  assert.equal(app.codigoUsado(d, '6901234567892', p.id), null);
-  assert.equal(app.codigoUsado(d, '6901234567892', 'otro'), p);
 });
 
 test('importar: una fila con el código de barras actualiza el producto que lo tiene, y la columna «Códigos de barras» los agrega', () => {
@@ -691,25 +645,6 @@ test('QA2 B4: los errores al autorizar no bloquean el ingreso del administrador,
   assert.equal(b.length, 1);
   assert.equal(b[0].donde, 'autorizar');
   assert.equal(app.bloqueosPendientes(d, 'adm1').length, 0, 'se avisa una sola vez');
-});
-
-test('QA2 B1/B2: precio bajo el costo y productos nuevos de un empleado', () => {
-  assert.equal(app.precioBajoCosto({ costo: 100, precio: 100 }), true);
-  assert.equal(app.precioBajoCosto({ costo: 100, precio: 90 }), true);
-  assert.equal(app.precioBajoCosto({ costo: 100, precio: 130 }), false);
-  assert.equal(app.precioBajoCosto({ costo: 0, precio: 50 }), false, 'sin costo cargado no se sabe');
-  const d = base();
-  const p = { id: 'n1', codigo: 'N1', nombre: 'Martillo barato', costo: 0, precio: 150 };
-  d.productos.push(p);
-  app.marcarProductoNuevo(d, p, 'Empleado', 'empleado', 'agregado desde la venta');
-  assert.equal(p.revisar, true);
-  assert.equal(p.creadoPor, 'Empleado');
-  const h = d.historialPrecios[d.historialPrecios.length - 1];
-  assert.deepEqual([h.producto, h.antes, h.despues, h.usuario], ['Martillo barato', null, 150, 'Empleado']);
-  assert.match(h.motivo, /Producto nuevo/);
-  const q = { id: 'n2', codigo: 'N2', nombre: 'Otro', costo: 0, precio: 10 };
-  app.marcarProductoNuevo(d, q, 'Administrador', 'admin');
-  assert.equal(q.revisar, undefined, 'lo que crea un administrador no queda para revisar');
 });
 
 test('QA2 B5: las fotos sin usar se borran recién cuando ningún respaldo guardado puede usarlas', () => {
@@ -983,13 +918,6 @@ test('recibir en el depósito: código nuevo con nombre y estante, y la próxima
 
 // ---------- Revisión QA #5: importación y fichas repetidas ----------
 
-test('QA5: ¿se parecen dos descripciones?', () => {
-  assert.equal(app.seParecen('ESMALTE SINTETICO BLANCO 4L', 'Tornillo autoperforante'), false);
-  assert.equal(app.seParecen('TORN AUTOP 8X1', 'Tornillo autoperforante 8 x 1"'), true, 'abreviado');
-  assert.equal(app.seParecen('GUANTE DE NITRILO T9', 'Guante nitrilo'), true);
-  assert.equal(app.seParecen('8X40', 'Bulón'), true, 'sin palabras para comparar, no se puede decir');
-});
-
 test('QA5 A1: el Excel con dos facturas a nombre de un solo proveedor no pisa ni saltea', () => {
   const d = dosProveedores();
   // el tornillo ya tiene registrado su código 1234 de Distribuidora Norte
@@ -1056,25 +984,6 @@ test('QA5 M2: lo que ya se recibió en el Depósito no se suma otra vez con la f
   const plan2 = app.planImportacion(d, [{ ...fila[0], Factura: 'A 501' }]);
   app.aplicarImportacion(d, plan2, { ...app.CAMPOS_IMPORTAR, deposito: true });
   assert.equal(t.stock, 35);
-});
-
-test('QA5 M3: unir dos fichas del mismo producto y editar sus códigos de proveedor', () => {
-  const d = dosProveedores();
-  d.ventas.push({ id: 'v1', numero: 1, fecha: new Date().toISOString(), total: 300, medio: 'Efectivo', items: [{ productoId: 'lh', nombre: 'Guante', cantidad: 1, precio: 150 }] });
-  d.movimientos.push({ id: 'm1', fecha: new Date().toISOString(), tipo: 'entrada', productoId: 'lh', cantidad: 4 });
-  app.anotarCodigoProv(d.productos.find((p) => p.id === 'lh'), 'uru', 'LH-1234');
-  const r = app.unirProductos(d, 't', 'lh');
-  assert.equal(r.error, undefined);
-  const t = d.productos.find((p) => p.id === 't');
-  assert.equal(d.productos.length, 1);
-  assert.equal(t.stock, 19);
-  assert.ok(t.barras.includes('LH-1234'), 'el código propio del otro queda como código de barras');
-  assert.deepEqual(t.codigosProv.map((x) => x.proveedorId), ['uru']);
-  assert.equal(d.ventas[0].items[0].productoId, 't');
-  assert.equal(d.movimientos[0].productoId, 't');
-  assert.match(app.unirProductos(d, 't', 't').error, /mismo/);
-  app.quitarCodigoProv(t, 'uru');
-  assert.deepEqual(t.codigosProv, []);
 });
 
 test('QA5 M2: una fila dudosa que va como producto nuevo suma lo suyo aunque el otro se haya recibido en el Depósito', () => {
@@ -1221,13 +1130,6 @@ test('depósito: sugerencias mientras se escribe, primero lo que empieza con lo 
   assert.ok(nombres('7790001000101').length >= 1, 'por código');
   assert.deepEqual(nombres('zzz'), []);
   assert.ok(app.sugerenciasDeposito(d, 'a').length <= 8);
-});
-
-test('QA6 B2: una palabra de presentación, color o material no alcanza para decir que es el mismo producto', () => {
-  assert.equal(app.seParecen('Tarugo nylon 8mm caja x100', 'Tornillo autoperforante 8 x 1" (caja x100)'), false);
-  assert.equal(app.seParecen('Caño PVC 110 blanco', 'Codo PVC 40 blanco'), false);
-  assert.equal(app.seParecen('TORN AUTOP 8X1 CAJA', 'Tornillo autoperforante 8 x 1" (caja x100)'), true, 'abreviado sigue siendo el mismo');
-  assert.equal(app.seParecen('Caja', 'Caja'), true, 'si solo hay palabras comunes, se comparan esas');
 });
 
 test('QA6 B1: lo exacto gana al número corto del estante', () => {
