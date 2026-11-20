@@ -14,6 +14,29 @@ function baseVacia() {
 // En el navegador se usa localStorage.
 const escritorio = () => typeof window !== 'undefined' && window.almacen && window.almacen.escritorio;
 
+/* ---------- Registro de errores ----------
+ * En escritorio, los errores de la pantalla van al registro.log (ver electron/registro.js).
+ * Se anotan como mucho 50 por sesión y no se repite el mismo seguido, para no llenar el archivo. */
+const registroPantalla = { anotados: 0, ultimo: '' };
+function anotarErrorPantalla(area, mensaje, detalle) {
+  if (!escritorio() || !window.almacen.anotar) return;
+  const clave = `${area}|${mensaje}`;
+  if (registroPantalla.anotados >= 50 || clave === registroPantalla.ultimo) return;
+  registroPantalla.anotados++;
+  registroPantalla.ultimo = clave;
+  try { window.almacen.anotar('ERROR', area, String(mensaje || ''), String(detalle || '')); } catch (e) { /* nada */ }
+}
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('error', (ev) => {
+    const err = ev.error;
+    anotarErrorPantalla('error', ev.message || (err && err.message) || 'Error', (err && err.stack) || `${ev.filename || ''}:${ev.lineno || ''}:${ev.colno || ''}`);
+  });
+  window.addEventListener('unhandledrejection', (ev) => {
+    const r = ev.reason;
+    anotarErrorPantalla('promesa', (r && r.message) || String(r), r && r.stack);
+  });
+}
+
 /* ---------- Guardado ----------
  * En la versión de escritorio los datos van a una base SQLite. Para que una venta tarde lo mismo
  * con un día o con años de historia, solo se manda lo que cambió desde el último guardado:
@@ -117,6 +140,7 @@ function cargar() {
 
 function marcarDanados(info) {
   datosDanados = info;
+  anotarErrorPantalla('datos', `Los datos guardados están dañados (${(info && info.error) || '?'})`, info && (info.detalle || (info.filas && `${info.filas.length} filas`)));
   db = baseVacia();
   asegurarUsuarios(db);
   fotoGuardada = null;

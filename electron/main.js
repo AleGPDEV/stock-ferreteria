@@ -1,9 +1,10 @@
 // Proceso principal de la versión de escritorio (Windows).
 // Guarda los datos en una base SQLite y hace un respaldo comprimido por día,
 // con copia opcional a una carpeta extra (pendrive o nube).
-const { app, BrowserWindow, ipcMain, shell, Menu, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, dialog, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const zlib = require('zlib');
 const { promisify } = require('util');
 const { pathToFileURL } = require('url');
@@ -11,6 +12,7 @@ const { Almacen } = require('./datos');
 const { fotosEnUso, planLimpiezaFotos } = require('./fotos');
 const { imprimirCrudo } = require('./etiquetadora');
 const { crearServidorCelular, datosVinculo, ipsLocales, nuevoToken, nuevoPcId } = require('./servidor-celular');
+const { crearRegistro, informeSoporte } = require('./registro');
 
 const RESPALDOS_A_CONSERVAR = 60;
 const PATRON_RESPALDO = /^respaldo_\d{4}-\d{2}-\d{2}\.json(\.gz)?$/;
@@ -21,6 +23,17 @@ const gzip = promisify(zlib.gzip);
 // suelto en la raíz de AppData\Roaming; las versiones anteriores pueden tener datos.json ahí.
 const APPDATA = app.getPath('appData');
 app.setPath('userData', path.join(APPDATA, 'Stock Ferreteria'));
+
+// Registro de errores: %APPDATA%\Stock Ferreteria\registro.log (ver electron/registro.js)
+const registro = crearRegistro(app.getPath('userData'));
+/** Anota un error en el registro y lo muestra en la consola (para cuando se prueba con npm start). */
+function anotarError(area, mensaje, e) {
+  console.error(mensaje, e || '');
+  registro.error(area, mensaje, e);
+}
+// Un error no atrapado no debe cerrar el programa con la caja abierta: se anota y se sigue.
+process.on('uncaughtException', (e) => anotarError('programa', 'Error no atrapado', e));
+process.on('unhandledRejection', (e) => anotarError('programa', 'Promesa rechazada sin atrapar', e));
 
 let ventana = null;
 let almacen = null;
@@ -50,7 +63,11 @@ function hoy() {
 function abrirBase() {
   const r = rutas();
   fs.mkdirSync(r.base, { recursive: true });
+  const inicio = Date.now();
   almacen = new Almacen(r.datos);
+  let peso = 0;
+  try { peso = fs.statSync(r.datos).size; } catch (e) { /* base nueva */ }
+  registro.info('inicio', `Abre la versión ${app.getVersion()}: base abierta en ${Date.now() - inicio} ms, datos.sqlite pesa ${(peso / 1024 / 1024).toFixed(1)} MB`);
   // Versiones anteriores guardaban todo en datos.json: se pasa a SQLite una sola vez
   if (almacen.vacia()) {
     for (const archivo of r.jsonViejos.flatMap((a) => [a, a + '.bak'])) {
@@ -151,7 +168,7 @@ function respaldarFotos(carpetaExtraDestino) {
     traerFotosQueFaltan();
     sincronizarFotos(r.fotos, path.join(r.respaldos, 'Fotos'));
     if (carpetaExtraDestino) sincronizarFotos(r.fotos, path.join(carpetaExtraDestino, 'Fotos'));
-  } catch (e) { console.error('No se pudieron copiar las fotos:', e); }
+  } catch (e) { anotarError('fotos', 'No se pudieron copiar las fotos', e); }
 }
 
 /** Borra las fotos que ningún producto usa desde hace más días que los respaldos guardados. */
@@ -184,7 +201,7 @@ async function hacerRespaldo(forzar = false) {
       podar(respaldos);
       almacen.ponerAjuste('ultimoRespaldo', { fecha: new Date().toISOString(), archivo });
       nuevo = true;
-      try { limpiarFotos(texto); } catch (e) { console.error('No se pudieron limpiar las fotos:', e); }
+      try { limpiarFotos(texto); } catch (e) { anotarError('fotos', 'No se pudieron limpiar las fotos', e); }
     }
     respaldarFotos();
     const extra = almacen.ajuste('estadoExtra');
@@ -192,7 +209,7 @@ async function hacerRespaldo(forzar = false) {
     if (nuevo || (pendiente && Date.now() - ultimoIntentoExtra > 10 * 60 * 1000)) copiarAExtra(archivo);
     return infoRespaldos();
   } catch (e) {
-    console.error('No se pudo hacer el respaldo:', e);
+    anotarError('respaldo', 'No se pudo hacer el respaldo', e);
     return { error: String(e.message || e) };
   } finally {
     respaldando = false;
@@ -222,7 +239,7 @@ function respaldoAlCerrar() {
     almacen.ponerAjuste('ultimoRespaldo', { fecha: new Date().toISOString(), archivo });
     copiarAExtra(archivo);
   } catch (e) {
-    console.error('No se pudo hacer el respaldo al cerrar:', e);
+    anotarError('respaldo', 'No se pudo hacer el respaldo al cerrar', e);
   }
 }
 
@@ -321,17 +338,32 @@ ipcMain.on('almacen:cambios', (e, cambios) => {
       danada = null;
     } else if (cambios && cambios.completo) {
       // Si la copia no se puede hacer (disco lleno…), se guarda igual: no se puede dejar la caja sin cobrar
-      try { copiaAntesDeReemplazar(); } catch (err) { console.error('No se pudo copiar la base antes de reemplazarla:', err); }
+      try { copiaAntesDeReemplazar(); } catch (err) { anotarError('guardado', 'No se pudo copiar la base antes de reemplazarla', err); }
     }
     almacen.aplicar(cambios);
     e.returnValue = null;
+    if (cambios && cambios.completo) registro.info('guardado', 'Se reemplazaron todos los datos (restaurar copia, ejemplo o borrar todo)');
     // Al restaurar una copia completa, traer enseguida las fotos que use y falten en esta PC
     if (cambios && cambios.completo) setImmediate(() => { try { traerFotosQueFaltan(); } catch (err) { /* se reintenta en el respaldo */ } });
     const ult = almacen.ajuste('ultimoRespaldo');
     if (!ult || !String(ult.archivo || '').includes(hoy())) programarRespaldo();
   } catch (err) {
+    anotarError('guardado', 'No se pudo guardar', err);
     e.returnValue = String(err.message || err);
   }
+});
+/* ---------- Registro de errores ---------- */
+// Solo la ventana del programa puede anotar y pedir el informe (no las herramientas)
+const esVentanaPrincipal = (e) => !!ventana && !ventana.isDestroyed() && e.sender === ventana.webContents;
+ipcMain.on('registro:anotar', (e, nivel, area, mensaje, detalle) => {
+  if (!esVentanaPrincipal(e)) return;
+  registro.anotar(['INFO', 'AVISO', 'ERROR'].includes(nivel) ? nivel : 'ERROR', `pantalla/${String(area || '').slice(0, 40)}`, String(mensaje || '').slice(0, 1000), String(detalle || '').slice(0, 4000));
+});
+ipcMain.handle('registro:copiarInforme', (e) => {
+  if (!esVentanaPrincipal(e)) return { error: 'No permitido.' };
+  const lineas = registro.ultimas(200);
+  clipboard.writeText(informeSoporte({ version: app.getVersion(), sistema: `${os.type()} ${os.release()} (${os.arch()})`, fecha: new Date(), lineas }));
+  return { lineas: lineas.length };
 });
 ipcMain.on('almacen:info', (e) => {
   const r = rutas();
@@ -462,7 +494,7 @@ function infoCelular() {
   };
 }
 async function prenderCelular() {
-  if (!servidorCelular) servidorCelular = crearServidorCelular({ clave: claveCelular, preguntar: preguntarAlPrograma, version: app.getVersion(), guardarFoto: guardarFotoEnDisco, borrarFoto: borrarFotoSinUso });
+  if (!servidorCelular) servidorCelular = crearServidorCelular({ clave: claveCelular, preguntar: preguntarAlPrograma, version: app.getVersion(), guardarFoto: guardarFotoEnDisco, borrarFoto: borrarFotoSinUso, alError: (m, e) => anotarError('celular', m, e) });
   errorCelular = await servidorCelular.iniciar();
   return infoCelular();
 }
@@ -528,6 +560,10 @@ function crearVentana() {
     try { f = Number(almacen && almacen.ajuste('zoom')) || 1; } catch (e) { /* nada */ }
     ventana.webContents.setZoomFactor(f);
   });
+  // Si la pantalla se cae o se cuelga, queda anotado
+  ventana.webContents.on('render-process-gone', (ev, d) => registro.error('pantalla', `La pantalla se cerró sola (${d.reason}, código ${d.exitCode})`));
+  ventana.on('unresponsive', () => registro.aviso('pantalla', 'La pantalla dejó de responder'));
+  ventana.on('responsive', () => registro.info('pantalla', 'La pantalla volvió a responder'));
   // Al cerrar el programa se cierran también las herramientas
   ventana.on('closed', () => app.quit());
 
@@ -568,6 +604,7 @@ if (!app.requestSingleInstanceLock()) {
     try {
       abrirBase();
     } catch (e) {
+      anotarError('inicio', 'No se pudo abrir la base de datos', e);
       dialog.showErrorBox('Stock Ferretería', `No se pudo abrir la base de datos.\n\n${e.message}\n\nComunicate con tu proveedor. Los respaldos están en Documentos > Stock Ferreteria > Respaldos.`);
       app.quit();
       return;
@@ -607,7 +644,7 @@ if (!app.requestSingleInstanceLock()) {
     try { traerFotosQueFaltan(); } catch (e) { /* nada */ }
     crearVentana();
     // Si el celular ya estaba vinculado, la PC lo vuelve a atender sola al abrir el programa
-    try { if (claveCelular().activo) prenderCelular(); } catch (e) { console.error('No se pudo prender la conexión del celular:', e); }
+    try { if (claveCelular().activo) prenderCelular(); } catch (e) { anotarError('celular', 'No se pudo prender la conexión del celular', e); }
     // Respaldo del día unos segundos después de abrir, sin demorar el arranque
     setTimeout(() => hacerRespaldo(), 8000);
   });

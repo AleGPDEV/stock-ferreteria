@@ -54,6 +54,15 @@ function iniciarRespaldo() {
     $('#respaldo-texto').innerHTML = `Los cambios se guardan solos en esta PC. <button type="button" class="ayuda-ico" data-ayuda="${esc(detalle)}">?</button>`;
     $('#btn-abrir-respaldos').hidden = false;
     $('#btn-abrir-respaldos').addEventListener('click', () => window.almacen.abrirRespaldos());
+    if (window.almacen.copiarInforme) {
+      $('#btn-informe-soporte').hidden = false;
+      $('#btn-informe-soporte').addEventListener('click', async () => {
+        try {
+          const r = await window.almacen.copiarInforme();
+          toast(r && !r.error ? 'Informe copiado. Pegalo en el mensaje a soporte.' : 'No se pudo copiar el informe.');
+        } catch (e) { toast('No se pudo copiar el informe.'); }
+      });
+    }
     if (window.almacen.elegirCarpetaExtra) {
       $('#respaldo-extra').hidden = false;
       const usar = async (accion, aviso) => {

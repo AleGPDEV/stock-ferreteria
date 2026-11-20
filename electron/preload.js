@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('almacen', {
   desactivarCelular: () => ipcRenderer.invoke('celular:desactivar'),
   nuevoCodigoCelular: () => ipcRenderer.invoke('celular:nuevoCodigo'),
   alAbrirCelular: (fn) => { ipcRenderer.on('celular:abrir', () => fn()); },
+  // Registro de errores (registro.log): anotar desde la pantalla y copiar el informe para soporte
+  anotar: (nivel, area, mensaje, detalle) => ipcRenderer.send('registro:anotar', nivel, area, mensaje, detalle),
+  copiarInforme: () => ipcRenderer.invoke('registro:copiarInforme'),
   reparar: () => ipcRenderer.sendSync('almacen:reparar'),
   marcarDanada: () => ipcRenderer.sendSync('almacen:marcarDanada'),
 });
