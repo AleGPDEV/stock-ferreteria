@@ -40,11 +40,11 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
 /* ---------- Guardado ----------
  * En la versión de escritorio los datos van a una base SQLite. Para que una venta tarde lo mismo
  * con un día o con años de historia, solo se manda lo que cambió desde el último guardado:
- * productos, proveedores y usuarios se comparan fila por fila; ventas y movimientos solo se agregan
- * (de una venta solo puede cambiar si está anulada).
+ * productos, proveedores, usuarios y cajas se comparan fila por fila (la caja abierta cambia con cada venta);
+ * ventas y movimientos solo se agregan (de una venta solo puede cambiar si está anulada).
  */
-const TABLAS = ['productos', 'proveedores', 'usuarios', 'ventas', 'movimientos'];
-const TABLAS_COMPARADAS = ['productos', 'proveedores', 'usuarios'];
+const TABLAS = ['productos', 'proveedores', 'usuarios', 'ventas', 'movimientos', 'cajas'];
+const TABLAS_COMPARADAS = ['productos', 'proveedores', 'usuarios', 'cajas'];
 const filasDe = (d, t) => (Array.isArray(d[t]) ? d[t] : []);
 
 function configDe(d) {
@@ -67,6 +67,8 @@ function fotoDe(d) {
  * `cambios` va a la base y `confirmar()` actualiza la foto cuando se guardó bien.
  */
 function calcularCambios(foto, d, completo = false) {
+  // Cada caja es una fila con su id: una copia muy vieja podría traer alguna sin id
+  filasDe(d, 'cajas').forEach((c, i) => { if (c && c.id == null) c.id = `caja-${c.numero || i + 1}`; });
   const filaFecha = (x) => ({ id: x.id, fecha: x.fecha || '', datos: JSON.stringify(x) });
   if (!foto || completo || filasDe(d, 'ventas').length < foto.ventas.size || filasDe(d, 'movimientos').length < foto.movimientos.size) {
     const upsert = {};
