@@ -138,7 +138,26 @@ function copiarTexto(texto, aviso) {
   try { navigator.clipboard.writeText(texto).then(ok, () => toast(`No se pudo copiar. Anotalo: ${texto}`)); } catch (e) { toast(`Anotalo: ${texto}`); }
 }
 
-/* Barra lateral plegable (se recuerda en esta PC) */
+/* Barra lateral plegable. En pantallas angostas (notebooks, menos de 1200 px) empieza plegada, para dejarle lugar
+ * al trabajo; en las anchas, abierta. Si el usuario la abre o la pliega a mano, se recuerda en esta PC para ese
+ * tamaño de pantalla (angosta o ancha). En el celular (820 px o menos) la barra va arriba y esto no se usa. */
+const BARRA_ANGOSTA = 1200;
+const BARRA_CELULAR = 820; // igual que el @media de base.css donde la barra pasa arriba
+const tamanoBarra = (ancho) => (ancho < BARRA_ANGOSTA ? 'angosta' : 'ancha');
+/** Lo guardado en esta PC: { ancha, angosta } con 'plegada' o 'abierta'. Lo de versiones anteriores (un solo valor) era de pantalla ancha. */
+function leerPrefBarra(texto) {
+  if (texto === 'plegada' || texto === 'abierta') return { ancha: texto };
+  try { const o = JSON.parse(texto); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { return {}; }
+}
+/** ¿La barra va plegada con este ancho de ventana? Manda lo que eligió el usuario para ese tamaño; si no eligió, depende del ancho. */
+function barraPlegadaPara(pref, ancho) {
+  // En el celular la barra va arriba: plegada se perderían el usuario y el texto de «Cerrar sesión»
+  if (ancho <= BARRA_CELULAR) return false;
+  const t = tamanoBarra(ancho);
+  const elegida = pref && pref[t];
+  if (elegida === 'plegada' || elegida === 'abierta') return elegida === 'plegada';
+  return t === 'angosta';
+}
 function aplicarBarra(plegada) {
   document.querySelector('.app').classList.toggle('barra-plegada', plegada);
   const b = $('#btn-barra');
@@ -148,13 +167,20 @@ function aplicarBarra(plegada) {
   b.setAttribute('aria-expanded', String(!plegada));
 }
 function iniciarBarra() {
-  let plegada = false;
-  try { plegada = localStorage.getItem('ferreteria-barra') === 'plegada'; } catch (e) { /* nada */ }
-  aplicarBarra(plegada);
+  let pref = {};
+  try { pref = leerPrefBarra(localStorage.getItem('ferreteria-barra')); } catch (e) { /* nada */ }
+  const ajustar = () => aplicarBarra(barraPlegadaPara(pref, window.innerWidth));
+  ajustar();
+  // Al agrandar o achicar la ventana y pasar de un tamaño al otro, se aplica lo de ese tamaño
+  const mq = window.matchMedia(`(max-width: ${BARRA_ANGOSTA - 0.02}px)`);
+  if (mq.addEventListener) mq.addEventListener('change', ajustar);
+  const mqCel = window.matchMedia(`(max-width: ${BARRA_CELULAR}px)`);
+  if (mqCel.addEventListener) mqCel.addEventListener('change', ajustar);
   $('#btn-barra').addEventListener('click', () => {
-    plegada = !document.querySelector('.app').classList.contains('barra-plegada');
+    const plegada = !document.querySelector('.app').classList.contains('barra-plegada');
     aplicarBarra(plegada);
-    try { localStorage.setItem('ferreteria-barra', plegada ? 'plegada' : 'abierta'); } catch (e) { /* nada */ }
+    pref = { ...pref, [tamanoBarra(window.innerWidth)]: plegada ? 'plegada' : 'abierta' };
+    try { localStorage.setItem('ferreteria-barra', JSON.stringify(pref)); } catch (e) { /* nada */ }
   });
 }
 
