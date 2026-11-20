@@ -142,3 +142,7 @@
 @media (max-width: 520px) { .ac-usd { grid-template-columns: 1fr; } }
 .caja-cotiz { margin-bottom: 8px; }
 .cc-sep { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; }
+
+/* Devolver productos */
+.dev-items input { width: 7em; text-align: right; font-family: var(--f-num); }
+.dev-items td.num { vertical-align: middle; }

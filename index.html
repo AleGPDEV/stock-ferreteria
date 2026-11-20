@@ -774,6 +774,24 @@
   </form>
 </dialog>
 
+<!-- Devolver una parte de una venta (Vender) -->
+<dialog id="dlg-devolver" aria-labelledby="dev-titulo">
+  <form id="form-devolver" novalidate>
+    <header class="dlg-h"><h2 id="dev-titulo">Devolver productos <button type="button" class="ayuda-ico" data-ayuda="Para cuando el cliente devuelve una parte de lo que compró. Los productos vuelven al stock y la plata se resta de la caja de ahora. La venta original no cambia.">?</button></h2></header>
+    <div class="dlg-b campos-col">
+      <p class="muted" id="dev-venta"></p>
+      <div class="table-wrap"><table class="tabla dev-items">
+        <thead><tr><th>Producto</th><th class="num">Se puede devolver</th><th class="num">Devuelve</th></tr></thead>
+        <tbody id="dev-items"></tbody>
+      </table></div>
+      <label class="f" for="dev-medio">¿Cómo le devolvés la plata?<select id="dev-medio"></select></label>
+      <ul class="lista cc-resumen"><li class="cc-total"><span>Se le devuelve</span><strong id="dev-total"></strong></li></ul>
+    </div>
+    <p class="err dlg-err" id="dev-err" role="alert"></p>
+    <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" data-cerrar>Cancelar</button><button class="btn primary" type="submit">Devolver</button></footer>
+  </form>
+</dialog>
+
 <!-- Cerrar caja -->
 <dialog id="dlg-cerrar-caja" aria-labelledby="cc-titulo">
   <form id="form-cerrar-caja" novalidate>

@@ -17,7 +17,7 @@ function htmlArqueo(caja) {
     ${r.retiros ? fila('− Retiros', $u(r.retiros)) : ''}
     ${fila('Debería haber', $u(r.esperado), 't-total')}
     ${caja.cerrada ? fila('Se contó', $u(caja.contado)) + fila(dif === 0 ? 'Diferencia' : dif > 0 ? 'Sobrante' : 'Faltante', $u(Math.abs(dif)), 't-total') : ''}<hr>
-    ${fila('Ventas', r.ventas)}${r.anuladas ? fila('Anuladas', r.anuladas) : ''}
+    ${fila('Ventas', r.ventas)}${r.devoluciones ? fila('Devoluciones', r.devoluciones) : ''}${r.anuladas ? fila('Anuladas', r.anuladas) : ''}
     ${Object.entries(r.porMedio).map(([m, t]) => fila(esc(m), $u(t))).join('')}
     ${fila('Total vendido', $u(r.total))}
     ${r.usd ? `<hr><div><strong>DÓLARES</strong></div>${fila('Dólares al empezar', $usd(r.usd.inicial))}${fila('+ Ventas en efectivo', $usd(r.usd.ventasEfectivo))}
@@ -54,7 +54,7 @@ function renderCierreEnVivo() {
       ${r.usd.retiros ? `<li><span>− Retiros (U$S)</span><span>${$usd(r.usd.retiros)}</span></li>` : ''}
       <li class="cc-total"><span>Debería haber en dólares</span><strong>${$usd(r.usd.esperado)}</strong></li>
       ${Object.entries(r.usd.porMedio).filter(([m]) => m !== 'Efectivo').map(([m, t]) => `<li class="muted"><span>${esc(m)} en U$S (no es efectivo)</span><span>${$usd(t)}</span></li>`).join('')}` : ''}
-    <li class="muted"><span>Ventas cobradas</span><span>${r.ventas}${r.anuladas ? ` · ${r.anuladas} anuladas` : ''}</span></li>`;
+    <li class="muted"><span>Ventas cobradas</span><span>${r.ventas}${r.devoluciones ? ` · ${r.devoluciones} ${r.devoluciones === 1 ? 'devolución' : 'devoluciones'}` : ''}${r.anuladas ? ` · ${r.anuladas} anuladas` : ''}</span></li>`;
   const v = $('#cc-contado').value;
   $('#cc-diferencia').innerHTML = v === '' ? '' : chipDiferencia(red2(Number(v) - r.esperado));
   $('#cc-usd').hidden = !r.usd;

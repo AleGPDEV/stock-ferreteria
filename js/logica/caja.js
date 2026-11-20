@@ -51,7 +51,7 @@ function resumenCaja(d, caja) {
   enUSD.forEach((v) => { porMedioUSD[v.medio] = red2((porMedioUSD[v.medio] || 0) + v.total); });
   const usd = enUSD.length || caja.inicialUSD || caja.movs.some((m) => m.moneda === 'USD') ? {
     inicial: caja.inicialUSD || 0,
-    ventas: enUSD.length,
+    ventas: enUSD.filter((v) => !esDevolucion(v)).length,
     total: red2(enUSD.reduce((s, v) => s + v.total, 0)),
     porMedio: porMedioUSD,
     ventasEfectivo: porMedioUSD.Efectivo || 0,
@@ -62,7 +62,8 @@ function resumenCaja(d, caja) {
   return {
     usd,
     inicial: caja.inicial,
-    ventas: todas.length,
+    ventas: todas.filter((v) => !esDevolucion(v)).length,
+    devoluciones: todas.filter(esDevolucion).length,
     anuladas: ventas.length - todas.length,
     total: red2(validas.reduce((s, v) => s + v.total, 0)),
     porMedio,
