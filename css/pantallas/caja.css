@@ -20,7 +20,8 @@
 }
 .prod-btn:hover { border-color: var(--accent); background: var(--box-hover); }
 .prod-btn:disabled { opacity: .55; cursor: not-allowed; }
-.prod-btn.sin-stock { opacity: .7; border-style: dashed; }
+/* Sin stock: se ve «apagada» por el fondo gris y el borde punteado, no por transparencia (así el texto se sigue leyendo) */
+.prod-btn.sin-stock { border-style: dashed; background: var(--surface-2); }
 .prod-btn .pb-foto { width: 100%; height: 120px; object-fit: contain; background: var(--surface); border-radius: 8px; margin-bottom: 4px; }
 .prod-btn .nom { font-weight: 500; overflow-wrap: anywhere; line-height: 1.35; }
 .prod-btn .fila { display: flex; justify-content: space-between; width: 100%; gap: 8px; font-size: 13.5px; color: var(--muted); }

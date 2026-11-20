@@ -20,7 +20,7 @@
   --fg: #1f2328;
   --muted: #59626b;
   --line: #d5dade;
-  --accent: #b5520f;
+  --accent: #ac4e0e; /* un poco más oscuro que el naranja del logo (#b5520f): así el texto naranja se lee bien sobre los fondos claros (contraste 4,5:1 o más) */
   --accent-hover: #9a440b;
   --accent-fg: #ffffff;
   --accent-soft: #fbeadc;
@@ -49,7 +49,7 @@
     --accent: #f08c45; --accent-hover: #f5a26a; --accent-fg: #1a0d03; --accent-soft: #3d2615;
     --ok: #7fd1a0; --ok-bg: #16301f; --warn: #f0b75c; --warn-bg: #3a2b12; --danger: #f4948a; --danger-bg: #3f1d1a;
     --backdrop: rgba(0, 0, 0, .6);
-    --verde: #26875a; --verde-hover: #2f9a67; --rojo: #c4463a; --rojo-hover: #d2564a;
+    --verde: #237e54; --verde-hover: #1f744d; --rojo: #c4463a; --rojo-hover: #b53d32;
     --side-bg: #121416; --side-2: #1f2226; --side-fg: #e8eaed; --side-muted: #9ea6ae; --side-line: #2c3035;
     --side-accent: #f0904b; --side-accent-soft: #2c2622;
     --box: #25292d; --box-hover: #2f2a26; --shadow: none; --sombra-flota: 0 12px 32px rgba(0, 0, 0, .5);
@@ -61,7 +61,7 @@
   --accent: #f08c45; --accent-hover: #f5a26a; --accent-fg: #1a0d03; --accent-soft: #3d2615;
   --ok: #7fd1a0; --ok-bg: #16301f; --warn: #f0b75c; --warn-bg: #3a2b12; --danger: #f4948a; --danger-bg: #3f1d1a;
   --backdrop: rgba(0, 0, 0, .6);
-  --verde: #26875a; --verde-hover: #2f9a67; --rojo: #c4463a; --rojo-hover: #d2564a;
+  --verde: #237e54; --verde-hover: #1f744d; --rojo: #c4463a; --rojo-hover: #b53d32;
   --side-bg: #121416; --side-2: #1f2226; --side-fg: #e8eaed; --side-muted: #9ea6ae; --side-line: #2c3035;
   --side-accent: #f0904b; --side-accent-soft: #2c2622;
   --box: #25292d; --box-hover: #2f2a26; --shadow: none; --sombra-flota: 0 12px 32px rgba(0, 0, 0, .5);
