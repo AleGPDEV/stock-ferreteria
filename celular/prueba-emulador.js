@@ -51,8 +51,9 @@ const pcDePrueba = crearServidorCelular({ clave: () => ({ token: 'token-de-prueb
   // La PC por WiFi: el pedido http:// sin cifrar tiene que salir por CapacitorHttp (no lo bloquea Android)
   r.http = await page.evaluate(async () => { try { const x = await window.Capacitor.Plugins.CapacitorHttp.get({ url: 'http://10.0.2.2:8765/api/estado', connectTimeout: 3000, readTimeout: 3000 }); return x.status; } catch (e) { return 'error: ' + e.message; } });
   r.pc = await page.evaluate(async () => {
-    datos.pc = { urls: ['http://10.0.2.3:8765', 'http://10.0.2.2:8765'], url: 'http://10.0.2.3:8765', token: 'token-de-prueba', pcId: 'pc-de-prueba' };
-    await revisarPC(); // la primera dirección no responde: tiene que encontrar la segunda
+    datos.pc = { urls: ['http://10.0.2.2:8799', 'http://10.0.2.2:8765'], url: 'http://10.0.2.2:8799', token: 'token-de-prueba', pcId: 'pc-de-prueba' };
+    // La primera dirección no responde (puerto donde no escucha nadie; 10.0.2.3 ya no sirve: en los emuladores nuevos llega a la PC)
+    await revisarPC(); // tiene que encontrar la segunda
     await new Promise((ok) => setTimeout(ok, 1500)); // los estantes llegan aparte
     return { estado: pc.estado, url: datos.pc.url, estantes: datos.estantes.map((e) => e.codigo), habilitado: !document.getElementById('sin-codigo').disabled };
   });
@@ -105,7 +106,7 @@ const pcDePrueba = crearServidorCelular({ clave: () => ({ token: 'token-de-prueb
     return { a, b, msj: document.getElementById('mv-msj').textContent };
   }, cortoC1);
   r.martilloUbicacion = d.productos.find((p) => p.codigo === 'MAR-16').ubicacion;
-  r.sinToken = await page.evaluate(async () => { datos.pc.token = 'viejo'; await revisarPC(); const e = pc.estado; datos.pc.token = 'token-de-prueba'; return e; });
+  r.sinToken = await page.evaluate(async () => { while (revisandoPC) await new Promise((ok) => setTimeout(ok, 50)); /* si había una revisión en curso, revisarPC() no haría nada */ datos.pc.token = 'viejo'; await revisarPC(); const e = pc.estado; datos.pc.token = 'token-de-prueba'; return e; });
   // Lo cargado queda guardado al cerrar y volver a abrir la app
   await device.shell('am force-stop uy.grupomuros.etiquetador');
   await espera(1000);
