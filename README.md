@@ -47,6 +47,8 @@ Cada venta y cada movimiento de stock queda registrado con el nombre de quien lo
 
 Después de 5 PIN equivocados seguidos, ese usuario tiene que esperar 5 minutos para volver a probar. Los errores en la ventana de **autorizar un descuento** se cuentan aparte: un empleado no puede dejar al administrador sin poder entrar. Un administrador bloqueado puede entrar igual con la clave de recuperación. La próxima vez que entra, el dueño del PIN ve un aviso con la fecha de los intentos fallidos.
 
+Los PIN y la clave de recuperación no se guardan tal cual: se guarda un resumen con **PBKDF2** (600.000 vueltas), que hace muy lento probar todos los PIN aunque alguien copie la base. Los PIN guardados por versiones anteriores (con SHA-256) se pasan solos al formato nuevo la próxima vez que cada uno entra.
+
 **Clave de recuperación:** se crea sola la primera vez que se le pone un PIN a un administrador (al cambiar el `1234`), y también se puede crear en **Configuración → Usuarios → Crear clave de recuperación**. El programa muestra una vez una clave de 12 letras y números (por ejemplo `QZ85-RNVC-RNSN`) que hay que anotar en papel y guardar fuera del mostrador; el programa guarda solo un resumen cifrado. Mientras no se cree, el administrador ve un aviso en **Configuración** (con el botón **Crearla**).
 
 **Si se olvida el PIN del administrador:** en la pantalla de ingreso, tocá **Me olvidé el PIN del administrador**, escribí la clave de recuperación y elegí un PIN nuevo. Si se pierde la clave, se puede crear otra desde la misma pantalla de Usuarios (la anterior deja de servir).

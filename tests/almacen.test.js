@@ -38,7 +38,7 @@ test('guardar todo y leerlo da exactamente lo mismo', () => {
   al.cerrar();
 });
 
-test('cada cambio se guarda solo y se lee bien', () => {
+test('cada cambio se guarda solo y se lee bien', async () => {
   const al = nueva();
   const d = app.semilla();
   app.asegurarUsuarios(d);
@@ -73,7 +73,7 @@ test('cada cambio se guarda solo y se lee bien', () => {
   d.productos[1].precio = 9999;
   d.productos.splice(2, 1);
   d.proveedores.pop();
-  app.guardarUsuario(d, { nombre: 'Carlos', rol: 'empleado', pin: '4321' });
+  await app.guardarUsuario(d, { nombre: 'Carlos', rol: 'empleado', pin: '4321' });
   d.negocio.nombre = 'Ferretería El Tornillo';
   foto = guardar(al, foto, d);
   igual(al, d);
