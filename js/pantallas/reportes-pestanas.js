@@ -179,3 +179,96 @@ function renderReposicionYValor() {
       </table></div>`
     : '<p class="vacio">Sin productos cargados.</p>';
 }
+
+/* ---------- Pedido a los proveedores (Reportes → Reposición → «Armar pedido») ----------
+ * La cuenta (agrupar y sugerir) está en logica/reportes.js: armarPedidos y cantidadPedido.
+ * Las cantidades que se cambian a mano viven mientras la ventana está abierta. */
+let pedidoCant = {};
+const claveGrupo = (g) => g.proveedorId || 'sin'; // el grupo sin proveedor tiene id ''
+const grupoPedido = (clave) => armarPedidos(db, pedidoCant).find((g) => claveGrupo(g) === clave);
+const codigoDelProv = (p, provId) => (codigosProvDe(p).find((x) => x.proveedorId === provId) || {}).codigo || '';
+const contactoProv = (pr) => (pr ? [pr.contacto, pr.telefono && `Tel. ${pr.telefono}`, pr.email].filter(Boolean).join(' · ') : '');
+
+function renderPedido() {
+  const grupos = armarPedidos(db, pedidoCant);
+  $('#pedido-cuerpo').innerHTML = grupos.length ? grupos.map((g) => `
+    <section class="pedido-prov" data-grupo="${esc(claveGrupo(g))}">
+      <header class="pedido-cab">
+        <div><h3>${esc(g.nombre)}</h3>${contactoProv(g.proveedor) ? `<p class="meta">${esc(contactoProv(g.proveedor))}</p>` : ''}</div>
+        <div class="card-acc">
+          <button class="btn sm" type="button" data-pedido-imprimir="${esc(claveGrupo(g))}">Imprimir</button>
+          <button class="btn sm" type="button" data-pedido-excel="${esc(claveGrupo(g))}">Exportar Excel</button>
+        </div>
+      </header>
+      <div class="table-wrap"><table class="tabla">
+        <thead><tr><th>Producto</th><th class="num">Stock / mín.</th><th class="num">Pedir</th><th class="num">Costo est.</th></tr></thead>
+        <tbody>${g.items.map((it) => `<tr>
+          <td><div class="nom">${esc(it.producto.nombre)}</div><div class="meta mono">${esc(it.producto.codigo)}${codigoDelProv(it.producto, g.proveedorId) ? ` · del proveedor: ${esc(codigoDelProv(it.producto, g.proveedorId))}` : ''}</div></td>
+          <td class="num">${n(it.producto.stock)} / ${n(it.producto.minimo)}</td>
+          <td class="num"><span class="pedido-cant"><input type="number" min="0" step="any" inputmode="decimal" value="${it.cantidad}" data-pedido-cant="${esc(it.producto.id)}" aria-label="Cantidad a pedir de ${esc(it.producto.nombre)}"> <span class="u">${esc(it.producto.unidad)}</span></span></td>
+          <td class="num" data-pedido-costo="${esc(it.producto.id)}">${$u(it.costo)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="3">Total estimado${g.items.some((it) => esUSD(it.producto)) ? ' (en pesos; lo de dólares, a la cotización de hoy)' : ''}</td><td class="num" data-pedido-total="${esc(claveGrupo(g))}">${$u(g.total)}</td></tr></tfoot>
+      </table></div>
+    </section>`).join('')
+    : '<p class="vacio">No hay productos para reponer.</p>';
+}
+
+/** Al cambiar una cantidad: se actualizan su costo y el total del proveedor, sin volver a dibujar (no se pierde el foco). */
+function cambiarCantidadPedido(input) {
+  pedidoCant[input.dataset.pedidoCant] = input.value === '' ? 0 : Number(input.value);
+  const clave = input.closest('[data-grupo]').dataset.grupo;
+  const g = grupoPedido(clave);
+  if (!g) return;
+  const it = g.items.find((x) => x.producto.id === input.dataset.pedidoCant);
+  $(`[data-pedido-costo="${CSS.escape(input.dataset.pedidoCant)}"]`).textContent = $u(it ? it.costo : 0);
+  $(`[data-pedido-total="${CSS.escape(clave)}"]`).textContent = $u(g.total);
+}
+
+/** La hoja para mandarle al proveedor: sin costos (son del negocio), con el código que usa ese proveedor. */
+function htmlPedido(g) {
+  const neg = (db && db.negocio) || {};
+  const items = g.items.filter((it) => it.cantidad > 0);
+  const conCodProv = items.some((it) => codigoDelProv(it.producto, g.proveedorId));
+  return `<div class="pedido-hoja">
+    <header><div><h1>Pedido de mercadería</h1><p>${new Date().toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric' })}</p></div>
+      <div class="pedido-de"><strong>${esc(neg.nombre || NOMBRE_NEGOCIO)}</strong>${neg.direccion ? `<div>${esc(neg.direccion)}</div>` : ''}${neg.telefono ? `<div>Tel. ${esc(neg.telefono)}</div>` : ''}${neg.rut ? `<div>RUT ${esc(neg.rut)}</div>` : ''}</div></header>
+    <p class="pedido-para">Para: <strong>${esc(g.nombre)}</strong>${contactoProv(g.proveedor) ? ` · ${esc(contactoProv(g.proveedor))}` : ''}</p>
+    <table><thead><tr>${conCodProv ? '<th>Su código</th>' : ''}<th>Código</th><th>Producto</th><th class="num">Cantidad</th><th>Unidad</th></tr></thead>
+      <tbody>${items.map((it) => `<tr>${conCodProv ? `<td>${esc(codigoDelProv(it.producto, g.proveedorId))}</td>` : ''}<td>${esc(it.producto.codigo)}</td><td>${esc(it.producto.nombre)}</td><td class="num">${n(it.cantidad)}</td><td>${esc(it.producto.unidad)}</td></tr>`).join('')}</tbody></table>
+    <p class="pedido-pie">${plural(items.length, 'producto', 'productos')}</p>
+  </div>`;
+}
+
+function imprimirPedido(clave) {
+  const g = grupoPedido(clave);
+  if (!g || !g.items.some((it) => it.cantidad > 0)) { toast('No hay nada para pedir a este proveedor.'); return; }
+  $('#impresion').classList.add('pedido');
+  imprimir(htmlPedido(g));
+}
+
+function exportarPedido(clave) {
+  const g = grupoPedido(clave);
+  if (!g) return;
+  descargarExcel(g.items.filter((it) => it.cantidad > 0).map((it) => ({
+    'Código': it.producto.codigo, 'Código del proveedor': codigoDelProv(it.producto, g.proveedorId), 'Producto': it.producto.nombre,
+    'Cantidad': it.cantidad, 'Unidad': it.producto.unidad, 'Costo unitario': red(Number(it.producto.costo || 0) * factorPesos(db, it.producto)), 'Costo estimado': it.costo,
+  })), 'Pedido', `pedido_${normal(g.nombre).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'proveedor'}`, {
+    titulo: `Pedido a ${g.nombre}`, subtitulo: contactoProv(g.proveedor), texto: ['Código', 'Código del proveedor'], plata: ['Costo unitario', 'Costo estimado'], totales: ['Costo estimado'],
+  });
+}
+
+function iniciarPedido() {
+  $('#btn-armar-pedido').addEventListener('click', () => {
+    pedidoCant = {};
+    renderPedido();
+    $('#dlg-pedido').showModal();
+  });
+  $('#pedido-cuerpo').addEventListener('input', (e) => { if (e.target.matches('[data-pedido-cant]')) cambiarCantidadPedido(e.target); });
+  $('#pedido-cuerpo').addEventListener('click', (e) => {
+    const imp = e.target.closest('[data-pedido-imprimir]');
+    if (imp) return imprimirPedido(imp.dataset.pedidoImprimir);
+    const xl = e.target.closest('[data-pedido-excel]');
+    if (xl) exportarPedido(xl.dataset.pedidoExcel);
+  });
+  window.addEventListener('afterprint', () => $('#impresion').classList.remove('pedido'));
+}

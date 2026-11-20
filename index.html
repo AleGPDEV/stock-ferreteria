@@ -440,7 +440,10 @@
           <article class="card">
           <header class="card-h">
             <div><h2>Reposición <button type="button" class="ayuda-ico" data-ayuda="Productos en el mínimo o por debajo. La cantidad sugerida lleva el stock al doble del mínimo.">?</button></h2></div>
-            <button class="btn sm" type="button" data-export="reposicion">Exportar Excel</button>
+            <div class="card-acc">
+              <button class="btn sm primary" type="button" id="btn-armar-pedido">Armar pedido</button>
+              <button class="btn sm" type="button" data-export="reposicion">Exportar Excel</button>
+            </div>
           </header>
           <div id="rep-reposicion"></div>
         </article>
@@ -687,6 +690,13 @@
   </header>
   <div class="dlg-b" id="dia-cuerpo"></div>
   <footer class="dlg-f"><button type="button" class="btn" id="dia-reportes">Ver este día en Reportes</button><span class="sp"></span><button type="button" class="btn primary" data-cerrar>Cerrar</button></footer>
+</dialog>
+
+<!-- Pedido a los proveedores (Reportes → Reposición) -->
+<dialog id="dlg-pedido" class="dlg-pedido" aria-labelledby="pedido-titulo">
+  <header class="dlg-h"><h2 id="pedido-titulo">Pedido a los proveedores <button type="button" class="ayuda-ico" data-ayuda="Lo que hay que reponer, por proveedor. La cantidad sugerida lleva el stock al doble del mínimo: cambiala si hace falta (0 lo saca del pedido). Cada pedido se imprime para mandarlo o se baja a Excel.">?</button></h2></header>
+  <div class="dlg-b" id="pedido-cuerpo"></div>
+  <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn primary" data-cerrar>Cerrar</button></footer>
 </dialog>
 
 <!-- Foto grande -->
