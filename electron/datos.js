@@ -3,8 +3,18 @@
 // escribe solo lo que cambió, así una venta tarda lo mismo con un día o con años de historia.
 const Database = require('better-sqlite3');
 
-const TABLAS = ['productos', 'proveedores', 'usuarios', 'ventas', 'movimientos'];
-const CON_FECHA = new Set(['ventas', 'movimientos']);
+const fs = require('fs');
+const path = require('path');
+
+const TABLAS = ['productos', 'proveedores', 'usuarios', 'ventas', 'movimientos', 'cajas'];
+const CON_FECHA = new Set(['ventas', 'movimientos', 'cajas']);
+// De qué campo sale la columna fecha (las cajas usan cuándo se abrieron)
+const CAMPO_FECHA = { ventas: 'fecha', movimientos: 'fecha', cajas: 'abierta' };
+/** La fecha de una fila: la que vino aparte, o la del campo que corresponde dentro de los datos. */
+function fechaDe(t, f) {
+  if (f.fecha != null) return String(f.fecha);
+  try { return String(JSON.parse(f.datos)[CAMPO_FECHA[t]] || ''); } catch (e) { return ''; }
+}
 
 class Almacen {
   constructor(ruta) {
@@ -21,6 +31,8 @@ class Almacen {
     // config = datos del programa (negocio, cajas…); ajustes = solo de esta computadora (carpeta extra…)
     this.db.exec('CREATE TABLE IF NOT EXISTS config (clave TEXT PRIMARY KEY, valor TEXT NOT NULL)');
     this.db.exec('CREATE TABLE IF NOT EXISTS ajustes (clave TEXT PRIMARY KEY, valor TEXT NOT NULL)');
+    // Antes de cualquier lectura: las cajas que todavía estén dentro de config pasan a su tabla
+    this.migrarCajas(ruta);
 
     this.st = {};
     for (const t of TABLAS) {
@@ -49,7 +61,7 @@ class Almacen {
       for (const [t, filas] of Object.entries(c.upsert || {})) {
         if (!TABLAS.includes(t)) throw new Error('Tabla desconocida: ' + t);
         const st = this.st[t].poner;
-        if (CON_FECHA.has(t)) filas.forEach((f) => st.run(String(f.id), String(f.fecha || ''), f.datos));
+        if (CON_FECHA.has(t)) filas.forEach((f) => st.run(String(f.id), fechaDe(t, f), f.datos));
         else filas.forEach((f) => st.run(String(f.id), f.datos));
       }
       for (const [t, ids] of Object.entries(c.borrar || {})) {
@@ -57,6 +69,36 @@ class Almacen {
         ids.forEach((id) => this.st[t].borrar.run(String(id)));
       }
     });
+  }
+
+  /**
+   * Versiones anteriores guardaban todas las cajas dentro del JSON de config, que se reescribía en cada venta.
+   * Ahora cada caja es una fila de la tabla cajas. Corre en el constructor, antes del primer leerJson(): si no,
+   * el JSON tendría dos claves "cajas" y JSON.parse se quedaría con la tabla vacía. Antes se guarda una copia
+   * de la base (VACUUM INTO) y todo va en una transacción. Si config está dañada no se toca (lo ve revisar()).
+   */
+  migrarCajas(ruta) {
+    const config = this.db.prepare("SELECT valor FROM config WHERE clave = 'datos'").pluck().get();
+    if (config === undefined) return 0;
+    let d;
+    try { d = JSON.parse(config); } catch (e) { return 0; }
+    if (!d || typeof d !== 'object' || !Object.prototype.hasOwnProperty.call(d, 'cajas')) return 0;
+    const cajas = Array.isArray(d.cajas) ? d.cajas.filter((c) => c && typeof c === 'object') : [];
+    if (ruta && ruta !== ':memory:') {
+      const sello = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const copia = path.join(path.dirname(ruta), `datos-antes-de-cajas-${sello}.sqlite`);
+      if (!fs.existsSync(copia)) this.db.prepare('VACUUM INTO ?').run(copia);
+    }
+    const poner = this.db.prepare('INSERT OR IGNORE INTO cajas (id, fecha, datos) VALUES (?, ?, ?)');
+    this.db.transaction(() => {
+      cajas.forEach((c, i) => {
+        if (c.id == null) c.id = `caja-${c.numero || i + 1}`;
+        poner.run(String(c.id), String(c.abierta || ''), JSON.stringify(c));
+      });
+      delete d.cajas;
+      this.db.prepare("UPDATE config SET valor = ? WHERE clave = 'datos'").run(JSON.stringify(d));
+    })();
+    return cajas.length;
   }
 
   /** Vacía de verdad: sin configuración y sin filas. Si falta la configuración pero hay filas, la base está dañada (ver revisar). */
@@ -120,7 +162,8 @@ class Almacen {
   /** Reemplaza todo con un JSON completo (migración desde datos.json o restauración). */
   importarJson(texto) {
     const d = JSON.parse(texto);
-    const fila = (t, x) => (CON_FECHA.has(t) ? { id: x.id, fecha: x.fecha || '', datos: JSON.stringify(x) } : { id: x.id, datos: JSON.stringify(x) });
+    const fila = (t, x) => (CON_FECHA.has(t) ? { id: x.id, fecha: x[CAMPO_FECHA[t]] || '', datos: JSON.stringify(x) } : { id: x.id, datos: JSON.stringify(x) });
+    if (Array.isArray(d.cajas)) d.cajas.forEach((c, i) => { if (c && c.id == null) c.id = `caja-${c.numero || i + 1}`; });
     const config = {};
     const upsert = {};
     for (const [k, v] of Object.entries(d)) {

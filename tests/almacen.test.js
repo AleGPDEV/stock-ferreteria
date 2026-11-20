@@ -217,3 +217,86 @@ test('chequeo del archivo: un daño que deja leer los datos igual se detecta', (
   assert.ok(detectado, 'el chequeo tiene que encontrar algún daño escondido');
   assert.ok(detectado.every((t) => typeof t === 'string' && t !== 'ok'));
 });
+
+/** Una base como la de las versiones anteriores: las cajas dentro del JSON de config. */
+function baseVieja(ruta, cajas) {
+  const Database = require('better-sqlite3');
+  const db = new Database(ruta);
+  db.exec("CREATE TABLE config (clave TEXT PRIMARY KEY, valor TEXT NOT NULL)");
+  db.exec("CREATE TABLE productos (id TEXT PRIMARY KEY, datos TEXT NOT NULL)");
+  db.prepare("INSERT INTO config (clave, valor) VALUES ('datos', ?)").run(JSON.stringify({ numVenta: 3, numCaja: cajas.length, negocio: { nombre: 'Prueba' }, cajas }));
+  db.prepare('INSERT INTO productos (id, datos) VALUES (?, ?)').run('p1', JSON.stringify({ id: 'p1', nombre: 'Martillo' }));
+  db.close();
+}
+const tresCajas = () => [
+  { id: 'c1', numero: 1, abierta: '2026-11-01T12:00:00.000Z', inicial: 100, movs: [], cerrada: '2026-11-01T20:00:00.000Z' },
+  { id: 'c2', numero: 2, abierta: '2026-11-02T12:00:00.000Z', inicial: 50, movs: [{ tipo: 'retiro', monto: 10 }], cerrada: '2026-11-02T20:00:00.000Z' },
+  { id: 'c3', numero: 3, abierta: '2026-11-03T12:00:00.000Z', inicial: 0, movs: [], cerrada: null },
+];
+
+test('cajas: una base vieja con las cajas en config pasa a la tabla cajas sin perder nada', () => {
+  const ruta = path.join(tmp, 'vieja-cajas.sqlite');
+  baseVieja(ruta, tresCajas());
+  const al = new Almacen(ruta);
+  assert.equal(al.db.prepare('SELECT COUNT(*) FROM cajas').pluck().get(), 3);
+  assert.deepEqual(al.db.prepare('SELECT fecha FROM cajas ORDER BY rowid').pluck().all(), tresCajas().map((c) => c.abierta));
+  const config = JSON.parse(al.db.prepare("SELECT valor FROM config WHERE clave = 'datos'").pluck().get());
+  assert.equal('cajas' in config, false, 'config ya no tiene las cajas');
+  assert.equal(config.numCaja, 3);
+  const d = leer(al);
+  assert.deepEqual(d.cajas, tresCajas());
+  assert.equal(d.negocio.nombre, 'Prueba');
+  assert.equal(d.productos.length, 1);
+  assert.deepEqual(al.revisar(), []);
+  al.cerrar();
+  // Se guardó una copia de la base antes de migrar
+  assert.ok(fs.readdirSync(tmp).some((f) => /^datos-antes-de-cajas-.*\.sqlite$/.test(f)));
+  // Abrir de nuevo no duplica ni cambia nada
+  const al2 = new Almacen(ruta);
+  assert.equal(al2.db.prepare('SELECT COUNT(*) FROM cajas').pluck().get(), 3);
+  assert.deepEqual(leer(al2).cajas, tresCajas());
+  al2.cerrar();
+});
+
+test('cajas: sin id (copias muy viejas) igual pasan, con un id armado del número', () => {
+  const ruta = path.join(tmp, 'vieja-sin-id.sqlite');
+  const cajas = tresCajas().map(({ id, ...c }) => c);
+  baseVieja(ruta, cajas);
+  const al = new Almacen(ruta);
+  assert.deepEqual(leer(al).cajas.map((c) => c.id), ['caja-1', 'caja-2', 'caja-3']);
+  al.cerrar();
+});
+
+test('cajas: al cobrar solo se escribe la caja abierta, no toda la historia de cajas', () => {
+  const al = nueva();
+  const d = app.semilla();
+  app.asegurarUsuarios(d);
+  d.cajas = tresCajas();
+  let foto = guardar(al, null, d);
+  igual(al, d);
+  d.cajas[2].movs.push({ tipo: 'ingreso', monto: 25 });
+  const r = app.calcularCambios(foto, d);
+  assert.deepEqual(Object.keys(r.cambios.upsert), ['cajas']);
+  assert.deepEqual(r.cambios.upsert.cajas.map((c) => c.id), ['c3']);
+  assert.equal(r.cambios.config, undefined, 'config no se reescribe');
+  foto = guardar(al, foto, d);
+  igual(al, d);
+  // Abrir una caja nueva la agrega al final
+  d.cajas[2].cerrada = '2026-11-03T20:00:00.000Z';
+  d.cajas.push({ id: 'c4', numero: 4, abierta: '2026-11-04T12:00:00.000Z', inicial: 0, movs: [], cerrada: null });
+  guardar(al, foto, d);
+  igual(al, d);
+  assert.equal(al.db.prepare("SELECT fecha FROM cajas WHERE id = 'c4'").pluck().get(), '2026-11-04T12:00:00.000Z');
+  al.cerrar();
+});
+
+test('cajas: restaurar un JSON viejo (importarJson) guarda las cajas en su tabla', () => {
+  const al = nueva();
+  const d = app.semilla();
+  d.cajas = tresCajas();
+  al.importarJson(JSON.stringify(d));
+  assert.equal(al.db.prepare('SELECT COUNT(*) FROM cajas').pluck().get(), 3);
+  assert.equal('cajas' in JSON.parse(al.db.prepare("SELECT valor FROM config WHERE clave = 'datos'").pluck().get()), false);
+  assert.deepEqual(leer(al).cajas, tresCajas());
+  al.cerrar();
+});
