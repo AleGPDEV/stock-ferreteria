@@ -50,7 +50,7 @@ function datosVinculo({ token, pcId }, ips = ipsLocales(), puerto = PUERTO) {
  * guardarFoto(nombre, bytes): guarda el JPEG en la carpeta Fotos y devuelve { nombre } o { error }.
  * borrarFoto(nombre): la borra si al final no se usó.
  */
-function crearServidorCelular({ clave, preguntar, version = '', puerto = PUERTO, host = '0.0.0.0', guardarFoto = null, borrarFoto = () => {} }) {
+function crearServidorCelular({ clave, preguntar, version = '', puerto = PUERTO, host = '0.0.0.0', guardarFoto = null, borrarFoto = () => {}, alError = () => {} }) {
   let servidor = null;
   let ultimoPedido = null; // { fecha, ip } del último celular que pidió algo bien
   const texto = (v) => JSON.stringify(String(v == null ? '' : v).slice(0, MAX_TEXTO));
@@ -158,6 +158,7 @@ function crearServidorCelular({ clave, preguntar, version = '', puerto = PUERTO,
         default: return responder(res, 404, { error: 'No existe.' });
       }
     } catch (err) {
+      if (!(err && err.message === 'El pedido no se entiende.')) alError('Falló un pedido del celular', err);
       return responder(res, 400, { error: String((err && err.message) || err) });
     }
   }
@@ -172,11 +173,12 @@ function crearServidorCelular({ clave, preguntar, version = '', puerto = PUERTO,
         s.headersTimeout = 8000;
         s.keepAliveTimeout = 5000;
         s.once('error', (e) => {
+          alError('No se pudo abrir el puerto del celular', e);
           ok(e && e.code === 'EADDRINUSE'
             ? `El puerto ${puerto} lo está usando otro programa. Cerralo o reiniciá la PC.`
             : `No se pudo abrir la conexión para el celular (${(e && (e.code || e.message)) || 'error'}).`);
         });
-        s.listen(puerto, host, () => { servidor = s; s.on('error', (e) => console.error('Servidor del celular:', e.message)); ok(null); });
+        s.listen(puerto, host, () => { servidor = s; s.on('error', (e) => alError('Error en la conexión del celular', e)); ok(null); });
       });
     },
     detener() {

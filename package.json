@@ -9,7 +9,7 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test tests/logica.test.js tests/herramientas.test.js tests/celular.test.js tests/deposito.test.js tests/productos.test.js tests/interfaz.test.js tests/orden.test.js",
+    "test": "node --test tests/logica.test.js tests/herramientas.test.js tests/celular.test.js tests/deposito.test.js tests/productos.test.js tests/interfaz.test.js tests/orden.test.js tests/registro.test.js",
     "test:almacen": "node tests/correr-almacen.js",
     "postinstall": "electron-builder install-app-deps",
     "dist": "electron-builder --win nsis portable --x64",

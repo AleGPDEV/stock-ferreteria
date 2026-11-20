@@ -39,7 +39,7 @@ tocar para cada cosa y cómo se cargan). Cada chat trabaja en **una** sección:
 
 | Sección | Archivos |
 |---|---|
-| **Base y guardado** | `js/base/datos-y-guardado.js`, `js/pantallas/datos-danados.js`, `js/pantallas/respaldo.js`, `electron/datos.js`, `electron/main.js` (respaldos y fotos), `css/pantallas/configuracion.css` (copias) |
+| **Base y guardado** | `js/base/datos-y-guardado.js`, `js/pantallas/datos-danados.js`, `js/pantallas/respaldo.js`, `electron/datos.js`, `electron/registro.js`, `electron/main.js` (respaldos, fotos y registro de errores), `css/pantallas/configuracion.css` (copias) |
 | **Caja y ventas** | `js/logica/ventas-y-stock.js`, `js/logica/caja.js`, `js/pantallas/caja.js`, `js/pantallas/ticket-e-impresion.js`, `js/pantallas/cierre-de-caja.js`, `css/pantallas/caja.css` |
 | **Productos y stock** | `js/logica/productos.js`, `js/pantallas/productos.js`, `js/pantallas/fotos.js`, `js/pantallas/movimientos.js`, `js/pantallas/proveedores.js`, `css/pantallas/productos.css`, `css/pantallas/movimientos.css` |
 | **Importar y exportar** | `js/logica/importar-planilla.js`, `js/pantallas/importar-excel.js`, `js/pantallas/exportar-excel.js`, `css/pantallas/importar.css` |
