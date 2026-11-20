@@ -28,6 +28,10 @@ trabajo de otro y para que **nunca se pierdan datos de los clientes**.
 - **No agregues dependencias** (npm, Capacitor, librerías en `vendor/`) sin explicarlo en el pull request.
 - **Pruebas nuevas en el archivo de tu sección** (`tests/<seccion>.test.js`, y sumalo al script `test` de
   `package.json`), no al final de `tests/logica.test.js`, que es donde más se choca.
+- **Una venta guardada no se modifica; una devolución es un registro nuevo.** De una venta que ya está en la
+  base solo se guarda el cambio de `anulada` (ver `calcularCambios` en `js/base/datos-y-guardado.js`): cualquier
+  otro cambio a una venta vieja (items, total, medio…) se pierde sin aviso al cerrar el programa. Lo mismo con
+  los movimientos de stock: se agregan, nunca se cambian. Para corregir, se agrega un registro nuevo.
 - **Un pull request, una cosa.** Más fácil de revisar, y si hay que deshacerlo no arrastra lo demás.
 - **Antes de abrir el pull request, traé lo último de `main`** (`git pull origin main` en tu rama) y volvé a
   correr las pruebas.

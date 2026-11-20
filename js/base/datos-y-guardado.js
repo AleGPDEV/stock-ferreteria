@@ -63,6 +63,12 @@ function fotoDe(d) {
 }
 
 /**
+ * ⚠ TRAMPA: una venta guardada no se modifica; una devolución es un registro nuevo.
+ * De una venta que ya está en la base solo se compara y se guarda `anulada`; de un movimiento, solo que exista.
+ * Si alguien cambia otra cosa de una venta vieja (items, total, medio, cliente…), el cambio se ve en pantalla
+ * pero NO se guarda y se pierde al cerrar el programa, sin ningún aviso. Para corregir, agregá un registro nuevo
+ * (como devolverVenta en js/logica/ventas-y-stock.js). Está también en CONTRIBUTING.md, «Reglas».
+ *
  * Calcula qué hay que escribir. Devuelve null si no cambió nada, o { cambios, confirmar }:
  * `cambios` va a la base y `confirmar()` actualiza la foto cuando se guardó bien.
  */
