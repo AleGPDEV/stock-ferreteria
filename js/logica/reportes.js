@@ -246,3 +246,35 @@ function resumenDia(d, dia) {
   const cajas = (d.cajas || []).filter((c) => isoLocal(new Date(c.abierta)) === dia || (c.cerrada && isoLocal(new Date(c.cerrada)) === dia));
   return { dia, a, ant, comp, ventas, anuladas, totalAnulado: red2(anuladas.reduce((s, v) => s + enPesos(v).total, 0)), cajas };
 }
+
+/* ---------- Pedido al proveedor (desde «Para reponer») ---------- */
+
+/** Cuánto pedir de un producto: mínimo × 2 − stock, redondeado hacia arriba. Al menos 1: un producto que está para
+ * reponer (sin stock, aunque tenga mínimo 0) se pide. */
+function cantidadPedido(p) {
+  const falta = Number(p.minimo || 0) * 2 - Number(p.stock || 0);
+  return Math.max(Math.ceil(Math.round(falta * 1000) / 1000), 1); // el redondeo evita que 2,0000001 pase a 3
+}
+
+/** Lo que hay que reponer, agrupado por proveedor (ordenados por nombre; los productos sin proveedor, al final).
+ * cantidades: { [productoId]: número } para lo que se cambió a mano; 0 saca el producto del pedido.
+ * Devuelve [{ proveedorId, proveedor, nombre, items: [{ producto, sugerida, cantidad, costo }], total }].
+ * costo y total, en pesos (lo de dólares, a la cotización de hoy). */
+function armarPedidos(d, cantidades = {}) {
+  const grupos = new Map();
+  d.productos.filter((p) => estado(p) !== 'ok').forEach((p) => {
+    const prov = d.proveedores.find((x) => x.id === p.proveedorId) || null;
+    const clave = prov ? prov.id : '';
+    if (!grupos.has(clave)) grupos.set(clave, { proveedorId: clave, proveedor: prov, nombre: prov ? prov.nombre : 'Sin proveedor', items: [], total: 0 });
+    const sugerida = cantidadPedido(p);
+    const cantidad = Object.prototype.hasOwnProperty.call(cantidades, p.id) ? Math.max(Number(cantidades[p.id]) || 0, 0) : sugerida;
+    const costo = red(cantidad * Number(p.costo || 0) * factorPesos(d, p));
+    grupos.get(clave).items.push({ producto: p, sugerida, cantidad, costo });
+  });
+  const lista = [...grupos.values()];
+  lista.forEach((g) => {
+    g.items.sort((a, b) => a.producto.nombre.localeCompare(b.producto.nombre, 'es'));
+    g.total = red(g.items.reduce((s, it) => s + it.costo, 0));
+  });
+  return lista.sort((a, b) => (!a.proveedorId) - (!b.proveedorId) || a.nombre.localeCompare(b.nombre, 'es'));
+}

@@ -3,7 +3,8 @@
 
 /* ---------- Reportes ---------- */
 
-function sugerido(p) { return red(Math.max(p.minimo * 2 - p.stock, 0)); }
+// La misma cantidad que el pedido al proveedor (logica/reportes.js): mínimo × 2 − stock, hacia arriba, al menos 1
+const sugerido = (p) => cantidadPedido(p);
 
 function ventasPeriodo() {
   const a = inicioDia($('#rep-desde').value), b = finDia($('#rep-hasta').value);

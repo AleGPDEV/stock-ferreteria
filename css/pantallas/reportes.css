@@ -170,3 +170,32 @@ dialog.dlg-dia[open] { display: flex; flex-direction: column; }
 
 /* Productos en dólares */
 .rep-usd-nota { margin: 0 0 12px; padding: 9px 12px; border-radius: var(--r-ctrl); background: var(--surface-2, #f1f3f5); color: var(--muted); font-size: 14px; }
+
+/* Pedido a los proveedores (Reposición → «Armar pedido») */
+.card-acc { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+dialog.dlg-pedido { width: min(880px, calc(100vw / var(--zoom, 1) - 32px)); }
+dialog.dlg-pedido[open] { display: flex; flex-direction: column; }
+#pedido-cuerpo { overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-block: 16px; background: var(--bg); }
+.pedido-prov { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; min-width: 0; }
+.pedido-cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.pedido-cab h3 { margin: 0; font-size: 18px; }
+.pedido-cab .meta { margin: 2px 0 0; }
+.pedido-cant { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.pedido-cant input { width: 90px; text-align: right; font-family: var(--f-num); }
+@media (max-width: 640px) {
+  dialog.dlg-pedido { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+  #pedido-cuerpo { padding-inline: 10px; }
+  .pedido-prov { padding: 12px; }
+}
+/* La hoja impresa del pedido: A4, para mandarle al proveedor */
+@media print {
+  #impresion.pedido { width: auto; max-width: none; font: 11pt/1.4 Arial, Helvetica, sans-serif; }
+  #impresion.pedido .pedido-hoja header { display: flex; justify-content: space-between; gap: 16px; border-bottom: 2px solid #000; padding-bottom: 8px; }
+  #impresion.pedido h1 { font-size: 18pt; margin: 0; }
+  #impresion.pedido .pedido-de { text-align: right; }
+  #impresion.pedido .pedido-para { margin: 12px 0; }
+  #impresion.pedido table { width: 100%; border-collapse: collapse; }
+  #impresion.pedido th, #impresion.pedido td { border-bottom: 1px solid #999; padding: 5px 6px; text-align: left; }
+  #impresion.pedido .num { text-align: right; }
+  #impresion.pedido .pedido-pie { margin-top: 10px; font-size: 9pt; }
+}

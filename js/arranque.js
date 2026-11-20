@@ -65,6 +65,7 @@ function iniciar() {
     renderReportes();
   }));
   iniciarResumenDia();
+  iniciarPedido();
   iniciarAyudas();
   $$('[data-export]').forEach((b) => b.addEventListener('click', () => exportar(b.dataset.export)));
   $$('[data-cerrar]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
