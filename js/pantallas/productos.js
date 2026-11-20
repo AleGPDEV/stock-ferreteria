@@ -110,7 +110,7 @@ function abrirProducto(id) {
   $('#p-unidad').value = p.unidad;
   $('#p-proveedor').innerHTML = opcionesProv(p.proveedorId);
   $('#p-ubicacion').value = p.ubicacion;
-  $('#p-costo').value = p.costo;
+  $('#p-costo').value = esAdmin() ? p.costo : ''; // el empleado no ve el costo (ni oculto en la página)
   $('#p-precio').value = p.precio;
   $('#p-moneda').value = esUSD(p) ? 'USD' : 'UYU';
   // Solo el administrador cambia el precio de un producto que ya existe (queda anotado en el historial)
@@ -137,8 +137,7 @@ function etiquetasMoneda() {
   $('#p-precio-lbl').textContent = usd ? 'Precio de venta (U$S)' : 'Precio de venta';
 }
 function actualizarMargen() {
-  const c = Number($('#p-costo').value), pr = Number($('#p-precio').value);
-  $('#p-margen').textContent = c > 0 && pr > 0 ? `Margen: ${n(Math.round(((pr - c) / c) * 1000) / 10)} % sobre el costo` : '';
+  $('#p-margen').textContent = textoMargen($('#p-costo').value, $('#p-precio').value, esAdmin());
 }
 
 function iniciarProductos() {
@@ -342,7 +341,7 @@ function abrirMovRapido(tipo, id) {
   const sug = tipo === 'entrada' && p.minimo > 0 && p.stock <= p.minimo ? sugerido(p) : 0;
   $('#qm-sug').hidden = !sug;
   $('#qm-sug').innerHTML = sug ? `Está bajo el mínimo (${n(p.minimo)}). Sugerencia: sumar ${n(sug)}, así queda el doble del mínimo. <button type="button" class="link-btn" id="qm-sug-usar">Usar ${n(sug)}</button>` : '';
-  $('#qm-costo').value = p.costo;
+  $('#qm-costo').value = esAdmin() ? p.costo : '';
   $('#qm-costo-wrap').hidden = tipo !== 'entrada' || !esAdmin();
   $('#qm-nota').value = '';
   $('#qm-nota').placeholder = tipo === 'entrada' ? 'Ej.: Factura A-1234' : 'Ej.: Rotura, uso interno';

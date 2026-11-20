@@ -213,3 +213,14 @@ test('QA6 B2: una palabra de presentación, color o material no alcanza para dec
   assert.equal(app.seParecen('TORN AUTOP 8X1 CAJA', 'Tornillo autoperforante 8 x 1" (caja x100)'), true, 'abreviado sigue siendo el mismo');
   assert.equal(app.seParecen('Caja', 'Caja'), true, 'si solo hay palabras comunes, se comparan esas');
 });
+
+/* global textoMargen */
+test('margen en la ficha: solo para el administrador (#1)', () => {
+  assert.equal(textoMargen(390, 620, true), 'Margen: 59 % sobre el costo');
+  assert.equal(textoMargen('100', '161,1'.replace(',', '.'), true), 'Margen: 61,1 % sobre el costo');
+  // El empleado no ve el margen: con el precio, le daría el costo
+  assert.equal(textoMargen(390, 620, false), '');
+  // Sin costo o sin precio no hay margen
+  assert.equal(textoMargen('', 620, true), '');
+  assert.equal(textoMargen(390, 0, true), '');
+});
