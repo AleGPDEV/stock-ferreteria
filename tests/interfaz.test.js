@@ -49,3 +49,18 @@ test('barra lateral: en el celular (820 px o menos) nunca va plegada, aunque se 
   assert.equal(barraPlegadaPara({ angosta: 'plegada', ancha: 'plegada' }, 400), false);
   assert.equal(barraPlegadaPara({}, 821), true); // notebook angosta: plegada
 });
+
+/* global coincide */
+test('buscadores: por palabras sueltas, en cualquier orden, sin tildes ni mayúsculas (#3)', () => {
+  const t = 'TOR-81 Tornillo autoperforante 8 x 1" (caja x100) Bulonera Sur A-01';
+  assert.equal(coincide(t, 'tornillo 8'), true);
+  assert.equal(coincide(t, '8 tornillo'), true);           // otro orden
+  assert.equal(coincide('Llave térmica Sica', 'TERMICA llave'), true); // tildes y mayúsculas
+  assert.equal(coincide('Llave termica', 'térmica'), true);
+  assert.equal(coincide(t, 'tornillo 12'), false);         // una palabra que no está
+  assert.equal(coincide(t, '  tornillo    caja  '), true); // espacios de más
+  assert.equal(coincide(t, ''), true);                     // búsqueda vacía: todo
+  assert.equal(coincide(t, '   '), true);
+  assert.equal(coincide('', 'algo'), false);
+  assert.equal(coincide(t, 'tor-81'), true);               // un código sigue andando
+});
