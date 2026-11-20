@@ -220,3 +220,11 @@ function enEstante(p, filtro) {
   const k = claveUbic(p.ubicacion);
   return filtro === SIN_ESTANTE ? !k : k === filtro;
 }
+
+/** El texto «Margen: … % sobre el costo» de la ficha. Solo para el administrador: con el precio a la vista,
+ * el margen le daría el costo a un empleado. */
+function textoMargen(costo, precio, admin) {
+  const c = Number(costo), pr = Number(precio);
+  if (!admin || !(c > 0) || !(pr > 0)) return '';
+  return `Margen: ${n(Math.round(((pr - c) / c) * 1000) / 10)} % sobre el costo`;
+}
