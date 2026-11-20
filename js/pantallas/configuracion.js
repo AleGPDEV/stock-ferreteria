@@ -140,7 +140,7 @@ function iniciarRecuperacion() {
     if (!esAdmin()) return;
     if (db.recuperacion && db.recuperacion.hash
       && !(await confirmar('¿Crear una clave de recuperación nueva? La anterior deja de servir.', 'Crear una nueva'))) return;
-    const clave = nuevaClaveRecuperacion(db);
+    const clave = await nuevaClaveRecuperacion(db);
     if (!guardar()) { toast('No se pudo guardar la clave.'); return; }
     mostrarClaveRecuperacion(clave);
     render();
@@ -158,16 +158,22 @@ function iniciarUsuarios() {
     if (b) abrirUsuario(b.dataset.editarUsuario);
   });
   ['#u-pin', '#u-pin2'].forEach((sel) => $(sel).addEventListener('input', () => { $(sel).value = $(sel).value.replace(/\D/g, '').slice(0, 6); }));
-  $('#form-usuario').addEventListener('submit', (e) => {
+  $('#form-usuario').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!esAdmin()) return;
+    const boton = e.submitter || $('#form-usuario [type=submit]');
+    if (boton && boton.disabled) return; // ya se está guardando
     const pin = $('#u-pin').value;
     if (pin !== $('#u-pin2').value) { $('#usr-err').textContent = 'Los dos PIN no coinciden.'; return; }
-    const r = guardarUsuario(db, { nombre: $('#u-nombre').value, rol: $('#u-rol').value, pin }, editandoUsuario);
+    if (boton) boton.disabled = true;
+    let r, claveNueva = '';
+    try {
+      r = await guardarUsuario(db, { nombre: $('#u-nombre').value, rol: $('#u-rol').value, pin }, editandoUsuario);
+      // Al poner el PIN de un administrador, si todavía no hay clave de recuperación se crea en el momento:
+      // sin ella, un PIN olvidado deja el programa sin nadie que pueda entrar como administrador.
+      if (!r.error && r.usuario.rol === 'admin' && pin && !(db.recuperacion && db.recuperacion.hash)) claveNueva = await nuevaClaveRecuperacion(db);
+    } finally { if (boton) boton.disabled = false; }
     if (r.error) { $('#usr-err').textContent = r.error; return; }
-    // Al poner el PIN de un administrador, si todavía no hay clave de recuperación se crea en el momento:
-    // sin ella, un PIN olvidado deja el programa sin nadie que pueda entrar como administrador.
-    const claveNueva = r.usuario.rol === 'admin' && pin && !(db.recuperacion && db.recuperacion.hash) ? nuevaClaveRecuperacion(db) : '';
     guardar();
     $('#dlg-usuario').close();
     if (r.usuario.id === sesion.id) { sesion = r.usuario; aplicarPermisos(); }

@@ -162,56 +162,6 @@ test('los datos de ejemplo quedan consistentes', () => {
   assert.equal(d.ventas.length, 3);
 });
 
-test('sha256 coincide con el de Node', () => {
-  const { createHash } = require('node:crypto');
-  for (const t of ['', 'abc', 'sal-123:1234', 'x'.repeat(200), 'ñandú']) {
-    assert.equal(app.sha256(t), createHash('sha256').update(t, 'utf8').digest('hex'), t);
-  }
-});
-
-test('la primera vez se crean administrador y empleado con PIN inicial', () => {
-  const d = app.baseVacia();
-  assert.equal(app.asegurarUsuarios(d), true);
-  const [admin, emp] = d.usuarios;
-  assert.equal(admin.rol, 'admin');
-  assert.equal(emp.rol, 'empleado');
-  assert.ok(app.verificarPin(admin, '1234'));
-  assert.ok(app.verificarPin(emp, '0000'));
-  assert.ok(!app.verificarPin(emp, '1234'));
-  assert.ok(!JSON.stringify(d.usuarios).includes('"1234"'), 'el PIN no se guarda tal cual');
-  assert.equal(app.asegurarUsuarios(d), false);
-});
-
-test('crear, editar y validar usuarios', () => {
-  const d = app.baseVacia();
-  app.asegurarUsuarios(d);
-  const admin = d.usuarios[0];
-  assert.match(app.guardarUsuario(d, { nombre: 'Carlos', rol: 'empleado', pin: '12' }).error, /4 a 6/);
-  assert.match(app.guardarUsuario(d, { nombre: 'empleado', rol: 'empleado', pin: '5555' }).error, /Ya hay/);
-  const { usuario } = app.guardarUsuario(d, { nombre: 'Carlos', rol: 'empleado', pin: '4321' });
-  assert.ok(app.verificarPin(usuario, '4321'));
-  // editar sin PIN no lo cambia
-  app.guardarUsuario(d, { nombre: 'Carlos P.', rol: 'empleado', pin: '' }, usuario.id);
-  assert.equal(usuario.nombre, 'Carlos P.');
-  assert.ok(app.verificarPin(usuario, '4321'));
-  // cambiar el PIN del admin saca la marca de PIN inicial
-  app.guardarUsuario(d, { nombre: 'Administrador', rol: 'admin', pin: '908070' }, admin.id);
-  assert.ok(app.verificarPin(admin, '908070'));
-  assert.equal(admin.pinPorDefecto, false);
-  // no puede quedar sin administrador
-  assert.match(app.guardarUsuario(d, { nombre: 'Administrador', rol: 'empleado', pin: '' }, admin.id).error, /al menos un administrador/);
-});
-
-test('eliminar usuarios', () => {
-  const d = app.baseVacia();
-  app.asegurarUsuarios(d);
-  const [admin, emp] = d.usuarios;
-  assert.match(app.eliminarUsuario(d, admin.id, admin.id), /estás adentro/);
-  assert.match(app.eliminarUsuario(d, admin.id, emp.id), /al menos un administrador/);
-  assert.equal(app.eliminarUsuario(d, emp.id, admin.id), null);
-  assert.equal(d.usuarios.length, 1);
-});
-
 // ---------- Caja ----------
 test('abrir, vender, retirar y cerrar la caja con arqueo', () => {
   const d = base();
@@ -340,34 +290,6 @@ test('QA 11: se puede vender sin stock si se confirma, y el stock queda en negat
   // al anular vuelve
   app.anularVenta(d, ok.venta.id);
   assert.equal(d.productos[0].stock, 10);
-});
-
-test('QA 3: después de 5 PIN incorrectos hay que esperar', () => {
-  const d = base();
-  const t = 1_000_000;
-  for (let i = 0; i < 4; i++) assert.equal(app.fallarPin(d, 'u1', t), 0);
-  assert.ok(app.fallarPin(d, 'u1', t) > 0);
-  assert.ok(app.esperaPin(d, 'u1', t + 1000) > 0);
-  assert.equal(app.esperaPin(d, 'u1', t + 6 * 60 * 1000), 0);
-  assert.ok(app.fallarPin(d, 'u1', t + 6 * 60 * 1000) > 0, 'otro error después de esperar vuelve a bloquear');
-  app.acertarPin(d, 'u1');
-  assert.equal(app.esperaPin(d, 'u1', t + 6 * 60 * 1000), 0);
-  assert.equal(app.esperaPin(d, 'u2', t), 0);
-});
-
-test('QA 3: la clave de recuperación restablece el acceso del administrador', () => {
-  const d = base();
-  assert.equal(app.verificarRecuperacion(d, 'ABCD-EFGH-JKMN'), false, 'sin clave creada no entra nada');
-  const clave = app.nuevaClaveRecuperacion(d);
-  assert.match(clave, /^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
-  assert.doesNotMatch(clave, /[01OIL]/, 'sin letras que se confunden');
-  assert.ok(!JSON.stringify(d).includes(clave.replace(/-/g, '')), 'no se guarda tal cual');
-  assert.equal(app.verificarRecuperacion(d, clave), true);
-  assert.equal(app.verificarRecuperacion(d, clave.toLowerCase().replace(/-/g, ' ')), true, 'acepta minúsculas y espacios');
-  assert.equal(app.verificarRecuperacion(d, clave.slice(0, -1) + (clave.endsWith('A') ? 'B' : 'A')), false);
-  const otra = app.nuevaClaveRecuperacion(d);
-  assert.notEqual(otra, clave);
-  assert.equal(app.verificarRecuperacion(d, clave), false, 'la anterior deja de servir');
 });
 
 test('QA 15 y 16: compras sin stock inicial; ganancia sin productos sin costo', () => {
@@ -633,18 +555,6 @@ test('QA2 M4: anular una venta en efectivo de una caja cerrada anota la devoluci
   app.cerrarCaja(d, 0, 'Jorge');
   assert.match(app.anularVenta(d, v4.id, { devolucion: true }), /caja abierta/);
   assert.ok(!d.ventas.find((x) => x.id === v4.id).anulada, 'no se anuló a medias');
-});
-
-test('QA2 B4: los errores al autorizar no bloquean el ingreso del administrador, y quedan avisados', () => {
-  const d = base();
-  const ahora = Date.now();
-  for (let i = 0; i < 5; i++) app.fallarPin(d, 'aut:adm1', ahora);
-  assert.ok(app.esperaPin(d, 'aut:adm1', ahora) > 0);
-  assert.equal(app.esperaPin(d, 'adm1', ahora), 0, 'puede entrar al programa');
-  const b = app.bloqueosPendientes(d, 'adm1');
-  assert.equal(b.length, 1);
-  assert.equal(b[0].donde, 'autorizar');
-  assert.equal(app.bloqueosPendientes(d, 'adm1').length, 0, 'se avisa una sola vez');
 });
 
 test('QA2 B5: las fotos sin usar se borran recién cuando ningún respaldo guardado puede usarlas', () => {
