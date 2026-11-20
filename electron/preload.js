@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('almacen', {
   desactivarCelular: () => ipcRenderer.invoke('celular:desactivar'),
   nuevoCodigoCelular: () => ipcRenderer.invoke('celular:nuevoCodigo'),
   alAbrirCelular: (fn) => { ipcRenderer.on('celular:abrir', () => fn()); },
+  // Si el respaldo del día falla (no se pudo escribir o quedó mal), la PC avisa
+  alFallarRespaldo: (fn) => { ipcRenderer.on('respaldo:fallo', (e, estado) => fn(estado)); },
   // Registro de errores (registro.log): anotar desde la pantalla y copiar el informe para soporte
   anotar: (nivel, area, mensaje, detalle) => ipcRenderer.send('registro:anotar', nivel, area, mensaje, detalle),
   copiarInforme: () => ipcRenderer.invoke('registro:copiarInforme'),

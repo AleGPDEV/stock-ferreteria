@@ -13,9 +13,8 @@ const { fotosEnUso, planLimpiezaFotos } = require('./fotos');
 const { imprimirCrudo } = require('./etiquetadora');
 const { crearServidorCelular, datosVinculo, ipsLocales, nuevoToken, nuevoPcId } = require('./servidor-celular');
 const { crearRegistro, informeSoporte } = require('./registro');
+const { PATRON_RESPALDO, respaldosAConservar, diasDelMasViejo, comprobarRespaldo } = require('./respaldos');
 
-const RESPALDOS_A_CONSERVAR = 60;
-const PATRON_RESPALDO = /^respaldo_\d{4}-\d{2}-\d{2}\.json(\.gz)?$/;
 const CARPETA_EXTRA = 'Stock Ferreteria - Respaldos';
 const gzip = promisify(zlib.gzip);
 
@@ -91,11 +90,48 @@ function abrirBase() {
 let respaldando = false;
 let ultimoIntentoExtra = 0;
 
+/** Borra los respaldos que ya no hacen falta: quedan 7 diarios, 4 semanales y 12 mensuales (ver electron/respaldos.js). */
 function podar(carpeta) {
-  const lista = fs.readdirSync(carpeta).filter((f) => PATRON_RESPALDO.test(f)).sort();
-  lista.slice(0, Math.max(0, lista.length - RESPALDOS_A_CONSERVAR)).forEach((f) => {
+  const lista = fs.readdirSync(carpeta).filter((f) => PATRON_RESPALDO.test(f));
+  const quedan = new Set(respaldosAConservar(lista, hoy()));
+  lista.filter((f) => !quedan.has(f)).forEach((f) => {
     try { fs.unlinkSync(path.join(carpeta, f)); } catch (e) { /* nada */ }
   });
+}
+
+/**
+ * Escribe el respaldo comprimido en un archivo temporal, lo comprueba (se descomprime y se lee entero) y recién
+ * entonces reemplaza al del día. Si la comprobación falla, el del día y los viejos quedan como estaban.
+ */
+function escribirRespaldo(archivo, comprimido) {
+  fs.writeFileSync(archivo + '.tmp', comprimido);
+  const problema = comprobarRespaldo(fs.readFileSync(archivo + '.tmp'));
+  if (problema) {
+    try { fs.unlinkSync(archivo + '.tmp'); } catch (e) { /* nada */ }
+    throw new Error(`El respaldo se escribió mal: ${problema}.`);
+  }
+  fs.renameSync(archivo + '.tmp', archivo);
+}
+
+/** Anota cómo salió el respaldo y, si falló, avisa en la pantalla. */
+function estadoRespaldo(error) {
+  const estado = error ? { ok: false, fecha: new Date().toISOString(), error: String(error.message || error) } : { ok: true, fecha: new Date().toISOString() };
+  try { if (almacen) almacen.ponerAjuste('estadoRespaldo', estado); } catch (e) { /* nada */ }
+  if (error && ventana && !ventana.isDestroyed()) ventana.webContents.send('respaldo:fallo', estado);
+}
+
+/** Días que hay que guardar una foto que ningún producto usa: hasta el respaldo más viejo que se conserva, más 7. */
+function diasFotosHuerfanas() {
+  const r = rutas();
+  let dias = 0;
+  for (const c of [r.respaldos, carpetaExtraRespaldos()]) {
+    try { if (c && fs.existsSync(c)) dias = Math.max(dias, diasDelMasViejo(fs.readdirSync(c), hoy())); } catch (e) { /* nada */ }
+  }
+  return dias + 7;
+}
+function carpetaExtraRespaldos() {
+  const carpeta = almacen && almacen.ajuste('carpetaExtra');
+  return carpeta ? path.join(carpeta, CARPETA_EXTRA) : null;
 }
 
 function copiarAExtra(archivo) {
@@ -178,7 +214,7 @@ function limpiarFotos(textoDatos) {
   const r = rutas();
   const carpetas = [r.fotos, path.join(r.respaldos, 'Fotos'), carpetaFotosExtra()].filter((c) => c && fs.existsSync(c));
   const presentes = new Set(carpetas.flatMap((c) => fs.readdirSync(c).filter((f) => NOMBRE_FOTO.test(f))));
-  const plan = planLimpiezaFotos(almacen.ajuste('fotosHuerfanas') || {}, enUso, presentes, Date.now(), RESPALDOS_A_CONSERVAR + 7);
+  const plan = planLimpiezaFotos(almacen.ajuste('fotosHuerfanas') || {}, enUso, presentes, Date.now(), diasFotosHuerfanas());
   for (const f of plan.borrar) for (const c of carpetas) { try { fs.unlinkSync(path.join(c, f)); } catch (e) { /* no estaba */ } }
   almacen.ponerAjuste('fotosHuerfanas', plan.huerfanas);
 }
@@ -192,12 +228,15 @@ async function hacerRespaldo(forzar = false) {
     fs.mkdirSync(respaldos, { recursive: true });
     const archivo = path.join(respaldos, `respaldo_${hoy()}.json.gz`);
     let nuevo = false;
-    if (forzar || !fs.existsSync(archivo)) {
+    // Si falló hace poco, se espera 10 minutos antes de reintentar solo (para no avisar en cada guardado)
+    const ultimo = almacen.ajuste('estadoRespaldo');
+    const fallaReciente = ultimo && !ultimo.ok && Date.now() - Date.parse(ultimo.fecha) < 10 * 60 * 1000;
+    if (forzar || (!fs.existsSync(archivo) && !fallaReciente)) {
       const texto = almacen.leerJson();
       if (!texto) return null;
       const comprimido = await gzip(texto, { level: 6 });
-      fs.writeFileSync(archivo + '.tmp', comprimido);
-      fs.renameSync(archivo + '.tmp', archivo);
+      escribirRespaldo(archivo, comprimido);
+      estadoRespaldo(null);
       podar(respaldos);
       almacen.ponerAjuste('ultimoRespaldo', { fecha: new Date().toISOString(), archivo });
       nuevo = true;
@@ -206,10 +245,11 @@ async function hacerRespaldo(forzar = false) {
     respaldarFotos();
     const extra = almacen.ajuste('estadoExtra');
     const pendiente = !extra || !extra.ok || extra.dia !== hoy();
-    if (nuevo || (pendiente && Date.now() - ultimoIntentoExtra > 10 * 60 * 1000)) copiarAExtra(archivo);
+    if (fs.existsSync(archivo) && (nuevo || (pendiente && Date.now() - ultimoIntentoExtra > 10 * 60 * 1000))) copiarAExtra(archivo);
     return infoRespaldos();
   } catch (e) {
     anotarError('respaldo', 'No se pudo hacer el respaldo', e);
+    estadoRespaldo(e);
     return { error: String(e.message || e) };
   } finally {
     respaldando = false;
@@ -221,6 +261,7 @@ function infoRespaldos() {
     carpetaExtra: almacen ? almacen.ajuste('carpetaExtra') : null,
     estadoExtra: almacen ? almacen.ajuste('estadoExtra') : null,
     ultimoRespaldo: almacen ? almacen.ajuste('ultimoRespaldo') : null,
+    estadoRespaldo: almacen ? almacen.ajuste('estadoRespaldo') : null,
   };
 }
 
@@ -233,13 +274,14 @@ function respaldoAlCerrar() {
     const archivo = path.join(respaldos, `respaldo_${hoy()}.json.gz`);
     const texto = almacen.leerJson();
     if (!texto) return;
-    fs.writeFileSync(archivo + '.tmp', zlib.gzipSync(texto, { level: 3 }));
-    fs.renameSync(archivo + '.tmp', archivo);
+    escribirRespaldo(archivo, zlib.gzipSync(texto, { level: 3 }));
+    estadoRespaldo(null);
     podar(respaldos);
     almacen.ponerAjuste('ultimoRespaldo', { fecha: new Date().toISOString(), archivo });
     copiarAExtra(archivo);
   } catch (e) {
     anotarError('respaldo', 'No se pudo hacer el respaldo al cerrar', e);
+    estadoRespaldo(e);
   }
 }
 

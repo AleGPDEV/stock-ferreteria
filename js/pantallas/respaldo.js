@@ -47,11 +47,24 @@ function renderRespaldoExtra(info) {
   $('#btn-extra-elegir').textContent = i.carpetaExtra ? 'Cambiar carpeta' : 'Elegir carpeta';
 }
 
+/** Texto de la tarjeta: se guarda solo, y si el último respaldo falló, el aviso (queda hasta que salga uno bueno). */
+function renderRespaldoTexto(info) {
+  const detalle = `Cada día se hace un respaldo comprimido en ${info.respaldos} (al abrir, al cerrar la caja y al cerrar el programa). Se guardan los 7 más nuevos, uno por semana del último mes y uno por mes del último año. Las fotos de los productos se copian a la carpeta Fotos que está ahí mismo.`;
+  const est = info.estadoRespaldo;
+  const fallo = est && !est.ok ? ` <span class="chip warn" title="${esc(est.error || '')}">El respaldo de hoy falló (${fechaHora(est.fecha)})</span>` : '';
+  $('#respaldo-texto').innerHTML = `Los cambios se guardan solos en esta PC. <button type="button" class="ayuda-ico" data-ayuda="${esc(detalle)}">?</button>${fallo}`;
+}
+
 function iniciarRespaldo() {
   if (escritorio()) {
     const info = window.almacen.info();
-    const detalle = `Cada día se hace un respaldo comprimido en ${info.respaldos} (al abrir, al cerrar la caja y al cerrar el programa) y se guardan los últimos 60 días. Las fotos de los productos se copian a la carpeta Fotos que está ahí mismo.`;
-    $('#respaldo-texto').innerHTML = `Los cambios se guardan solos en esta PC. <button type="button" class="ayuda-ico" data-ayuda="${esc(detalle)}">?</button>`;
+    renderRespaldoTexto(info);
+    if (window.almacen.alFallarRespaldo) {
+      window.almacen.alFallarRespaldo(() => {
+        toast('El respaldo de hoy falló. Se vuelve a intentar solo; si sigue fallando, avisá a soporte.');
+        renderRespaldoTexto(window.almacen.info());
+      });
+    }
     $('#btn-abrir-respaldos').hidden = false;
     $('#btn-abrir-respaldos').addEventListener('click', () => window.almacen.abrirRespaldos());
     if (window.almacen.copiarInforme) {
@@ -67,7 +80,7 @@ function iniciarRespaldo() {
       $('#respaldo-extra').hidden = false;
       const usar = async (accion, aviso) => {
         $$('#respaldo-extra button').forEach((x) => { x.disabled = true; });
-        try { const r = await accion(); renderRespaldoExtra(r); if (aviso) toast(aviso(r)); } finally { $$('#respaldo-extra button').forEach((x) => { x.disabled = false; }); }
+        try { const r = await accion(); renderRespaldoExtra(r); renderRespaldoTexto(window.almacen.info()); if (aviso) toast(aviso(r)); } finally { $$('#respaldo-extra button').forEach((x) => { x.disabled = false; }); }
       };
       $('#btn-extra-elegir').addEventListener('click', () => usar(window.almacen.elegirCarpetaExtra, (r) => (r && r.estadoExtra && r.estadoExtra.ok ? 'Copia guardada en la carpeta elegida.' : '')));
       $('#btn-extra-quitar').addEventListener('click', () => usar(window.almacen.quitarCarpetaExtra, () => 'Se dejó de copiar a la carpeta extra.'));
