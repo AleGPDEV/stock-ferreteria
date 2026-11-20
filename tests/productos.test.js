@@ -2,7 +2,7 @@
 // Las funciones de js/ quedan globales al cargarlas (igual que en el navegador): se usan sin module.exports.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-require('../js/cargar-en-node.js');
+const app = require('../js/cargar-en-node.js');
 
 /* global agregarCodigoExtra, quitarCodigoExtra */
 const datos = () => ({
@@ -93,4 +93,123 @@ test('buscadores: buscan cuando se deja de escribir, no en cada tecla', (t) => {
   // Borrar todo muestra la lista completa enseguida
   tecla('');
   assert.equal(veces, 3);
+});
+
+/* ---------- Mudadas de tests/logica.test.js (tarea #23), sin cambios ---------- */
+function dosProveedores() {
+  const d = app.baseVacia();
+  d.proveedores.push({ id: 'norte', nombre: 'Distribuidora Norte' }, { id: 'uru', nombre: 'Uruimporta' });
+  d.productos.push(
+    { id: 't', codigo: '1234', nombre: 'Tornillo autoperforante', categoria: '', unidad: 'unidad', proveedorId: 'norte', ubicacion: '', costo: 180, precio: 300, minimo: 0, stock: 15 },
+    { id: 'lh', codigo: 'LH-1234', nombre: 'Guante de nitrilo', categoria: '', unidad: 'par', proveedorId: 'uru', ubicacion: '', costo: 90, precio: 150, minimo: 0, stock: 4 },
+  );
+  return d;
+}
+
+function base() {
+  const d = app.baseVacia();
+  d.productos.push(
+    { id: 'a', codigo: 'MAR-16', nombre: 'Martillo 16 oz', categoria: 'Herramientas', unidad: 'unidad', proveedorId: 'v1', ubicacion: 'C-02', costo: 390, precio: 620, minimo: 4, stock: 10 },
+    { id: 'b', codigo: 'CAB-25', nombre: 'Cable 2,5 mm²', categoria: 'Electricidad', unidad: 'm', proveedorId: '', ubicacion: '', costo: 28, precio: 48, minimo: 100, stock: 300 },
+  );
+  d.proveedores.push({ id: 'v1', nombre: 'Herramientas Sur', contacto: '', telefono: '', email: '', rut: '', notas: '' });
+  return d;
+}
+
+test('actualizar precios por categoría con redondeo', () => {
+  const d = base();
+  const r = app.actualizarPrecios(d, 'c:Herramientas', 12, { redondeo: 5 });
+  assert.equal(r.cantidad, 1);
+  assert.equal(d.productos[0].precio, 695); // 620 × 1,12 = 694,4 → 695
+  assert.equal(d.productos[0].costo, 390);
+  assert.equal(d.productos[1].precio, 48);
+  app.actualizarPrecios(d, 'p:v1', -10, { costo: true });
+  assert.equal(d.productos[0].precio, 625.5);
+  assert.equal(d.productos[0].costo, 351);
+  assert.ok(app.actualizarPrecios(d, '', 0).error);
+  assert.ok(app.actualizarPrecios(d, '', -100).error);
+});
+
+test('QA 6: el redondeo no dispara los precios baratos', () => {
+  assert.equal(app.precioConAumento(2, 10, 10), 2.2);
+  assert.equal(app.precioConAumento(8, 10, 10), 8.8);
+  assert.equal(app.precioConAumento(3, 10, 5), 3.3);
+  assert.equal(app.precioConAumento(45, 10, 5), 50, 'de 10 o más, al peso');
+  assert.equal(app.precioConAumento(620, 12, 5), 695);
+  assert.equal(app.precioConAumento(1000, 0.4, 10), 1000, 'nunca baja en una suba');
+  assert.equal(app.precioConAumento(1000, -0.4, 10), 1000, 'nunca sube en una bajada');
+  // el cambio real nunca se aleja más de 2,5 puntos (salvo centésimos)
+  for (let precio = 0.5; precio < 3000; precio += 7.3) {
+    for (const paso of [0, 1, 5, 10]) {
+      const nuevo = app.precioConAumento(precio, 10, paso);
+      const real = (nuevo / precio - 1) * 100;
+      assert.ok(Math.abs(real - 10) <= 5.1, `${precio} paso ${paso} → ${nuevo} (${real.toFixed(1)} %)`);
+    }
+  }
+});
+
+test('códigos de barras: un producto con código del proveedor también se encuentra por el código del paquete', () => {
+  const d = base();
+  const p = d.productos[0];
+  assert.equal(app.buscarPorCodigo(d, '6901234567892'), null);
+  assert.equal(app.asignarBarras(d, p, '6901234567892'), null);
+  assert.equal(app.buscarPorCodigo(d, '6901234567892'), p);
+  assert.equal(app.buscarPorCodigo(d, p.codigo.toLowerCase()), p, 'el código propio sigue sirviendo');
+  assert.equal(app.asignarBarras(d, p, '6901234567892'), null, 'repetirlo en el mismo no es error');
+  assert.equal(p.barras.length, 1);
+  assert.match(app.asignarBarras(d, d.productos[1], '6901234567892'), /ya es de/);
+  assert.equal(app.codigoUsado(d, '6901234567892', p.id), null);
+  assert.equal(app.codigoUsado(d, '6901234567892', 'otro'), p);
+});
+
+test('QA2 B1/B2: precio bajo el costo y productos nuevos de un empleado', () => {
+  assert.equal(app.precioBajoCosto({ costo: 100, precio: 100 }), true);
+  assert.equal(app.precioBajoCosto({ costo: 100, precio: 90 }), true);
+  assert.equal(app.precioBajoCosto({ costo: 100, precio: 130 }), false);
+  assert.equal(app.precioBajoCosto({ costo: 0, precio: 50 }), false, 'sin costo cargado no se sabe');
+  const d = base();
+  const p = { id: 'n1', codigo: 'N1', nombre: 'Martillo barato', costo: 0, precio: 150 };
+  d.productos.push(p);
+  app.marcarProductoNuevo(d, p, 'Empleado', 'empleado', 'agregado desde la venta');
+  assert.equal(p.revisar, true);
+  assert.equal(p.creadoPor, 'Empleado');
+  const h = d.historialPrecios[d.historialPrecios.length - 1];
+  assert.deepEqual([h.producto, h.antes, h.despues, h.usuario], ['Martillo barato', null, 150, 'Empleado']);
+  assert.match(h.motivo, /Producto nuevo/);
+  const q = { id: 'n2', codigo: 'N2', nombre: 'Otro', costo: 0, precio: 10 };
+  app.marcarProductoNuevo(d, q, 'Administrador', 'admin');
+  assert.equal(q.revisar, undefined, 'lo que crea un administrador no queda para revisar');
+});
+
+test('QA5: ¿se parecen dos descripciones?', () => {
+  assert.equal(app.seParecen('ESMALTE SINTETICO BLANCO 4L', 'Tornillo autoperforante'), false);
+  assert.equal(app.seParecen('TORN AUTOP 8X1', 'Tornillo autoperforante 8 x 1"'), true, 'abreviado');
+  assert.equal(app.seParecen('GUANTE DE NITRILO T9', 'Guante nitrilo'), true);
+  assert.equal(app.seParecen('8X40', 'Bulón'), true, 'sin palabras para comparar, no se puede decir');
+});
+
+test('QA5 M3: unir dos fichas del mismo producto y editar sus códigos de proveedor', () => {
+  const d = dosProveedores();
+  d.ventas.push({ id: 'v1', numero: 1, fecha: new Date().toISOString(), total: 300, medio: 'Efectivo', items: [{ productoId: 'lh', nombre: 'Guante', cantidad: 1, precio: 150 }] });
+  d.movimientos.push({ id: 'm1', fecha: new Date().toISOString(), tipo: 'entrada', productoId: 'lh', cantidad: 4 });
+  app.anotarCodigoProv(d.productos.find((p) => p.id === 'lh'), 'uru', 'LH-1234');
+  const r = app.unirProductos(d, 't', 'lh');
+  assert.equal(r.error, undefined);
+  const t = d.productos.find((p) => p.id === 't');
+  assert.equal(d.productos.length, 1);
+  assert.equal(t.stock, 19);
+  assert.ok(t.barras.includes('LH-1234'), 'el código propio del otro queda como código de barras');
+  assert.deepEqual(t.codigosProv.map((x) => x.proveedorId), ['uru']);
+  assert.equal(d.ventas[0].items[0].productoId, 't');
+  assert.equal(d.movimientos[0].productoId, 't');
+  assert.match(app.unirProductos(d, 't', 't').error, /mismo/);
+  app.quitarCodigoProv(t, 'uru');
+  assert.deepEqual(t.codigosProv, []);
+});
+
+test('QA6 B2: una palabra de presentación, color o material no alcanza para decir que es el mismo producto', () => {
+  assert.equal(app.seParecen('Tarugo nylon 8mm caja x100', 'Tornillo autoperforante 8 x 1" (caja x100)'), false);
+  assert.equal(app.seParecen('Caño PVC 110 blanco', 'Codo PVC 40 blanco'), false);
+  assert.equal(app.seParecen('TORN AUTOP 8X1 CAJA', 'Tornillo autoperforante 8 x 1" (caja x100)'), true, 'abreviado sigue siendo el mismo');
+  assert.equal(app.seParecen('Caja', 'Caja'), true, 'si solo hay palabras comunes, se comparan esas');
 });
