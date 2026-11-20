@@ -448,7 +448,7 @@ function iniciarDeposito() {
     $('#etq-prueba').addEventListener('click', imprimirPruebaEtiquetadora);
   }
   $('#etq-rollo').addEventListener('change', renderEtiquetas);
-  $('#etq-buscar').addEventListener('input', renderEtiquetas);
+  alDejarDeEscribir($('#etq-buscar'), renderEtiquetas);
   $('#etq-ubic').addEventListener('change', renderEtiquetas);
   $('#etq-sinfab').addEventListener('change', renderEtiquetas);
   $('#etq-saltear').addEventListener('input', renderEtiquetas);

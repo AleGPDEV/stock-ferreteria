@@ -45,3 +45,12 @@ let db;
 let sesion = null; // usuario que ingresó
 
 const vistaInicio = () => 'caja';
+
+/** Buscadores: llama a fn cuando se deja de escribir (ms sin teclas), en lugar de en cada tecla, así no se traba
+ * con miles de productos. Borrar todo o tocar Enter (el lector de códigos termina con Enter) lo hace enseguida. */
+function alDejarDeEscribir(el, fn, ms = 150) {
+  let espera = null;
+  const ya = () => { clearTimeout(espera); espera = null; fn(); };
+  el.addEventListener('input', () => { clearTimeout(espera); if (!el.value) ya(); else espera = setTimeout(ya, ms); });
+  el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && espera) ya(); });
+}

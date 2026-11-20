@@ -143,7 +143,8 @@ function actualizarMargen() {
 
 function iniciarProductos() {
   $('#btn-nuevo-prod').addEventListener('click', () => abrirProducto());
-  ['#prod-buscar', '#prod-cat', '#prod-estante', '#prod-estado'].forEach((s) => $(s).addEventListener('input', renderProductos));
+  ['#prod-cat', '#prod-estante', '#prod-estado'].forEach((s) => $(s).addEventListener('input', renderProductos));
+  alDejarDeEscribir($('#prod-buscar'), renderProductos);
   ['#p-costo', '#p-precio'].forEach((s) => $(s).addEventListener('input', actualizarMargen));
   $('#p-moneda').addEventListener('change', etiquetasMoneda);
 
