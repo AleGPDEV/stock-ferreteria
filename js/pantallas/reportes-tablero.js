@@ -25,8 +25,9 @@ function renderRepTablero(per) {
 
   // Crecimiento al último día del período: día, semana, mes y año
   const tramos = tramosCrecimiento(per.dHasta).map((x) => {
-    const ahora = analisisVentas(db, inicioDia(x.desde), finDia(x.hasta)).total;
-    const antes = analisisVentas(db, inicioDia(x.antDesde), finDia(x.antHasta)).total;
+    // Con los totales por día (logica/reportes.js): no recorre todas las ventas para cada tramo
+    const ahora = totalesEntre(db, x.desde, x.hasta).total;
+    const antes = totalesEntre(db, x.antDesde, x.antHasta).total;
     return { ...x, ahora, antes, dif: red2(ahora - antes), pct: antes ? (ahora - antes) / antes * 100 : null };
   });
   $('#tab-crec-sub').textContent = `Hasta el ${tituloPeriodo(per.dHasta, per.dHasta).toLowerCase()}, comparado con el mismo tramo de antes.`;

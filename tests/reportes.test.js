@@ -208,3 +208,77 @@ test('tablero: promedio por día de la semana', () => {
   assert.equal(sem.find((x) => x.nombre === 'sábado').promedio, 400, '800 en 2 sábados');
   assert.ok(!sem.some((x) => x.nombre === 'domingo'), 'el domingo sin ventas no aparece');
 });
+
+/* ---------- Totales por día (#33) ---------- */
+/* global totalesPorDia, totalesEntre, analisisVentas, promedioPorDiaSemana, tramosCrecimiento, inicioDia, finDia, isoLocal, sumarDias */
+/** Ventas de prueba en los últimos «dias» días: algunas anuladas, en dólares, con descuento, sin costo y devoluciones. */
+function conVentas(dias = 400, porDia = 6) {
+  const d = app.baseVacia();
+  for (let i = 0; i < 30; i++) d.productos.push({ id: 'p' + i, codigo: 'C' + i, nombre: 'Prod ' + i, categoria: 'Cat ' + (i % 4), unidad: 'unidad', costo: i % 5 ? 40 + i : 0, precio: 90 + i, minimo: 1, stock: 5 });
+  let x = 7;
+  const azar = () => { x = (x * 1103515245 + 12345) % 2147483648; return x / 2147483648; };
+  const hoy = new Date(); hoy.setHours(12, 0, 0, 0);
+  let n = 0;
+  for (let dd = dias - 1; dd >= 0; dd--) {
+    for (let k = 0; k < porDia; k++) {
+      const f = new Date(hoy); f.setDate(f.getDate() - dd); f.setHours(Math.floor(azar() * 24), Math.floor(azar() * 60)); // también de madrugada
+      const items = [0, 1].map(() => { const p = d.productos[Math.floor(azar() * 30)]; const c = 1 + Math.floor(azar() * 3); return { productoId: p.id, nombre: p.nombre, unidad: 'unidad', cantidad: c, precio: p.precio, costo: p.costo, subtotal: c * p.precio }; });
+      const sub = items.reduce((s, it) => s + it.subtotal, 0), desc = azar() < 0.2 ? Math.round(sub * 0.07 * 100) / 100 : 0;
+      const v = { id: 'v' + n, numero: ++n, fecha: f.toISOString(), items, subtotal: sub, descuento: desc, total: sub - desc, medio: ['Efectivo', 'Débito', 'Transferencia'][Math.floor(azar() * 3)], usuario: 'Ana' };
+      if (azar() < 0.1) { v.moneda = 'USD'; v.cotizacion = 39.5 + azar(); }
+      if (azar() < 0.05) v.anulada = true;
+      if (azar() < 0.04) { v.tipo = 'devolucion'; v.total = -v.total; v.subtotal = -v.subtotal; v.descuento = 0; v.items.forEach((it) => { it.cantidad = -it.cantidad; it.subtotal = -it.subtotal; }); }
+      d.ventas.push(v);
+    }
+  }
+  return d;
+}
+
+test('totales por día: dan lo mismo que analisisVentas para varios períodos (#33)', () => {
+  const d = conVentas();
+  const hoy = isoLocal();
+  const periodos = [[hoy, hoy], [sumarDias(hoy, -6), hoy], [sumarDias(hoy, -29), hoy], [sumarDias(hoy, -364), hoy], [sumarDias(hoy, -399), sumarDias(hoy, -200)], [sumarDias(hoy, -900), sumarDias(hoy, -800)]];
+  tramosCrecimiento(hoy).forEach((t) => periodos.push([t.desde, t.hasta], [t.antDesde, t.antHasta]));
+  for (const [a, b] of periodos) {
+    const viejo = analisisVentas(d, inicioDia(a), finDia(b));
+    const nuevo = totalesEntre(d, a, b);
+    const m = `${a} a ${b}`;
+    assert.equal(nuevo.total, viejo.total, m);
+    assert.equal(nuevo.cantidad, viejo.cantidad, m);
+    assert.equal(nuevo.descuentos, viejo.descuentos, m);
+    assert.equal(nuevo.ganancia, viejo.ganancia, m);
+    assert.equal(nuevo.costoVendido, viejo.costoVendido, m);
+    assert.equal(nuevo.vendidoSinCosto, viejo.vendidoSinCosto, m);
+    assert.deepEqual(nuevo.usd, viejo.usd, m);
+    assert.deepEqual(Object.keys(nuevo.porMedio).sort(), Object.keys(viejo.porMedio).sort(), m);
+    Object.entries(viejo.porMedio).forEach(([medio, x]) => { assert.equal(nuevo.porMedio[medio].cant, x.cant); assert.equal(nuevo.porMedio[medio].total, Math.round(x.total * 100) / 100); });
+  }
+  // Las devoluciones cuentan con su total negativo, igual que antes
+  assert.ok(d.ventas.some((v) => v.tipo === 'devolucion' && !v.anulada));
+});
+
+test('totales por día: se reutilizan, y se recalculan al cobrar, anular o cambiar de base (#33)', () => {
+  const d = conVentas(60, 4);
+  const hoy = isoLocal();
+  const m1 = totalesPorDia(d);
+  assert.equal(totalesPorDia(d), m1, 'sin cambios, el mismo mapa');
+  const antes = totalesEntre(d, hoy, hoy).total;
+  // Una venta nueva de hoy
+  d.ventas.push({ id: 'nueva', numero: 9999, fecha: new Date().toISOString(), items: [{ productoId: 'p1', cantidad: 1, precio: 500, costo: 0, subtotal: 500 }], subtotal: 500, descuento: 0, total: 500, medio: 'Efectivo' });
+  assert.notEqual(totalesPorDia(d), m1);
+  assert.equal(totalesEntre(d, hoy, hoy).total, Math.round((antes + 500) * 100) / 100);
+  // Anular no cambia la cantidad ni la última venta, pero sí los totales
+  const m2 = totalesPorDia(d);
+  d.ventas[d.ventas.length - 1].anulada = true;
+  assert.notEqual(totalesPorDia(d), m2);
+  assert.equal(totalesEntre(d, hoy, hoy).total, antes);
+  // Otra base (restaurar una copia)
+  const otra = conVentas(10, 1);
+  assert.equal(totalesEntre(otra, hoy, hoy).total, analisisVentas(otra, inicioDia(hoy), finDia(hoy)).total);
+  // El promedio por día de la semana usa los mismos totales
+  const sem = promedioPorDiaSemana(d, hoy, 8);
+  const lunes = sem.find((x) => x.dia === 1);
+  let suma = 0;
+  for (let k = sumarDias(hoy, -55); k <= hoy; k = sumarDias(k, 1)) if (new Date(k + 'T12:00:00').getDay() === 1) suma += analisisVentas(d, inicioDia(k), finDia(k)).total;
+  assert.equal(lunes.total, Math.round(suma * 100) / 100);
+});
