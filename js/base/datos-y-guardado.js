@@ -53,6 +53,28 @@ function configDe(d) {
   return JSON.stringify(config);
 }
 
+/* Ventas ya guardadas que cambiaron (solo puede cambiar «anulada», ver anularVenta). Se anotan en db, en un Set
+ * que no se guarda (propiedad no enumerable: no sale en JSON.stringify ni en configDe), para que calcularCambios
+ * no tenga que recorrer todas las ventas en cada guardado. */
+const VENTAS_CAMBIADAS = '__ventasCambiadas';
+function anotarVentaCambiada(d, id) {
+  if (!d || id == null) return;
+  if (!d[VENTAS_CAMBIADAS]) Object.defineProperty(d, VENTAS_CAMBIADAS, { value: new Set(), enumerable: false, configurable: true, writable: true });
+  d[VENTAS_CAMBIADAS].add(id);
+}
+
+/**
+ * Las filas agregadas desde el último guardado. Ventas y movimientos solo se agregan al final (con push), así que
+ * son las últimas (cantidad actual − cantidad guardada). Si algo no cierra (alguna de esas ya estaba guardada),
+ * devuelve null y se recorre todo como antes, para que nunca quede nada sin guardar.
+ */
+function agregadasAlFinal(lista, guardadas) {
+  const n = lista.length - guardadas.size;
+  if (n < 0) return null;
+  const nuevas = n ? lista.slice(lista.length - n) : [];
+  return nuevas.some((x) => guardadas.has(x.id)) ? null : nuevas;
+}
+
 /** Lo que hay guardado en el disco, para comparar en el próximo guardado. */
 function fotoDe(d) {
   const foto = { config: configDe(d), ventas: new Map(), movimientos: new Set() };
@@ -98,13 +120,31 @@ function calcularCambios(foto, d, completo = false) {
     if (filas.length) { cambios.upsert[t] = filas; hay = true; tras.push(() => filas.forEach((f) => foto[t].set(f.id, f.datos))); }
     if (borrados.length) { cambios.borrar[t] = borrados; hay = true; tras.push(() => borrados.forEach((id) => foto[t].delete(id))); }
   }
-  const ventas = filasDe(d, 'ventas').filter((v) => foto.ventas.get(v.id) !== !!v.anulada);
+  // Ventas: las agregadas al final y las anotadas como cambiadas (anuladas), sin recorrer toda la historia
+  const todasV = filasDe(d, 'ventas');
+  const marcadas = d[VENTAS_CAMBIADAS] ? [...d[VENTAS_CAMBIADAS]] : [];
+  const nuevasV = agregadasAlFinal(todasV, foto.ventas);
+  let ventas;
+  if (nuevasV) {
+    const cambiadas = [];
+    for (const id of marcadas) {
+      if (!foto.ventas.has(id)) continue; // si todavía no estaba guardada, va con las nuevas
+      for (let i = todasV.length - 1; i >= 0; i--) {
+        if (todasV[i].id === id) { if (foto.ventas.get(id) !== !!todasV[i].anulada) cambiadas.push(todasV[i]); break; }
+      }
+    }
+    ventas = cambiadas.concat(nuevasV);
+  } else {
+    ventas = todasV.filter((v) => foto.ventas.get(v.id) !== !!v.anulada);
+  }
   if (ventas.length) { cambios.upsert.ventas = ventas.map(filaFecha); hay = true; tras.push(() => ventas.forEach((v) => foto.ventas.set(v.id, !!v.anulada))); }
-  const movs = filasDe(d, 'movimientos').filter((m) => !foto.movimientos.has(m.id));
+  if (marcadas.length) tras.push(() => marcadas.forEach((id) => d[VENTAS_CAMBIADAS].delete(id)));
+  const todosM = filasDe(d, 'movimientos');
+  const movs = agregadasAlFinal(todosM, foto.movimientos) || todosM.filter((m) => !foto.movimientos.has(m.id));
   if (movs.length) { cambios.upsert.movimientos = movs.map(filaFecha); hay = true; tras.push(() => movs.forEach((m) => foto.movimientos.add(m.id))); }
   const config = configDe(d);
   if (config !== foto.config) { cambios.config = config; hay = true; tras.push(() => { foto.config = config; }); }
-  if (!hay) return null;
+  if (!hay) { marcadas.forEach((id) => d[VENTAS_CAMBIADAS].delete(id)); return null; }
   return { cambios, confirmar: () => { tras.forEach((f) => f()); return foto; } };
 }
 

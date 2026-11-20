@@ -159,6 +159,7 @@ function anularVenta(d, ventaId, opc = {}) {
     }
   }
   v.anulada = true;
+  if (typeof anotarVentaCambiada === 'function') anotarVentaCambiada(d, v.id); // para que el guardado no recorra todas las ventas (datos-y-guardado.js)
   v.anuladaEl = new Date().toISOString();
   if (opc.devolucion) {
     movimientoCaja(d, 'retiro', v.total, `Devolución venta N.º ${v.numero}`, opc.usuario || '', undefined, esUSD(v) ? 'USD' : 'UYU');
