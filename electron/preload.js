@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('almacen', {
   nuevoCodigoCelular: () => ipcRenderer.invoke('celular:nuevoCodigo'),
   alAbrirCelular: (fn) => { ipcRenderer.on('celular:abrir', () => fn()); },
   // Si el respaldo del día falla (no se pudo escribir o quedó mal), la PC avisa
+  // Si el chequeo diario encuentra el archivo de la base dañado, la PC avisa (se muestra la pantalla de datos dañados)
+  alDanarBase: (fn) => { ipcRenderer.on('base:danada', (e, info) => fn(info)); },
   alFallarRespaldo: (fn) => { ipcRenderer.on('respaldo:fallo', (e, estado) => fn(estado)); },
   // Registro de errores (registro.log): anotar desde la pantalla y copiar el informe para soporte
   anotar: (nivel, area, mensaje, detalle) => ipcRenderer.send('registro:anotar', nivel, area, mensaje, detalle),

@@ -232,6 +232,15 @@ async function hacerRespaldo(forzar = false) {
     const ultimo = almacen.ajuste('estadoRespaldo');
     const fallaReciente = ultimo && !ultimo.ok && Date.now() - Date.parse(ultimo.fecha) < 10 * 60 * 1000;
     if (forzar || (!fs.existsSync(archivo) && !fallaReciente)) {
+      // Una vez por día, antes del respaldo: un archivo dañado no tiene que pisar los respaldos buenos
+      const chequeo = almacen.ajuste('chequeoBase');
+      if (!chequeo || chequeo.dia !== hoy()) {
+        const problemas = chequearArchivo('del día');
+        if (problemas.length) {
+          if (ventana && !ventana.isDestroyed()) ventana.webContents.send('base:danada', infoArchivoDanado(problemas));
+          return { error: 'El archivo de la base tiene partes dañadas.' };
+        }
+      }
       const texto = almacen.leerJson();
       if (!texto) return null;
       const comprimido = await gzip(texto, { level: 6 });
@@ -331,8 +340,31 @@ function copiaAntesDeReemplazar() {
   return destino;
 }
 
+/**
+ * Chequeo rápido del archivo de la base (PRAGMA quick_check), al abrir y una vez por día antes del respaldo.
+ * Si encuentra problemas, la base queda marcada como dañada (no se escribe nada ni se hacen respaldos)
+ * y devuelve la lista; si está bien, devuelve [] y anota la fecha en ajustes.
+ */
+function chequearArchivo(momento) {
+  const inicio = Date.now();
+  let problemas;
+  try { problemas = almacen.revisarArchivo(); } catch (err) { problemas = [String(err.message || err)]; }
+  const ms = Date.now() - inicio;
+  if (problemas.length) {
+    danada = { tipo: 'archivo', problemas };
+    registro.error('base', `El chequeo del archivo de la base (${momento}) encontró problemas`, problemas.join(' / '));
+    return problemas;
+  }
+  registro.info('base', `Chequeo del archivo de la base (${momento}): bien, en ${ms} ms`);
+  try { almacen.ponerAjuste('chequeoBase', { fecha: new Date().toISOString(), dia: hoy(), ms }); } catch (err) { /* nada */ }
+  return [];
+}
+const infoArchivoDanado = (problemas) => ({ error: 'archivo', detalle: problemas.slice(0, 3).join(' · '), base: rutas().datos });
+
 ipcMain.on('almacen:leer', (e) => {
   try {
+    const problemas = chequearArchivo('al abrir');
+    if (problemas.length) { e.returnValue = infoArchivoDanado(problemas); return; }
     const malas = almacen.revisar();
     if (malas.length) {
       danada = { tipo: 'filas', filas: malas };
@@ -365,8 +397,8 @@ ipcMain.on('almacen:cambios', (e, cambios) => {
     if (danada) {
       // Con la base dañada solo se acepta reemplazar todo (restaurar una copia), y antes se aparta la base vieja
       if (!cambios || !cambios.completo) { e.returnValue = 'Los datos guardados están dañados: restaurá una copia antes de seguir.'; return; }
-      if (danada.tipo === 'base') {
-        // La base misma no se puede leer: se cierra, se renombra y se empieza un archivo nuevo con la copia
+      if (danada.tipo === 'base' || danada.tipo === 'archivo') {
+        // La base misma no se puede leer (o el chequeo del archivo falló): se cierra, se renombra y se empieza un archivo nuevo con la copia
         const r = rutas();
         const sello = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         try { almacen.cerrar(); } catch (err) { /* puede fallar si está rota */ }
