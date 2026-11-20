@@ -62,15 +62,22 @@ function iniciarLogin() {
     i.value = i.value.replace(/\D/g, '').slice(0, 6);
     $('#login-err').textContent = '';
   });
-  $('#login-paso2').addEventListener('submit', (e) => {
+  $('#login-paso2').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const boton = e.submitter || $('#login-paso2 [type=submit]');
+    if (boton && boton.disabled) return; // ya se está verificando (PBKDF2 tarda un momento)
     const pin = $('#login-pin').value;
     if (!pin) { $('#login-err').textContent = 'Escribí tu PIN.'; return; }
     const espera = esperaPin(db, loginUsuario.id);
     // Un administrador bloqueado no tiene que esperar: puede entrar con la clave de recuperación
     const salida = loginUsuario.rol === 'admin' && db.recuperacion && db.recuperacion.hash ? ' Si no podés esperar, tocá «Me olvidé el PIN del administrador» y usá la clave de recuperación.' : '';
     if (espera) { $('#login-err').textContent = `Demasiados intentos. Esperá ${textoEspera(espera)} y probá de nuevo.${salida}`; $('#login-pin').value = ''; return; }
-    if (!verificarPin(loginUsuario, pin)) {
+    const usuario = loginUsuario;
+    if (boton) boton.disabled = true;
+    let ok;
+    try { ok = await verificarPin(usuario, pin); } finally { if (boton) boton.disabled = false; }
+    if (usuario !== loginUsuario) return; // eligió otro usuario mientras se verificaba
+    if (!ok) {
       const bloq = fallarPin(db, loginUsuario.id);
       guardar();
       $('#login-err').textContent = bloq ? `PIN incorrecto. Por seguridad, esperá ${textoEspera(bloq)} antes de volver a probar.${salida}` : 'El PIN no es correcto. Probá de nuevo.';
@@ -102,8 +109,10 @@ function iniciarLogin() {
   });
   $('#rec-volver').addEventListener('click', mostrarLogin);
   ['#rec-pin', '#rec-pin2'].forEach((sel) => $(sel).addEventListener('input', () => { $(sel).value = $(sel).value.replace(/\D/g, '').slice(0, 6); }));
-  $('#login-rec').addEventListener('submit', (e) => {
+  $('#login-rec').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const boton = $('#login-rec [type=submit]');
+    if (boton.disabled) return;
     const err = (t) => { $('#rec-err').textContent = t; };
     const u = db.usuarios.find((x) => x.id === $('#rec-usuario').value && x.rol === 'admin');
     if (!u) return err('Elegí el administrador.');
@@ -112,13 +121,18 @@ function iniciarLogin() {
     if (pin !== $('#rec-pin2').value) return err('Los dos PIN no coinciden.');
     const espera = esperaPin(db, 'recuperacion');
     if (espera) return err(`Demasiados intentos. Esperá ${textoEspera(espera)} y probá de nuevo.`);
-    if (!verificarRecuperacion(db, $('#rec-codigo').value)) {
+    boton.disabled = true;
+    let ok, g;
+    try {
+      ok = await verificarRecuperacion(db, $('#rec-codigo').value);
+      if (ok) g = await guardarUsuario(db, { nombre: u.nombre, rol: 'admin', pin }, u.id);
+    } finally { boton.disabled = false; }
+    if (!ok) {
       const b = fallarPin(db, 'recuperacion');
       guardar();
       return err(b ? `La clave no es correcta. Esperá ${textoEspera(b)} antes de volver a probar.` : 'La clave de recuperación no es correcta. Revisá que esté completa.');
     }
     acertarPin(db, 'recuperacion');
-    const g = guardarUsuario(db, { nombre: u.nombre, rol: 'admin', pin }, u.id);
     if (g.error) return err(g.error);
     acertarPin(db, u.id);
     guardar();

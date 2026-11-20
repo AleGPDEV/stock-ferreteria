@@ -25,8 +25,10 @@ function pedirAdmin(texto) {
     const fin = (v) => { if (listo) return; listo = true; d.close(); res(v); };
     $('#aut-cancel').onclick = () => fin(null);
     d.oncancel = () => fin(null);
-    $('#form-autorizar').onsubmit = (e) => {
+    $('#form-autorizar').onsubmit = async (e) => {
       e.preventDefault();
+      const boton = e.submitter || $('#form-autorizar [type=submit]');
+      if (boton && boton.disabled) return; // ya se está verificando
       const u = admins.find((x) => x.id === $('#aut-usuario').value);
       if (!u) return;
       // Contador aparte del ingreso: los errores en esta ventana (en la sesión de un empleado) no bloquean
@@ -34,13 +36,19 @@ function pedirAdmin(texto) {
       const clave = `aut:${u.id}`;
       const espera = esperaPin(db, clave);
       if (espera) { $('#aut-err').textContent = `Demasiados intentos. Esperá ${textoEspera(espera)}.`; return; }
-      if (!verificarPin(u, $('#aut-pin').value)) {
+      const pinAntes = u.pin;
+      if (boton) boton.disabled = true;
+      let ok;
+      try { ok = await verificarPin(u, $('#aut-pin').value); } finally { if (boton) boton.disabled = false; }
+      if (listo) return; // se cerró la ventana mientras se verificaba
+      if (!ok) {
         const b = fallarPin(db, clave); guardar();
         $('#aut-err').textContent = b ? `PIN incorrecto. Esperá ${textoEspera(b)}.` : 'El PIN no es correcto.';
         $('#aut-pin').value = '';
         return;
       }
-      if (acertarPin(db, clave)) guardar();
+      // Guardar si se limpió el contador o si el PIN pasó al formato nuevo (PBKDF2)
+      if (acertarPin(db, clave) || u.pin !== pinAntes) guardar();
       fin(u);
     };
     d.showModal();
