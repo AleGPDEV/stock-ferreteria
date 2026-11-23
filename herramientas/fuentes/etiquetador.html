@@ -226,6 +226,25 @@ dialog p { margin: 0; font-size: 16px; }
   .hoja::before { display: none; }
   .hoja { padding-top: 20px; }
 }
+/* ---------- Lector de códigos ----------
+ * La cámara se dibuja detrás de la página: mientras se escanea, todo es transparente y solo se ve el visor. */
+html.escaneando, html.escaneando body { background: transparent !important; }
+html.escaneando body > :not(#visor) { visibility: hidden !important; }
+.visor { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; justify-content: space-between; color: #fff;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+.visor-titulo { margin: 0; align-self: center; background: rgba(0, 0, 0, .55); padding: 8px 14px; border-radius: 99px; font-weight: 600; font-size: 16px; text-align: center; }
+.visor-marco { align-self: center; width: min(82vw, 360px); aspect-ratio: 16 / 10; border-radius: 16px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .45); border: 3px solid rgba(255, 255, 255, .9); transition: border-color .15s; }
+.visor.leido .visor-marco { border-color: #5cc48a; }
+.visor-pie { display: flex; flex-direction: column; gap: 12px; background: rgba(0, 0, 0, .55); border-radius: 16px; padding: 12px; }
+.visor-progreso { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .25); overflow: hidden; }
+.visor-progreso span { display: block; height: 100%; background: #5cc48a; transform-origin: left; transform: scaleX(0); transition: transform .12s linear; }
+.visor-ayuda { margin: 0; font-size: 14px; text-align: center; display: flex; flex-direction: column; gap: 2px; min-height: 40px; }
+.visor-ayuda .mono { font-size: 16px; font-weight: 700; letter-spacing: .5px; }
+.visor-ayuda .mono:empty { display: none; }
+.visor .btn { background: rgba(255, 255, 255, .14); border-color: rgba(255, 255, 255, .3); color: #fff; }
+.visor .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
 /* Celulares muy angostos */
 @media (max-width: 360px) {
   .barra-escaneo .btn.grande { font-size: 16px; padding: 8px 10px; }
@@ -409,6 +428,20 @@ dialog p { margin: 0; font-size: 16px; }
 
 <dialog id="dlg"><div class="hoja"><p id="dlg-texto"></p></div><div class="hoja-pie"><button class="btn" type="button" id="dlg-no">Cancelar</button><button class="btn primary" type="button" id="dlg-si">Aceptar</button></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
+
+<!-- Lector de códigos: la cámara se ve detrás (la página se vuelve transparente mientras se escanea) -->
+<div class="visor" id="visor" hidden>
+  <p class="visor-titulo" id="visor-titulo">Apuntá al código</p>
+  <div class="visor-marco" aria-hidden="true"></div>
+  <div class="visor-pie">
+    <div class="visor-progreso" aria-hidden="true"><span id="visor-barra"></span></div>
+    <p class="visor-ayuda"><span id="visor-codigo" class="mono"></span><span class="visor-quieto">Quedate quieto un momento hasta que la barrita se llene.</span></p>
+    <div class="botonera pareja">
+      <button class="btn" type="button" id="visor-linterna">Linterna</button>
+      <button class="btn primary" type="button" id="visor-cancelar">Cancelar</button>
+    </div>
+  </div>
+</div>
 
 <script>__CODIGO_BARRAS__</script>
 <script>__ETIQUETA_TSPL__</script>
@@ -912,20 +945,133 @@ async function codigoEscrito(texto) {
   return 'ficha';
 }
 
-// ---------- Cámara (lector de códigos de Google, sin internet una vez instalado) ----------
+// ---------- Cámara ----------
 const Camara = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BarcodeScanner) || null;
+// Solo los formatos que se usan: los de fábrica (EAN/UPC), los propios (Code 128/39), ITF de las cajas y el QR de
+// los estantes. Así no aparecen lecturas raras de otros formatos.
+const FORMATOS_LECTOR = ['EAN_13', 'EAN_8', 'UPC_A', 'UPC_E', 'CODE_128', 'CODE_39', 'ITF', 'QR_CODE'];
+const LECTURA_ESTABLE_MS = 1000; // el mismo código tiene que leerse durante 1 segundo…
+const LECTURAS_MINIMAS = 3; //      …y al menos 3 veces
+const SE_PERDIO_MS = 500; //        si deja de verse medio segundo, se empieza de nuevo
+
+/**
+ * Confirma una lectura: el lector de la cámara manda muchas lecturas por segundo y a veces una sale mal (el código
+ * de al lado, uno cortado). Se acepta un código recién cuando se leyó el mismo durante LECTURA_ESTABLE_MS, sin que
+ * aparezca otro en el medio. leer(codigo, ahora) → { listo, progreso (0 a 1), codigo }.
+ */
+function crearConfirmador(ms = LECTURA_ESTABLE_MS, minimas = LECTURAS_MINIMAS, perdido = SE_PERDIO_MS) {
+  let actual = null, desde = 0, ultima = 0, veces = 0;
+  return {
+    leer(codigo, ahora) {
+      if (codigo !== actual || ahora - ultima > perdido) { actual = codigo; desde = ahora; veces = 0; }
+      veces++;
+      ultima = ahora;
+      const progreso = Math.min(1, (ahora - desde) / ms);
+      return { listo: progreso >= 1 && veces >= minimas, progreso, codigo };
+    },
+    progreso(ahora) { return actual && ahora - ultima <= perdido ? Math.min(1, (ahora - desde) / ms) : 0; },
+  };
+}
+/** Del grupo de códigos que ve la cámara, el más grande en la imagen (el que se está apuntando). */
+function codigoPrincipal(barcodes) {
+  const area = (b) => {
+    const p = b.cornerPoints || [];
+    if (p.length < 4) return 0;
+    let a = 0;
+    for (let i = 0; i < p.length; i++) { const [x1, y1] = p[i], [x2, y2] = p[(i + 1) % p.length]; a += x1 * y2 - x2 * y1; }
+    return Math.abs(a / 2);
+  };
+  const lista = (barcodes || []).filter((b) => b && (b.rawValue || b.displayValue));
+  if (!lista.length) return '';
+  const b = lista.reduce((m, x) => (area(x) > area(m) ? x : m), lista[0]);
+  return String(b.rawValue || b.displayValue).trim();
+}
+
+/** El lector de Google (abre su propia pantalla y toma la primera lectura): por si el lector propio no anda. */
+async function leerConGoogle() {
+  const m = await Camara().isGoogleBarcodeScannerModuleAvailable();
+  if (!m.available) {
+    await Camara().installGoogleBarcodeScannerModule();
+    toast('Se está bajando el lector de códigos de Google (una sola vez, necesita internet). Probá de nuevo en un minuto.');
+    return null;
+  }
+  const r = await Camara().scan({ formats: FORMATOS_LECTOR });
+  const b = r && r.barcodes && r.barcodes[0];
+  return (b && (b.rawValue || b.displayValue)) || null;
+}
+
+/**
+ * Lee un código con la cámara, dentro de la app: se ve la cámara con un recuadro y una barrita que se llena
+ * mientras el código se lee bien; se acepta cuando se leyó el mismo durante 1 segundo. Devuelve el código, o null
+ * si se canceló. Si este lector no se puede usar (sin permiso de cámara, celular viejo), usa el de Google.
+ */
+let lectorAbierto = null;
+async function leerCodigoCamara(titulo = 'Apuntá al código') {
+  const BS = Camara();
+  if (!BS.startScan) return leerConGoogle();
+  try {
+    let p = await BS.checkPermissions();
+    if (p.camera !== 'granted' && p.camera !== 'limited') p = await BS.requestPermissions();
+    if (p.camera !== 'granted' && p.camera !== 'limited') return leerConGoogle();
+  } catch (e) { return leerConGoogle(); }
+  if (lectorAbierto) return null;
+  return new Promise((resolver) => {
+    const conf = crearConfirmador();
+    const subs = [];
+    let terminado = false, tic = null;
+    lectorAbierto = { cancelar: () => terminar(null), atras: false };
+    try { history.pushState({ lector: true }, ''); } catch (e) { /* nada */ }
+    $('#visor-titulo').textContent = titulo;
+    $('#visor-codigo').textContent = '';
+    $('#visor-barra').style.transform = 'scaleX(0)';
+    $('#visor').classList.remove('leido');
+    document.documentElement.classList.add('escaneando');
+    $('#visor').hidden = false;
+    async function terminar(codigo) {
+      if (terminado) return;
+      terminado = true;
+      clearInterval(tic);
+      if (codigo) { $('#visor').classList.add('leido'); $('#visor-barra').style.transform = 'scaleX(1)'; avisar(60); }
+      try { await BS.stopScan(); } catch (e) { /* ya estaba parado */ }
+      for (const s of subs) { try { await s.remove(); } catch (e) { /* nada */ } }
+      // Se saca el paso del historial que se agregó al abrir (si no se cerró justamente con «Atrás»)
+      if (lectorAbierto && !lectorAbierto.atras) { try { history.back(); } catch (e) { /* nada */ } }
+      // Un instante para que se vea en verde que se leyó
+      setTimeout(() => {
+        $('#visor').hidden = true;
+        document.documentElement.classList.remove('escaneando');
+        lectorAbierto = null;
+        resolver(codigo);
+      }, codigo ? 250 : 0);
+    }
+    (async () => {
+      try {
+        subs.push(await BS.addListener('barcodesScanned', (ev) => {
+          if (terminado) return;
+          const codigo = codigoPrincipal(ev && ev.barcodes);
+          if (!codigo) return;
+          const r = conf.leer(codigo, Date.now());
+          $('#visor-codigo').textContent = codigo;
+          $('#visor-barra').style.transform = `scaleX(${r.progreso})`;
+          if (r.listo) terminar(codigo);
+        }));
+        subs.push(await BS.addListener('scanError', () => { /* sigue intentando */ }));
+        await BS.startScan({ formats: FORMATOS_LECTOR, lensFacing: 'BACK', resolution: 1 });
+        // Si el código deja de verse, la barrita vuelve a cero
+        tic = setInterval(() => { if (!terminado && !conf.progreso(Date.now())) { $('#visor-barra').style.transform = 'scaleX(0)'; $('#visor-codigo').textContent = ''; } }, 200);
+      } catch (e) {
+        // No se pudo abrir la cámara así: se cierra y se usa el lector de Google
+        await terminar(null);
+        try { resolver(await leerConGoogle()); } catch (err) { resolver(null); }
+      }
+    })();
+  });
+}
+
 async function escanearCamara() {
   if (!Camara()) { toast('El escáner con la cámara funciona en la app instalada en el celular.'); return; }
   try {
-    const m = await Camara().isGoogleBarcodeScannerModuleAvailable();
-    if (!m.available) {
-      await Camara().installGoogleBarcodeScannerModule();
-      toast('Se está bajando el lector de códigos de Google (una sola vez, necesita internet). Probá de nuevo en un minuto.');
-      return;
-    }
-    const r = await Camara().scan();
-    const b = r && r.barcodes && r.barcodes[0];
-    const codigo = b && (b.rawValue || b.displayValue);
+    const codigo = await leerCodigoCamara('Apuntá al código del producto');
     if (!codigo) return;
     const res = await codigoEscrito(codigo);
     // Modo contar: si solo sumó, vuelve a abrir la cámara para el siguiente
@@ -1105,11 +1251,7 @@ async function pasoMover(texto) {
 async function camaraMover() {
   if (!Camara()) { toast('El escáner con la cámara funciona en la app instalada en el celular.'); return; }
   try {
-    const m = await Camara().isGoogleBarcodeScannerModuleAvailable();
-    if (!m.available) { await Camara().installGoogleBarcodeScannerModule(); toast('Se está bajando el lector de códigos de Google (una sola vez). Probá de nuevo en un minuto.'); return; }
-    const res = await Camara().scan();
-    const b = res && res.barcodes && res.barcodes[0];
-    const codigo = b && (b.rawValue || b.displayValue);
+    const codigo = await leerCodigoCamara(mover && mover.paso === 2 ? 'Apuntá a la etiqueta del estante nuevo' : 'Apuntá al código del producto');
     if (!codigo) return;
     const avanzo = await pasoMover(codigo);
     // Después del producto, la cámara se abre sola para el estante; después del estante, solo con «Seguir escaneando»
@@ -1359,6 +1501,10 @@ $('#mv-salir').addEventListener('click', () => { cerrarMover(); estado(''); });
 $('#mv-otro').addEventListener('click', () => { if (mover) { mover = { paso: 1, producto: null }; $('#mv-msj').textContent = ''; pintarMover(); } });
 $('#mv-lista').addEventListener('change', (e) => { const v = e.target.value; if (v) pasoMover(v); });
 $('#btn-camara').addEventListener('click', escanearCamara);
+$('#visor-cancelar').addEventListener('click', () => { if (lectorAbierto) lectorAbierto.cancelar(); });
+$('#visor-linterna').addEventListener('click', async () => { try { await Camara().toggleTorch(); } catch (e) { toast('Este celular no tiene linterna o no se pudo prender.'); } });
+// El botón «Atrás» de Android cierra el lector en vez de salir de la app (al abrirlo se agrega un paso al historial)
+window.addEventListener('popstate', () => { if (lectorAbierto) { lectorAbierto.atras = true; lectorAbierto.cancelar(); } });
 $('#seguir').checked = !!datos.seguir;
 $('#seguir').addEventListener('change', () => { datos.seguir = $('#seguir').checked; guardar(); });
 $('#escanear').addEventListener('input', pintarBusqueda);
