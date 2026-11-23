@@ -8,6 +8,7 @@
   "js/logica/importar-planilla.js",
   "js/logica/reportes.js",
   "js/logica/deposito.js",
+  "js/logica/categorias.js",
   "js/logica/etiquetas.js",
   "js/logica/celular.js",
   "js/logica/puente-cargador.js",
@@ -31,6 +32,7 @@
   "js/pantallas/respaldo.js",
   "js/pantallas/datos-danados.js",
   "js/pantallas/deposito.js",
+  "js/pantallas/categorias.js",
   "js/pantallas/etiquetadora.js",
   "js/pantallas/celular.js",
   "js/arranque.js"
