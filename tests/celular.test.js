@@ -332,6 +332,12 @@ test('servidor: recibe la foto, la guarda y la asigna; si el producto no está, 
     assert.equal((await mandar(s.puerto, '/api/fotos', 't', { equipo: 'C1', codigo: 'MAR-16', imagen: 'no es base64 !!' })).status, 400);
     assert.equal(guardadas.size, 3);
     assert.equal((await mandar(s.puerto, '/api/fotos', 'otro', { imagen: JPEG.toString('base64') })).status, 401);
+    // Las fotos nuevas del celular vienen en WebP: se guardan como .webp
+    const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 '), Buffer.alloc(200, 7)]);
+    const w = await mandar(s.puerto, '/api/fotos', 't', { equipo: 'C1', codigo: 'MAR-16', imagen: 'data:image/webp;base64,' + WEBP.toString('base64') });
+    assert.equal(w.status, 200);
+    assert.match(d.productos[0].foto, /^cel-\d+-[0-9a-f]{6}\.webp$/);
+    assert.deepEqual(guardadas.get(d.productos[0].foto), WEBP);
   } finally { await s.detener(); }
 });
 

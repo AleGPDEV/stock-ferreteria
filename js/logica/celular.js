@@ -166,7 +166,7 @@ function moverDesdeCelularEn(d, x) {
 function fotoDesdeCelularEn(d, x) {
   x = x || {};
   if (!equipoCelular(x.equipo)) return { error: 'Falta el nombre del celular (Ajustes).' };
-  if (!/^[\w-]{1,80}\.jpg$/.test(String(x.foto || ''))) return { error: 'La foto no es válida.' };
+  if (!/^[\w-]{1,80}\.(jpg|webp)$/.test(String(x.foto || ''))) return { error: 'La foto no es válida.' };
   const p = (x.productoId && d.productos.find((q) => q.id === x.productoId)) || buscarPorCodigo(d, x.codigo);
   if (!p) return { error: 'Ese producto ya no está en el programa.' };
   const anterior = p.foto || '';
