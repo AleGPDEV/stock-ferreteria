@@ -194,7 +194,7 @@
   }
 
   const api = { ascii, renglones, disenoEtiqueta, tspl, tsplPrueba, tsplRegla, dibujar, FUENTES, PUNTOS_MM };
-  api.elegirCodigo = elegirCodigo; // EAN-13 o Code 128 (en su línea, para no chocar con otros cambios de esta lista)
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.EtiquetaTSPL = api;
+  api.elegirCodigo = elegirCodigo; // EAN-13 o Code 128 (aparte, para no chocar con otros cambios de la lista de arriba)
 })(typeof window !== 'undefined' ? window : globalThis);
