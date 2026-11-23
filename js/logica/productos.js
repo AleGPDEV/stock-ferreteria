@@ -74,10 +74,13 @@ function seParecen(a, b) {
 const normCodigo = (c) => String(c || '').trim().toUpperCase();
 /** Solo letras y números: «PIN-ROD22» y «PIN'ROD22» quedan iguales. */
 const codigoSinSignos = (c) => normCodigo(c).replace(/[^A-Z0-9Ñ]/g, '');
+/** Para comparar códigos: un UPC-A (12 números, productos de Estados Unidos) es el mismo EAN-13 con un 0 adelante.
+ * Unos lectores mandan 12 números y otros 13 (la cámara del celular, la pistola): los dos son el mismo producto. */
+const claveCodigo = (c) => { const n = normCodigo(c); return /^\d{12}$/.test(n) ? `0${n}` : n; };
 function buscarPorCodigo(d, texto) {
-  const c = normCodigo(texto);
+  const c = claveCodigo(texto);
   if (!c) return null;
-  const exacto = d.productos.find((p) => codigosDe(p).some((x) => normCodigo(x) === c));
+  const exacto = d.productos.find((p) => codigosDe(p).some((x) => claveCodigo(x) === c));
   if (exacto) return exacto;
   // Un lector configurado con teclado en inglés en un Windows en español cambia los signos
   // («PIN-ROD22» llega como «PIN'ROD22»). Se compara sin signos, solo si hay un único producto así.
@@ -88,8 +91,8 @@ function buscarPorCodigo(d, texto) {
 }
 /** ¿Algún otro producto ya usa ese código (como código propio o de barras)? Devuelve ese producto o null. */
 function codigoUsado(d, texto, exceptoId) {
-  const c = normCodigo(texto);
-  return d.productos.find((p) => p.id !== exceptoId && codigosDe(p).some((x) => normCodigo(x) === c)) || null;
+  const c = claveCodigo(texto);
+  return d.productos.find((p) => p.id !== exceptoId && codigosDe(p).some((x) => claveCodigo(x) === c)) || null;
 }
 /** Le agrega un código de barras a un producto. Devuelve un texto de error o null. */
 function asignarBarras(d, p, texto) {
@@ -97,7 +100,7 @@ function asignarBarras(d, p, texto) {
   if (!c) return 'El código está vacío.';
   const otro = codigoUsado(d, c, p.id);
   if (otro) return `El código ${c} ya es de «${otro.nombre}».`;
-  if (codigosDe(p).some((x) => normCodigo(x) === c)) return null;
+  if (codigosDe(p).some((x) => claveCodigo(x) === claveCodigo(c))) return null;
   p.barras = (Array.isArray(p.barras) ? p.barras : []).concat(c);
   return null;
 }
@@ -109,8 +112,8 @@ function agregarCodigoExtra(d, lista, texto, codigoPrincipal, exceptoId) {
   const c = normCodigo(texto);
   if (!c) return { error: 'Escaneá o escribí el código.' };
   if (/\s/.test(c)) return { error: 'Un código no lleva espacios: agregalos de a uno.' };
-  if (c === normCodigo(codigoPrincipal)) return { error: `${c} ya es el código de este producto.` };
-  if (lista.some((x) => normCodigo(x) === c)) return { error: `${c} ya está en la lista.` };
+  if (claveCodigo(c) === claveCodigo(codigoPrincipal)) return { error: `${c} ya es el código de este producto.` };
+  if (lista.some((x) => claveCodigo(x) === claveCodigo(c))) return { error: `${c} ya está en la lista.` };
   const otro = codigoUsado(d, c, exceptoId);
   if (otro) return { error: `El código ${c} ya es de «${otro.nombre}».` };
   return { lista: lista.concat(c) };

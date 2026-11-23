@@ -156,7 +156,7 @@ function dondeEsta(d, texto) {
   // Primero lo exacto: un estante que se llama así (aunque sea «U1») o un producto con ese código (aunque sea «U12»)
   const estanteExacto = ubics.find((x) => x.clave === k);
   if (estanteExacto) return { tipo: 'ubicacion', ubicacion: estanteExacto };
-  const codigoExacto = d.productos.find((p) => codigosDe(p).some((x) => normCodigo(x) === normCodigo(t)));
+  const codigoExacto = d.productos.find((p) => codigosDe(p).some((x) => claveCodigo(x) === claveCodigo(t)));
   if (codigoExacto) return { tipo: 'producto', producto: codigoExacto };
   // Etiqueta de estante: el número corto (U12); las impresas antes llevan «UBIC nombre» y siguen andando
   const mU = RE_ID_ESTANTE.exec(t);
