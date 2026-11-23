@@ -30,7 +30,7 @@ function iniciar() {
   iniciarDeposito();
   iniciarCelular();
   if (typeof window.print !== 'function' || window.SIN_IMPRESION) $$('[data-imprime]').forEach((b) => { b.hidden = true; });
-  $('#venta-imprimir').addEventListener('click', () => { if (ultimaVenta) imprimir(htmlTicket(ultimaVenta)); });
+  $('#venta-imprimir').addEventListener('click', () => { if (ultimaVenta) imprimirTicket(htmlTicket(ultimaVenta)); });
   $('#dlg-venta').addEventListener('close', () => $('#caja-buscar').focus());
   $('#venta-nueva').addEventListener('click', () => $('#dlg-venta').close());
   cargar();
@@ -75,6 +75,7 @@ function iniciar() {
   iniciarMovimientos();
   iniciarProveedores();
   iniciarRespaldo();
+  iniciarImpresoraTicket();
   window.addEventListener('hashchange', mostrarVista);
   window.addEventListener('storage', (e) => { if (e.key === CLAVE && !datosDanados) { if (cargar()) render(); else mostrarDanado(); } });
   arrancar();

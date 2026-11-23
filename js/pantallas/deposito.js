@@ -139,55 +139,54 @@ function renderEtiquetas() {
     return `<li class="${c ? 'sel' : ''}"><label class="check"><input type="checkbox" data-etq-sel="${esc(x.id)}" ${c ? 'checked' : ''}> <span><strong>${esc(x.nombre)}</strong><span class="meta">${esc(x.detalle)}</span></span></label>
       <label class="etq-copias">Copias <input type="number" min="0" max="500" step="1" inputmode="numeric" data-etq-copias="${esc(x.id)}" value="${c}"></label></li>`;
   }).join('') || '<li class="vacio">Nada coincide.</li>';
-  const formato = $('#etq-ajustes-dlg [name=etq-formato]:checked').value;
-  $('#etq-saltear-campo').hidden = formato !== 'a4';
-  $('#etq-porhoja-campo').hidden = formato !== 'hoja';
-  $('#etq-rollo-campo').hidden = formato !== 'rollo';
+  // Las etiquetas salen siempre por la impresora de etiquetas (rollo); las hojas A4 se sacaron
+  const formato = 'rollo';
   $('#etq-rollo-otra').hidden = $('#etq-rollo').value !== 'otra';
   prepararEtiquetadora(formato);
-  const rollo = formato === 'rollo' ? rolloElegido() : null;
+  const rollo = rolloElegido();
   actualizarResumenEtiquetas(formato, rollo);
   const sel = todos.filter((x) => etq.copias.get(x.id) > 0).map((x) => ({ ...x, copias: etq.copias.get(x.id) }));
-  const r = htmlEtiquetas(sel, formato, Number($('#etq-saltear').value), Number($('#etq-porhoja').value), rollo);
-  if (formato === 'hoja') {
-    const ph = porHojaEtiquetas(Number($('#etq-porhoja').value), r.etiquetas);
-    const m = medidaEtiquetaHoja(ph);
-    $('#etq-porhoja-ayuda').textContent = `${ph} por hoja: cada etiqueta de ${n(Math.round(m.ancho))} × ${n(Math.round(m.alto))} mm.${Number($('#etq-porhoja').value) ? '' : ' Se elige solo según cuántas imprimís.'}`;
-  }
-  $('#etq-cuenta').textContent = r.etiquetas
-    ? `Se van a imprimir ${plural(r.etiquetas, 'etiqueta', 'etiquetas')}${formato !== 'rollo' ? ` en ${plural(r.hojas, 'hoja', 'hojas')}` : ''}.`
-    : 'Marcá lo que quieras imprimir.';
+  const r = htmlEtiquetas(sel, formato, 0, 0, rollo);
+  $('#etq-cuenta').textContent = r.etiquetas ? `Se van a imprimir ${plural(r.etiquetas, 'etiqueta', 'etiquetas')}.` : 'Marcá lo que quieras imprimir.';
   $('#etq-imprimir').disabled = !r.etiquetas;
-  // Muestra: en la hoja común, la primera hoja entera en chico; si no, la primera etiqueta en su tamaño
-  const primera = sel[0];
-  $('#etq-muestra').className = `etq-muestra ${formato}`;
-  $('#etq-muestra').className = `etq-muestra ${formato}${r.medida && formato === 'rollo' ? ' rollo-m' : ''}`;
-  $('#etq-muestra').innerHTML = !primera ? '' : formato === 'hoja' ? r.html.split('<div class="pagina hoja"').slice(0, 2).join('<div class="pagina hoja"')
-    : formato === 'rollo' && r.medida ? r.html.split('<div class="pagina hoja rollo-m"').slice(0, 2).join('<div class="pagina hoja rollo-m"') : htmlEtiqueta(primera, formato);
+  // Muestra: la primera etiqueta, como sale de la impresora
+  muestraEtiqueta(sel[0], rollo, r);
+}
+/** La muestra de la ventana de etiquetas: el mismo dibujo que sale por la etiquetadora (o el HTML, si va por Windows). */
+function muestraEtiqueta(primera, rollo, r) {
+  const caja = $('#etq-muestra');
+  if (!primera) { caja.className = 'etq-muestra'; caja.innerHTML = ''; return; }
+  if (rollo && puedeEtiquetadora() && $('#etq-directo').checked) {
+    const d = EtiquetaTSPL.disenoEtiqueta(itemEtiquetadora(primera), rollo);
+    const c = document.createElement('canvas');
+    EtiquetaTSPL.dibujar(d, c, 1);
+    c.className = 'etq-vista-termica';
+    c.setAttribute('role', 'img');
+    c.setAttribute('aria-label', `Así sale la etiqueta de ${primera.nombre}`);
+    caja.className = 'etq-muestra termica';
+    caja.replaceChildren(c);
+    return;
+  }
+  caja.className = `etq-muestra rollo${r.medida ? ' rollo-m' : ''}`;
+  caja.innerHTML = r.medida ? r.html.split('<div class="pagina hoja rollo-m"').slice(0, 2).join('<div class="pagina hoja rollo-m"') : htmlEtiqueta(primera, 'rollo');
 }
 
 /** La línea «Imprime en …» de la ventana de imprimir. */
-function actualizarResumenEtiquetas(formato = $('#etq-ajustes-dlg [name=etq-formato]:checked').value, rollo = formato === 'rollo' ? rolloElegido() : null) {
+function actualizarResumenEtiquetas(formato = 'rollo', rollo = rolloElegido()) {
   const op = $('#etq-impresora').selectedOptions[0];
   const impresora = $('#etq-impresora').value && op ? op.textContent.replace(/ \(predeterminada\)$/, '') : ajustesEtiquetadora().impresora;
-  $('#etq-config-resumen').textContent = resumenAjustesEtiquetas({ formato, porHoja: $('#etq-porhoja').value, rollo,
+  $('#etq-config-resumen').textContent = resumenAjustesEtiquetas({ formato, porHoja: 0, rollo,
     directo: formato === 'rollo' && puedeEtiquetadora() && $('#etq-directo').checked, impresora });
 }
-/** Los ajustes de la ventana «Cómo se imprimen las etiquetas» se guardan al cambiarlos (no solo al imprimir). */
-function guardarFormatoEtiquetas() {
-  const formato = $('#etq-ajustes-dlg [name=etq-formato]:checked').value;
-  const rollo = rolloElegido();
-  try {
-    localStorage.setItem('formatoEtiquetas', formato); localStorage.setItem('etiquetasPorHoja', $('#etq-porhoja').value);
-    if (rollo) localStorage.setItem('etiquetasRollo', `${rollo.ancho}x${rollo.alto}`);
-  } catch { /* sin almacenamiento: no pasa nada */ }
-}
+/** Los ajustes de la ventana «Cómo se imprimen las etiquetas» se guardan en los datos al cambiarlos (ver etiquetadora.js). */
+function guardarFormatoEtiquetas() { guardarAjustesEtiquetadora(); }
 
 function abrirEtiquetas(tipo, marcar = [], opciones = {}) {
   // Las etiquetas de estante llevan el número corto: las ubicaciones sin estante pasan a ser estantes y se numeran
   if (tipo === 'ubicacion' && completarEstantes(db)) guardar();
   etq.tipo = tipo;
   etq.copias = new Map(marcar.map((id) => [id, 1]));
+  ponerAjustesEtiquetasEnPantalla();
   $('#etq-titulo').textContent = tipo === 'ubicacion' ? 'Imprimir etiquetas de estantes' : 'Imprimir etiquetas de productos';
   $('#etq-buscar').value = '';
   $('#etq-sinfab').checked = !!opciones.sinFabrica;
@@ -424,37 +423,18 @@ function iniciarDeposito() {
   $('#btn-dep-sincodigo').addEventListener('click', () => abrirSinCodigoDep(''));
   $('#btn-etq-ubicaciones').addEventListener('click', () => abrirEtiquetas('ubicacion'));
   // Ventana de etiquetas
-  try { const f = localStorage.getItem('formatoEtiquetas'); if (f && FORMATOS_ETIQUETA[f]) $(`#etq-ajustes-dlg [name=etq-formato][value=${f}]`).checked = true; } catch { /* nada */ }
-  $('#etq-porhoja').innerHTML = '<option value="0">Automático (según cuántas imprimís)</option>' + POR_HOJA.map((n) => `<option value="${n}">${n} por hoja</option>`).join('');
-  try { const ph = localStorage.getItem('etiquetasPorHoja'); if (ph && $(`#etq-porhoja option[value="${ph}"]`)) $('#etq-porhoja').value = ph; } catch { /* nada */ }
-  $('#etq-porhoja').addEventListener('change', renderEtiquetas);
-  // Medida del rollo: las de siempre y «Otra medida»; se recuerda la última que se usó
+  // Medida del rollo: las de siempre y «Otra medida». Los ajustes se guardan en los datos (ver etiquetadora.js).
   $('#etq-rollo').innerHTML = MEDIDAS_ROLLO.map(([a, h]) => `<option value="${a}x${h}">${a} × ${h} mm</option>`).join('') + '<option value="otra">Otra medida…</option>';
-  try {
-    const g = (localStorage.getItem('etiquetasRollo') || '').split('x').map(Number);
-    if (g.length === 2 && medidaRollo(g[0], g[1])) {
-      if ($(`#etq-rollo option[value="${g[0]}x${g[1]}"]`)) $('#etq-rollo').value = `${g[0]}x${g[1]}`;
-      else { $('#etq-rollo').value = 'otra'; $('#etq-rollo-ancho').value = g[0]; $('#etq-rollo-alto').value = g[1]; }
-    }
-  } catch { /* nada */ }
+  ponerAjustesEtiquetasEnPantalla();
   ['#etq-rollo', '#etq-rollo-ancho', '#etq-rollo-alto'].forEach((s) => $(s).addEventListener('input', renderEtiquetas));
-  // Impresión directa a la etiquetadora: se recuerdan los ajustes
-  {
-    const a = ajustesEtiquetadora();
-    $('#etq-directo').checked = a.directo !== false;
-    $('#etq-sep').value = a.separacion; $('#etq-osc').value = a.oscuridad; $('#etq-cx').value = a.correrX; $('#etq-cy').value = a.correrY; $('#etq-girar').checked = !!a.girar;
-    $('#etq-cabezal').value = String(a.cabezal || 0);
-    $('#etq-directo').addEventListener('change', () => { guardarAjustesEtiquetadora(); renderEtiquetas(); });
-    ['#etq-impresora', '#etq-cabezal', '#etq-sep', '#etq-osc', '#etq-cx', '#etq-cy', '#etq-girar'].forEach((s) => $(s).addEventListener('change', guardarAjustesEtiquetadora));
-    $('#etq-prueba').addEventListener('click', imprimirPruebaEtiquetadora);
-    $('#etq-regla').addEventListener('click', imprimirReglaEtiquetadora);
-  }
+  $('#etq-directo').addEventListener('change', () => { guardarAjustesEtiquetadora(); renderEtiquetas(); });
+  ['#etq-impresora', '#etq-cabezal', '#etq-sep', '#etq-osc', '#etq-cx', '#etq-cy', '#etq-girar'].forEach((s) => $(s).addEventListener('change', () => { guardarAjustesEtiquetadora(); renderEtiquetas(); }));
+  $('#etq-prueba').addEventListener('click', imprimirPruebaEtiquetadora);
+  $('#etq-regla').addEventListener('click', imprimirReglaEtiquetadora);
   $('#etq-rollo').addEventListener('change', renderEtiquetas);
   alDejarDeEscribir($('#etq-buscar'), renderEtiquetas);
   $('#etq-ubic').addEventListener('change', renderEtiquetas);
   $('#etq-sinfab').addEventListener('change', renderEtiquetas);
-  $('#etq-saltear').addEventListener('input', renderEtiquetas);
-  $$('#etq-ajustes-dlg [name=etq-formato]').forEach((r) => r.addEventListener('change', renderEtiquetas));
   // «Cambiar» abre los ajustes en una ventana aparte; lo que se cambia ahí queda guardado
   $('#etq-config-cambiar').addEventListener('click', () => $('#etq-ajustes-dlg').showModal());
   $('#etq-ajustes-dlg').addEventListener('change', guardarFormatoEtiquetas);

@@ -595,10 +595,11 @@ test('etiquetas: código de barras del producto o del programa, copias y hojas A
   assert.equal((s.html.match(/et-vacia/g) || []).length, 5);
   // rollo: una por página
   assert.equal(app.htmlEtiquetas([{ producto: d.productos[0], copias: 3 }], 'rollo', 5).hojas, 3);
-  // etiqueta de ubicación: el código de barras dice «UBIC C-02»
+  // etiqueta de ubicación: un QR (no código de barras) que dice «UBIC C-02»
   const ub = app.ubicacionesDe(d)[0];
   const e = app.htmlEtiquetas([{ ubicacion: ub, copias: 1 }], 'a4');
-  assert.match(e.html, /aria-label="Código de barras UBIC C-02"/);
+  assert.match(e.html, /aria-label="QR UBIC C-02"/);
+  assert.doesNotMatch(e.html, /Código de barras/);
   assert.match(e.html, /Martillo 16 oz/);
   assert.equal(app.htmlEtiquetas([{ producto: d.productos[0], copias: 0 }]).etiquetas, 0);
 });
@@ -779,7 +780,7 @@ test('QA5 M4: la etiqueta de un estante lleva un número corto (U1) aunque el no
   const u = app.ubicacionesDe(d).find((x) => x.estanteId === largo.id);
   assert.equal(u.corto, 'U1');
   const html = app.htmlEtiquetas([{ ubicacion: u, copias: 1 }], 'rollo').html;
-  assert.match(html, /aria-label="Código de barras U1"/, 'el código de barras lleva U1, no el nombre');
+  assert.match(html, /aria-label="QR U1"/, 'el QR lleva U1, no el nombre');
   assert.match(html, /Herramientas eléctricas 12/, 'el nombre va escrito');
   // el código queda corto: muchas menos barras que con el nombre entero
   const CB = require('../js/codigo-barras.js');
@@ -1020,13 +1021,39 @@ test('PC: etiquetas directo a la etiquetadora (TSPL, igual que el celular)', () 
     assert.equal(it.ubicacion, 'A-01');
     assert.ok(it.codigo);
     const u = app.itemEtiquetadora({ ubicacion: { ubicacion: 'A-02', categoria: 'Pinturas', corto: 'U2', clave: 'a-02', productos: [] } });
-    assert.deepEqual(u, { nombre: 'Pinturas: A-02', codigo: 'U2', ubicacion: 'A-02' });
+    assert.deepEqual(u, { qr: true, nombre: 'Pinturas', codigo: 'U2', ubicacion: 'A-02' });
     const t = app.tsplEtiquetas([{ producto: p, copias: 3 }, { producto: p, copias: 0 }, { ubicacion: { ubicacion: 'A-02', corto: 'U2', clave: 'a-02', productos: [] }, copias: 1 }],
       { ancho: 50, alto: 40 }, { separacion: 2, oscuridad: 9, correrX: 1 });
     assert.equal((t.match(/^SIZE 50 mm,40 mm/gm) || []).length, 2);
     assert.match(t, /PRINT 1,3\r\n/);
     assert.match(t, /PRINT 1,1\r\n$/);
     assert.match(t, /DENSITY 9/);
-    assert.match(t, /"Ubicacion A-02"/);
+    assert.match(t, /"A-02"/);
+    assert.match(t, /"Ubicacion"/);
   } finally { delete global.EtiquetaTSPL; }
+});
+
+test('etiqueta de estante: QR con el número corto, cuadradito por cuadradito', () => {
+  const T = require('../js/etiqueta-tspl.js');
+  for (const [ancho, alto] of [[50, 40], [50, 25], [40, 30], [100, 50]]) {
+    const d = T.disenoEtiqueta({ qr: true, codigo: 'U12', ubicacion: 'B-3', nombre: 'Bulonería' }, { ancho, alto });
+    assert.ok(d.qr, 'es la de estante');
+    const { n, negro } = T.modulosQR('U12');
+    // Se arma de nuevo la grilla con las barras (cada barra es una tira de cuadraditos de una fila)
+    const mod = Math.min(...d.barras.map((b) => b.h));
+    const x0 = Math.min(...d.barras.map((b) => b.x)), y0 = Math.min(...d.barras.map((b) => b.y));
+    const grilla = Array.from({ length: n }, () => Array(n).fill(false));
+    for (const b of d.barras) {
+      assert.equal(b.h, mod);
+      for (let c = 0; c < b.w / mod; c++) grilla[(b.y - y0) / mod][(b.x - x0) / mod + c] = true;
+    }
+    for (let f = 0; f < n; f++) for (let c = 0; c < n; c++) assert.equal(grilla[f][c], negro(f, c), `${ancho}x${alto} módulo ${f},${c}`);
+    assert.ok(mod >= 3, `${ancho}x${alto}: cuadraditos de ${mod} puntos (se leen bien desde 3)`);
+    // El QR entra en la etiqueta y el estante va escrito al lado
+    for (const b of d.barras) assert.ok(b.x + b.w <= d.puntos[0] && b.y + b.h <= d.puntos[1]);
+    assert.ok(d.textos.some((t) => t.texto === 'B-3'));
+    assert.ok(d.textos.every((t) => t.x > Math.max(...d.barras.map((b) => b.x + b.w))), 'el texto no pisa el QR');
+  }
+  // La de producto sigue con código de barras
+  assert.ok(!T.disenoEtiqueta({ codigo: 'C1-0007', nombre: 'Arandela', ubicacion: 'B-3' }, { ancho: 50, alto: 40 }).qr);
 });

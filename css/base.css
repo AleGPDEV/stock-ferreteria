@@ -419,3 +419,6 @@ body:not(.es-escritorio) .solo-escritorio { display: none !important; }
 }
 
 .ajustes { display: grid; gap: 16px; max-width: 1100px; }
+
+/* Texto solo para lectores de pantalla */
+.visualmente-oculto { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; padding: 0; margin: -1px; border: 0; }

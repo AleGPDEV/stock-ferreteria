@@ -850,9 +850,29 @@ function pintarBusqueda() {
 const avisar = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* nada */ } };
 /** Un código leído (cámara, lector o escrito). Igual que el Cargador: si ya está en la lista suma 1; si no, abre la ficha.
  *  Devuelve 'sumado' cuando solo sumó (para seguir escaneando). */
+/** El estante de una etiqueta de estante (QR o código de barras con el número corto U12, o «UBIC nombre»), o null. */
+function estanteDeEtiqueta(t) {
+  const x = String(t || '').trim();
+  if (/^U\d+$/i.test(x)) return estantes().find((e) => e.corto && e.corto.toUpperCase() === x.toUpperCase()) || null;
+  if (/^UBIC /i.test(x)) return estanteDe(x.slice(5)) || { codigo: x.slice(5).trim() };
+  return null;
+}
 async function codigoEscrito(texto) {
   const codigo = String(texto || '').trim().toUpperCase();
   if (!codigo) return '';
+  // La etiqueta de un estante: si se está cargando un producto, se elige ese estante; si no, se avisa qué estante es
+  const est = estanteDeEtiqueta(codigo);
+  if (est) {
+    avisar(40);
+    if (!$('#form').hidden && !$('#c-estante').disabled && $(`#c-estante option[value="${CSS.escape(est.codigo)}"]`)) {
+      $('#c-estante').value = est.codigo;
+      alElegirEstante();
+      estado(`Estante <strong>${esc(est.codigo)}</strong> elegido para este producto.`, 'ok');
+    } else {
+      estado(`Esa es la etiqueta del estante <strong>${esc(est.codigo)}</strong>. Para poner un producto ahí, tocá «Cambiar estante».`, 'info');
+    }
+    return 'estante';
+  }
   const ya = datos.items.find((x) => (x.codigo && x.codigo.toUpperCase() === codigo) || (x.barras || []).includes(codigo));
   if (ya) {
     if (!$('#form').hidden && editando === ya.id) { $('#c-cantidad').value = String((parseNum($('#c-cantidad').value) || 0) + 1).replace('.', ','); avisar(40); return 'sumado'; }
