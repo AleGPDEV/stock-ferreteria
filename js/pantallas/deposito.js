@@ -443,9 +443,11 @@ function iniciarDeposito() {
     const a = ajustesEtiquetadora();
     $('#etq-directo').checked = a.directo !== false;
     $('#etq-sep').value = a.separacion; $('#etq-osc').value = a.oscuridad; $('#etq-cx').value = a.correrX; $('#etq-cy').value = a.correrY; $('#etq-girar').checked = !!a.girar;
+    $('#etq-cabezal').value = String(a.cabezal || 0);
     $('#etq-directo').addEventListener('change', () => { guardarAjustesEtiquetadora(); renderEtiquetas(); });
-    ['#etq-impresora', '#etq-sep', '#etq-osc', '#etq-cx', '#etq-cy', '#etq-girar'].forEach((s) => $(s).addEventListener('change', guardarAjustesEtiquetadora));
+    ['#etq-impresora', '#etq-cabezal', '#etq-sep', '#etq-osc', '#etq-cx', '#etq-cy', '#etq-girar'].forEach((s) => $(s).addEventListener('change', guardarAjustesEtiquetadora));
     $('#etq-prueba').addEventListener('click', imprimirPruebaEtiquetadora);
+    $('#etq-regla').addEventListener('click', imprimirReglaEtiquetadora);
   }
   $('#etq-rollo').addEventListener('change', renderEtiquetas);
   alDejarDeEscribir($('#etq-buscar'), renderEtiquetas);

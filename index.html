@@ -932,12 +932,13 @@
         <label class="check" id="etq-directo-op" hidden><input type="checkbox" id="etq-directo"> <span><strong>Mandar directo a la etiquetadora</strong> (recomendado) <button type="button" class="ayuda-ico" data-ayuda="Sale igual que desde el celular y no hay que configurar el papel en Windows.">?</button></span></label>
         <div class="etq-directo" id="etq-directo-campos" hidden>
           <label class="f etq-d-imp" for="etq-impresora">Impresora<select id="etq-impresora"></select></label>
+          <label class="f etq-d-imp" for="etq-cabezal"><span>Ancho que imprime la impresora <button type="button" class="ayuda-ico" data-ayuda="Si la impresora es más ancha que la etiqueta (por ejemplo, una de 80 mm con rollo de 50 mm), elegí acá su ancho: si no, al correr el dibujo «da la vuelta» de un lado al otro. Las Xprinter de 3 pulgadas imprimen 72 mm.">?</button></span><select id="etq-cabezal"><option value="0">Igual que la etiqueta (lo normal)</option><option value="48">48 mm (2 pulgadas)</option><option value="72">72 mm (3 pulgadas)</option><option value="104">104 mm (4 pulgadas)</option></select></label>
           <label class="f" for="etq-sep">Espacio entre etiquetas (mm)<input id="etq-sep" type="number" min="0" max="10" step="0.5" inputmode="decimal"></label>
           <label class="f" for="etq-osc">Oscuridad (1 a 15)<input id="etq-osc" type="number" min="1" max="15" step="1" inputmode="numeric"></label>
-          <label class="f" for="etq-cx">Correr a los costados (mm)<input id="etq-cx" type="number" min="-40" max="40" step="1" inputmode="numeric"></label>
+          <label class="f" for="etq-cx"><span>Correr a los costados (mm) <button type="button" class="ayuda-ico" data-ayuda="Elegí el ancho que imprime la impresora, tocá «Imprimir regla» y poné acá el número de la regla que queda en el borde izquierdo de la etiqueta. Después imprimí una de prueba: el recuadro tiene que quedar justo en el borde.">?</button></span><input id="etq-cx" type="number" min="-40" max="40" step="1" inputmode="numeric"></label>
           <label class="f" for="etq-cy">Correr arriba o abajo (mm)<input id="etq-cy" type="number" min="-40" max="40" step="1" inputmode="numeric"></label>
           <label class="check etq-d-girar"><input type="checkbox" id="etq-girar"> <span>Imprimir dado vuelta (girado 180°)</span></label>
-          <button class="btn sm etq-d-prueba" type="button" id="etq-prueba">Imprimir una de prueba</button>
+          <div class="etq-d-prueba"><button class="btn sm" type="button" id="etq-regla">Imprimir regla</button><button class="btn sm" type="button" id="etq-prueba">Imprimir una de prueba</button></div>
         </div>
         <small id="etq-driver-nota">Si no usás «Mandar directo», la misma medida va en las preferencias de la impresora en Windows.</small>
       </div>
