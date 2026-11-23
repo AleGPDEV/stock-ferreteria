@@ -359,7 +359,7 @@ function iniciarDevoluciones() {
     render();
     const d = r.devolucion;
     toast(`Devolución N.º ${String(d.numero).padStart(4, '0')}: los productos volvieron al stock y se devuelven ${$m(-d.total, d.moneda)} (${d.medio.toLowerCase()}).`);
-    if (puedeImprimir() && (await confirmar('¿Imprimir el comprobante de la devolución?', 'Imprimir'))) imprimir(htmlTicket(d));
+    if (puedeImprimir() && (await confirmar('¿Imprimir el comprobante de la devolución?', 'Imprimir'))) imprimirTicket(htmlTicket(d));
   });
 }
 
@@ -519,11 +519,11 @@ function iniciarCaja() {
   $('#caja-desc').addEventListener('input', renderTicket);
   $('#ventas-fecha').value = isoLocal();
   $('#ventas-fecha').addEventListener('input', renderVentasHoy);
-  $('#btn-cierre').addEventListener('click', () => imprimir(htmlCierre(fechaVentas())));
+  $('#btn-cierre').addEventListener('click', () => imprimirTicket(htmlCierre(fechaVentas())));
   $('#ventas-hoy').addEventListener('click', (e) => {
     const b = e.target.closest('[data-ticket]');
     const v = b && db.ventas.find((x) => x.id === b.dataset.ticket);
-    if (v) imprimir(htmlTicket(v));
+    if (v) imprimirTicket(htmlTicket(v));
   });
   // Si el lector de códigos escribe sin que el cursor esté en el buscador, se lleva el cursor ahí
   document.addEventListener('keydown', (e) => {

@@ -7,8 +7,11 @@
 function reemplazarDatos(nuevo, conservarUsuarios = true) {
   const usuarios = db.usuarios, negocio = db.negocio;
   const recuperacion = db.recuperacion;
+  // Los ajustes de las impresoras son de esta computadora: si la copia no trae los suyos, quedan los de acá
+  const impresoras = { ajustesEtiquetas: db.ajustesEtiquetas, ajustesTicket: db.ajustesTicket };
   db = nuevo;
   if (!db.recuperacion) db.recuperacion = recuperacion;
+  for (const [k, v] of Object.entries(impresoras)) if (v && !db[k]) db[k] = v;
   if (conservarUsuarios) db.usuarios = usuarios;
   if (!db.negocio || !db.negocio.nombre) db.negocio = negocio;
   asegurarUsuarios(db);

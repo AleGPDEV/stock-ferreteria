@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('almacen', {
     return ipcRenderer.invoke('fotos:traerDeCopia', ruta || null);
   },
   impresoras: () => ipcRenderer.invoke('etiquetadora:impresoras'),
+  // El ticket directo a la impresora de tickets elegida en Configuración (sin el cuadro de Windows)
+  imprimirDirecto: (impresora) => ipcRenderer.invoke('imprimir:directo', impresora),
   imprimirEtiquetadora: (impresora, tspl) => ipcRenderer.invoke('etiquetadora:imprimir', impresora, tspl),
   abrirHerramienta: (nombre) => ipcRenderer.send('herramienta:abrir', nombre),
   // App del celular por WiFi: estado, prender/apagar, código nuevo, y el menú Herramientas → Vincular celular

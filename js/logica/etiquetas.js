@@ -61,6 +61,17 @@ function htmlEtiquetasRollo(items, m) {
   return { html: celdas.join(''), etiquetas: celdas.length, hojas: celdas.length, medida: m, k,
     pagina: `@page { size: ${m.ancho}mm ${m.alto}mm; margin: 0; }` };
 }
+/** El QR de una etiqueta de estante, en SVG (nítido en cualquier impresora). Corrección media (M). */
+function qrEtiquetaSvg(texto) {
+  const lib = typeof qrcode === 'function' ? qrcode : require('../vendor/qrcode.js');
+  const q = lib(0, 'M');
+  q.addData(String(texto));
+  q.make();
+  const n = q.getModuleCount();
+  let d = '';
+  for (let f = 0; f < n; f++) for (let c = 0; c < n; c++) if (q.isDark(f, c)) d += `M${c + 2} ${f + 2}h1v1h-1z`;
+  return `<svg class="et-qr" viewBox="0 0 ${n + 4} ${n + 4}" role="img" aria-label="QR ${esc(texto)}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+}
 /** Una etiqueta (HTML). item: { producto } o { ubicacion } (de ubicacionesDe). */
 function htmlEtiqueta(item, formato) {
   const alto = formato === 'rollo' ? '9mm' : formato === 'hoja' ? 'calc(12mm * var(--k))' : '12mm';
@@ -74,11 +85,12 @@ function htmlEtiqueta(item, formato) {
   const u = item.ubicacion;
   const nombres = u.productos.slice(0, formato === 'rollo' ? 0 : 3).map((p) => esc(p.nombre));
   const resto = u.productos.length - nombres.length;
-  // El código de barras lleva el número corto del estante (U12): con el nombre entero las barras quedan muy finas
+  // Las de estante llevan un QR (las de producto, código de barras: así no se confunden) con el número corto
+  // del estante (U12), igual que el código de barras de antes: las etiquetas viejas siguen sirviendo.
   const cod = u.corto || PREFIJO_UBIC + u.clave;
-  return `<div class="et et-lugar"><div class="et-titulo">${esc(u.categoria || 'Ubicación')}</div><div class="et-lugar-nom${u.ubicacion.length > 10 ? ' largo' : ''}">${esc(u.ubicacion)}</div>
-    <div class="et-cb">${barras128().svg(cod, { alto })}</div>${u.corto ? `<div class="et-cod et-id">${esc(u.corto)}</div>` : ''}
-    ${formato === 'rollo' ? '' : `<div class="et-lista">${nombres.join(' · ')}${resto > 0 ? `${nombres.length ? ' y ' : ''}${resto} ${resto === 1 ? 'producto' : 'productos'}${nombres.length ? ' más' : ''}` : ''}</div>`}</div>`;
+  return `<div class="et et-lugar et-lugar-qr">${qrEtiquetaSvg(cod)}<div class="et-lugar-txt"><div class="et-lugar-nom${u.ubicacion.length > 10 ? ' largo' : ''}">${esc(u.ubicacion)}</div>
+    <div class="et-titulo">${esc(u.categoria || 'Ubicación')}</div>${u.corto ? `<div class="et-cod et-id">${esc(u.corto)}</div>` : ''}
+    ${formato === 'rollo' ? '' : `<div class="et-lista">${nombres.join(' · ')}${resto > 0 ? `${nombres.length ? ' y ' : ''}${resto} ${resto === 1 ? 'producto' : 'productos'}${nombres.length ? ' más' : ''}` : ''}</div>`}</div></div>`;
 }
 
 /**

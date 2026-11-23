@@ -71,3 +71,48 @@ function imprimir(html) {
   $('#impresion').innerHTML = html;
   window.print();
 }
+
+/* ---------- Impresora de tickets ----------
+ * Se elige una vez en Configuración y queda guardada en los datos (db.ajustesTicket): los tickets, devoluciones
+ * y cierres de caja salen directo por ella, sin el cuadro de Windows. Sin elegir, se pregunta como antes. */
+const impresoraTicket = () => (db && db.ajustesTicket && db.ajustesTicket.impresora) || '';
+/** Imprime un ticket: directo en la impresora de tickets, o con el cuadro de Windows si no hay una elegida. */
+async function imprimirTicket(html) {
+  const imp = impresoraTicket();
+  if (!imp || !escritorio() || !window.almacen.imprimirDirecto) { imprimir(html); return; }
+  // Por si quedó puesto el estilo de una impresión de etiquetas o de un pedido
+  $('#impresion').classList.remove('etiquetas', 'pedido');
+  if ($('#estilo-etiquetas')) $('#estilo-etiquetas').textContent = '';
+  $('#impresion').innerHTML = html;
+  const err = await window.almacen.imprimirDirecto(imp);
+  if (err) {
+    // Si la de tickets no anda, igual se puede imprimir eligiendo otra
+    if (await confirmar(`${err} ¿Elegir otra impresora para este ticket?`, 'Elegir impresora')) window.print();
+  } else toast('Ticket enviado a la impresora.');
+}
+async function iniciarImpresoraTicket() {
+  if (!escritorio() || !window.almacen.imprimirDirecto) return;
+  $('#card-impresora-ticket').hidden = false;
+  const sel = $('#tk-impresora');
+  let lista = [];
+  try { lista = await window.almacen.impresoras(); } catch { /* sin lista */ }
+  const actual = impresoraTicket();
+  sel.innerHTML = '<option value="">Preguntar cada vez (cuadro de Windows)</option>'
+    + lista.map((p) => `<option value="${esc(p.nombre)}">${esc(p.nombreVisible)}${p.predeterminada ? ' (predeterminada de Windows)' : ''}</option>`).join('')
+    + (actual && !lista.some((p) => p.nombre === actual) ? `<option value="${esc(actual)}">${esc(actual)} (no está conectada)</option>` : '');
+  sel.value = actual;
+  sel.addEventListener('change', () => {
+    db.ajustesTicket = { ...(db.ajustesTicket || {}), impresora: sel.value };
+    guardar();
+    $('#tk-estado').textContent = sel.value ? 'Guardado: los tickets salen directo por esta impresora.' : 'Guardado: se va a preguntar en cada ticket.';
+  });
+  $('#tk-prueba').addEventListener('click', () => imprimirTicket(htmlTicketPrueba()));
+}
+function htmlTicketPrueba() {
+  const n = db.negocio || {};
+  return `<div class="t-c"><strong class="t-neg">${esc(n.nombre || 'Stock Ferretería')}</strong></div><hr>
+    <div class="t-c">Ticket de prueba</div>
+    <div class="t-fila"><span>Si se lee bien y no sale cortado,</span><span></span></div>
+    <div class="t-fila"><span>la impresora está bien elegida.</span><span></span></div><hr>
+    <div class="t-c t-chico">Impreso el ${fechaHora(new Date().toISOString())}</div>`;
+}
