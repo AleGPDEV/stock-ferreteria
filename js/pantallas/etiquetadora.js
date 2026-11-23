@@ -5,7 +5,7 @@
 /* Los ajustes de la impresora de etiquetas se guardan en los datos (db.ajustesEtiquetas): quedan puestos de una
  * vez para siempre, en todas las computadoras y también al restaurar una copia. Antes estaban en el
  * almacenamiento del navegador (localStorage): la primera vez se pasan de ahí. */
-const AJUSTES_ETIQUETADORA = { rollo: '50x40', directo: true, impresora: '', separacion: 2, oscuridad: 8, correrX: 0, correrY: 0, girar: false };
+const AJUSTES_ETIQUETADORA = { rollo: '50x40', directo: true, impresora: '', separacion: 2, oscuridad: 8, correrX: 0, correrY: 0, girar: false, cabezal: 0 };
 const puedeEtiquetadora = () => typeof window !== 'undefined' && !!(window.almacen && window.almacen.imprimirEtiquetadora) && typeof EtiquetaTSPL !== 'undefined';
 /** Los de antes, guardados en este navegador (para pasarlos a los datos la primera vez). */
 function ajustesEtiquetasViejos() {
@@ -30,6 +30,7 @@ function ponerAjustesEtiquetasEnPantalla() {
   }
   $('#etq-directo').checked = a.directo !== false;
   $('#etq-sep').value = a.separacion; $('#etq-osc').value = a.oscuridad; $('#etq-cx').value = a.correrX; $('#etq-cy').value = a.correrY; $('#etq-girar').checked = !!a.girar;
+  $('#etq-cabezal').value = String(a.cabezal || 0);
   if (impresorasCargadas && a.impresora && $(`#etq-impresora option[value="${CSS.escape(a.impresora)}"]`)) $('#etq-impresora').value = a.impresora;
 }
 /** Lo que va impreso en la etiqueta térmica: { nombre, codigo, ubicacion } (el mismo dibujo que el celular). */
@@ -47,7 +48,10 @@ function tsplEtiquetas(sel, medida, opc) {
 function leerAjustesEtiquetadora() {
   const num = (sel, def, min, max) => { const v = Number(String($(sel).value).replace(',', '.')); return Number.isFinite(v) && $(sel).value !== '' ? Math.max(min, Math.min(max, v)) : def; };
   return { directo: $('#etq-directo').checked, impresora: $('#etq-impresora').value, separacion: num('#etq-sep', 2, 0, 10), oscuridad: Math.round(num('#etq-osc', 8, 1, 15)),
-    correrX: num('#etq-cx', 0, -40, 40), correrY: num('#etq-cy', 0, -40, 40), girar: $('#etq-girar').checked };
+    correrX: num('#etq-cx', 0, -40, 40), correrY: num('#etq-cy', 0, -40, 40), girar: $('#etq-girar').checked,
+    // Ancho que imprime la impresora (0 = igual que la etiqueta). Con una impresora más ancha que el rollo, sin esto
+    // el dibujo «da la vuelta» de un lado al otro al correrlo (la impresora cree que la hoja mide lo que la etiqueta).
+    cabezal: Number($('#etq-cabezal').value) || 0 };
 }
 function guardarAjustesEtiquetadora() {
   const nuevos = leerAjustesEtiquetadora();
@@ -98,6 +102,15 @@ async function imprimirPruebaEtiquetadora() {
   const m = rolloElegido();
   if (!m) { aviso('Revisá la medida de la etiqueta: ancho de 20 a 108 mm y alto de 15 a 300 mm.'); return; }
   await mandarEtiquetadora(EtiquetaTSPL.tsplPrueba(m, leerAjustesEtiquetadora()), 'Etiqueta de prueba enviada: el recuadro tiene que quedar justo en el borde de la etiqueta.');
+}
+
+/** Regla de 1 mm a lo ancho de todo el cabezal: el número que queda en el borde izquierdo de la etiqueta va en
+ * «Correr a los costados» (lo mismo que en la app del celular). */
+async function imprimirReglaEtiquetadora() {
+  const a = leerAjustesEtiquetadora();
+  if (!a.cabezal) { aviso('Primero elegí en «Ancho que imprime la impresora» el de tu impresora (las Xprinter de 3 pulgadas: 72 mm).'); $('#etq-cabezal').focus(); return; }
+  const m = rolloElegido();
+  await mandarEtiquetadora(EtiquetaTSPL.tsplRegla({ ...a, alto: m ? m.alto : 25 }), 'Regla enviada: el número que queda en el borde izquierdo de la etiqueta va en «Correr a los costados».');
 }
 
 /** La medida de rollo elegida en la ventana de etiquetas (null si «Otra medida» está mal escrita). */

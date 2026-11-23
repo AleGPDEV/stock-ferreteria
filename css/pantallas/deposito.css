@@ -140,7 +140,7 @@
 .etq-rollo small { color: var(--muted); font-size: 13px; }
 .etq-directo:not([hidden]) { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; align-items: end; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
 .etq-directo .etq-d-imp, .etq-directo .etq-d-girar { grid-column: 1 / -1; }
-.etq-directo .etq-d-prueba { justify-self: start; }
+.etq-directo .etq-d-prueba { justify-self: start; display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* Etiqueta de estante: QR a la izquierda (las de producto llevan código de barras) y el estante a la derecha */
 .et-lugar-qr { flex-direction: row; align-items: center; justify-content: flex-start; gap: 2.5mm; }

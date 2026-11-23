@@ -428,8 +428,9 @@ function iniciarDeposito() {
   ponerAjustesEtiquetasEnPantalla();
   ['#etq-rollo', '#etq-rollo-ancho', '#etq-rollo-alto'].forEach((s) => $(s).addEventListener('input', renderEtiquetas));
   $('#etq-directo').addEventListener('change', () => { guardarAjustesEtiquetadora(); renderEtiquetas(); });
-  ['#etq-impresora', '#etq-sep', '#etq-osc', '#etq-cx', '#etq-cy', '#etq-girar'].forEach((s) => $(s).addEventListener('change', () => { guardarAjustesEtiquetadora(); renderEtiquetas(); }));
+  ['#etq-impresora', '#etq-cabezal', '#etq-sep', '#etq-osc', '#etq-cx', '#etq-cy', '#etq-girar'].forEach((s) => $(s).addEventListener('change', () => { guardarAjustesEtiquetadora(); renderEtiquetas(); }));
   $('#etq-prueba').addEventListener('click', imprimirPruebaEtiquetadora);
+  $('#etq-regla').addEventListener('click', imprimirReglaEtiquetadora);
   $('#etq-rollo').addEventListener('change', renderEtiquetas);
   alDejarDeEscribir($('#etq-buscar'), renderEtiquetas);
   $('#etq-ubic').addEventListener('change', renderEtiquetas);
