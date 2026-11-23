@@ -962,10 +962,17 @@ test('celular: etiqueta TSPL para la etiquetadora (mismo código de barras que e
     // todo adentro de la etiqueta
     for (const b of d.barras) assert.ok(b.x >= 0 && b.x + b.w <= W && b.y >= 0 && b.y + b.h <= H, `barra fuera en ${a}x${h}`);
     for (const t of d.textos) assert.ok(t.x >= 0 && t.x + t.texto.length * E.FUENTES[t.fuente][0] <= W && t.y + E.FUENTES[t.fuente][1] <= H, `texto fuera en ${a}x${h}: ${t.texto}`);
-    // las barras son exactamente las del código de barras del programa
-    const fino = d.barras[0].w / CB.anchos('7790001234567')[0];
-    assert.deepEqual(d.barras.map((b) => b.w / fino), CB.anchos('7790001234567').filter((_, i) => i % 2 === 0));
-    assert.ok(fino >= 2, `barras de al menos 2 puntos en ${a}x${h}`);
+    // las barras son exactamente las del código de barras del programa (EAN-13 si sale más grueso, si no Code 128),
+    // con un punto menos de ancho cuando la barra fina tiene 3 o más (la impresora térmica las engorda)
+    const coincide = [CB.anchos('7790001234567'), CB.anchos128('7790001234567')].some((lista) => {
+      const barras = lista.filter((_, i) => i % 2 === 0);
+      return [0, 1].some((afinar) => {
+        const fino = (d.barras[0].w + afinar) / barras[0];
+        return Number.isInteger(fino) && fino >= 2 && (afinar === 0) === (fino < 3)
+          && d.barras.length === barras.length && d.barras.every((b, i) => b.w + afinar === barras[i] * fino);
+      });
+    });
+    assert.ok(coincide, `barras del código del programa, de al menos 2 puntos, en ${a}x${h}`);
   }
   const t = E.tspl(E.disenoEtiqueta({ nombre: 'Gancho "S"', codigo: 'C1-0002', ubicacion: 'B-2' }, { ancho: 50, alto: 25 }), { copias: 3, separacion: 3, oscuridad: 10 });
   assert.match(t, /^SIZE 50 mm,25 mm\r\nGAP 3 mm,0 mm\r\nDENSITY 10\r\n/);

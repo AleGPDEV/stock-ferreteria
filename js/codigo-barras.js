@@ -1,6 +1,8 @@
-/* Código de barras Code 128 para las etiquetas (sin librerías: funciona sin internet).
- * Code 128 lo leen todos los lectores de código de barras y acepta letras, números y signos (P-0001, LH-5563, A-3).
- * Los números van en «código C» (dos dígitos por barra), así un EAN de 13 dígitos entra en una etiqueta chica.
+/* Código de barras para las etiquetas (sin librerías: funciona sin internet).
+ * Un EAN-13, EAN-8 o UPC-A válido (el de fábrica) se dibuja como EAN-13 / EAN-8: ocupa menos lugar que en Code 128,
+ * así las barras salen más gruesas y la cámara del celular las lee mejor. Se lee el mismo número.
+ * Todo lo demás va en Code 128, que acepta letras, números y signos (P-0001, LH-5563, A-3); los números van en
+ * «código C» (dos dígitos por barra).
  * Lo usa js/logica/etiquetas.js (etiquetas de Depósito) y se prueba en tests/logica.test.js. */
 (function (global) {
   'use strict';
@@ -50,18 +52,58 @@
     return v;
   }
 
-  /** Anchos alternados barra/espacio en módulos (empieza con barra). null si el texto no se puede codificar. */
-  function anchos(texto) {
+  /* ---------- EAN-13 y EAN-8 ---------- */
+  // Dígitos de la izquierda (L o G) y de la derecha (R), 7 módulos cada uno: 1 = barra
+  const EAN_L = ['0001101', '0011001', '0010011', '0111101', '0100011', '0110001', '0101111', '0111011', '0110111', '0001011'];
+  const EAN_R = EAN_L.map((x) => x.replace(/./g, (b) => (b === '1' ? '0' : '1')));
+  const EAN_G = EAN_R.map((x) => x.split('').reverse().join(''));
+  // El primer dígito de un EAN-13 no se dibuja: decide qué dígitos de la izquierda van en L y cuáles en G
+  const EAN_PARIDAD = ['LLLLLL', 'LLGLGG', 'LLGGLG', 'LLGGGL', 'LGLLGG', 'LGGLLG', 'LGGGLL', 'LGLGLG', 'LGLGGL', 'LGGLGL'];
+  /** ¿Cierra el dígito de control (EAN-8, UPC-A o EAN-13)? */
+  function controlEan(dig) {
+    const n = dig.split('').map(Number), ultimo = n.pop();
+    const suma = n.reverse().reduce((s, x, i) => s + x * (i % 2 === 0 ? 3 : 1), 0);
+    return (10 - (suma % 10)) % 10 === ultimo;
+  }
+  /** Si el texto es un EAN-13, EAN-8 o UPC-A válido: { tipo: 'ean13' | 'ean8', digitos }. Si no, null.
+   * Un UPC-A (12) se dibuja como EAN-13 con un 0 adelante: es el mismo código de barras. */
+  function ean(texto) {
+    const t = String(texto || '').trim();
+    if (!/^(\d{8}|\d{12}|\d{13})$/.test(t) || !controlEan(t)) return null;
+    if (t.length === 8) return { tipo: 'ean8', digitos: t };
+    return { tipo: 'ean13', digitos: t.length === 12 ? `0${t}` : t };
+  }
+  /** Los módulos (1 = barra, 0 = espacio) de un EAN, con sus barras de guarda. */
+  function modulosEan(e) {
+    const d = e.digitos.split('').map(Number);
+    if (e.tipo === 'ean8') return `101${d.slice(0, 4).map((x) => EAN_L[x]).join('')}01010${d.slice(4).map((x) => EAN_R[x]).join('')}101`;
+    const par = EAN_PARIDAD[d[0]];
+    return `101${d.slice(1, 7).map((x, i) => (par[i] === 'L' ? EAN_L : EAN_G)[x]).join('')}01010${d.slice(7).map((x) => EAN_R[x]).join('')}101`;
+  }
+  /** Qué código de barras lleva un texto: 'ean13', 'ean8', 'code128' o null (no se puede). */
+  const tipo = (texto) => (ean(texto) || {}).tipo || (simbolos(texto) ? 'code128' : null);
+  /** Módulos en blanco que necesita a cada lado: EAN pide 11 a la izquierda (se usan 11 de los dos lados), Code 128, 10. */
+  const zonaBlanca = (texto) => (ean(texto) ? 11 : 10);
+
+  /** Anchos en Code 128 (aunque sea un EAN). null si el texto no se puede codificar. */
+  function anchos128(texto) {
     const v = simbolos(texto);
     if (!v) return null;
     return (v.map((x) => PATRONES[x]).join('') + PARADA).split('').map(Number);
+  }
+  /** Anchos alternados barra/espacio en módulos (empieza con barra): EAN si es un EAN válido, si no Code 128.
+   * null si el texto no se puede codificar. */
+  function anchos(texto) {
+    const e = ean(texto);
+    if (e) return modulosEan(e).match(/1+|0+/g).map((x) => x.length);
+    return anchos128(texto);
   }
 
   /** SVG del código de barras. alto: en las unidades que se quieran (se estira al ancho de la etiqueta). */
   function svg(texto, opc = {}) {
     const a = anchos(texto);
     if (!a) return '';
-    const margen = 10; // zona en blanco a los costados: sin ella el lector no lo lee
+    const margen = zonaBlanca(texto); // zona en blanco a los costados: sin ella el lector no lo lee
     const total = a.reduce((s, x) => s + x, 0) + margen * 2;
     let x = margen;
     const barras = [];
@@ -70,7 +112,7 @@
     return `<svg class="cb" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} 1" preserveAspectRatio="none" style="width:100%;height:${alto}" shape-rendering="crispEdges" role="img" aria-label="Código de barras ${String(texto).replace(/[<>&"]/g, '')}"><rect width="${total}" height="1" fill="#fff"/><g fill="#000">${barras.join('')}</g></svg>`;
   }
 
-  const api = { simbolos, anchos, svg, sePuede, PATRONES };
+  const api = { simbolos, anchos, anchos128, svg, sePuede, PATRONES, ean, tipo, zonaBlanca, controlEan };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.CodigoBarras = api;
 })(typeof window !== 'undefined' ? window : globalThis);
