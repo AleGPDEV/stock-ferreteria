@@ -8,7 +8,7 @@ function renderProductos() {
   const selCat = $('#prod-cat');
   const actual = selCat.value;
   selCat.innerHTML = '<option value="">Todas las categorías</option>' + cats.map((c) => `<option${c === actual ? ' selected' : ''}>${esc(c)}</option>`).join('');
-  $('#lista-cat').innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join('');
+  $('#lista-cat').innerHTML = opcionesCategorias();
   // Estantes: los mismos que en Depósito, con su categoría y cuántos productos tiene cada uno
   const selEst = $('#prod-estante');
   const estElegido = selEst.value;
@@ -208,7 +208,7 @@ function iniciarProductos() {
     const datos = {
       codigo: $('#p-codigo').value.trim().toUpperCase(),
       nombre: $('#p-nombre').value.trim(),
-      categoria: $('#p-categoria').value.trim(),
+      categoria: categoriaComoEnLista(db, $('#p-categoria').value), // como está en la lista (mayúsculas y tildes)
       unidad: $('#p-unidad').value,
       proveedorId: $('#p-proveedor').value,
       ubicacion: $('#p-ubicacion').value.trim(),

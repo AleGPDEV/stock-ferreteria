@@ -201,6 +201,7 @@
       <header class="vh">
         <div><h1>Productos</h1><p class="sub" id="prod-sub"></p></div>
         <div class="acciones">
+          <button class="btn solo-admin" type="button" data-abrir-categorias>Categorías</button>
           <button class="btn solo-admin" type="button" id="btn-exportar-prod" data-export="inventario" title="Todos los productos con stock, costos, precios, ubicación y códigos. Se puede volver a importar.">Descargar planilla</button>
           <button class="btn solo-admin" type="button" id="btn-importar">Importar desde Excel</button>
           <button class="btn solo-admin" type="button" id="btn-precios">Actualizar precios</button>
@@ -307,6 +308,7 @@
         <div><h1>Depósito</h1><p class="sub" id="dep-sub"></p></div>
         <div class="acciones">
           <button class="btn verde" type="button" id="btn-dep-sincodigo">Producto sin código</button>
+          <button class="btn solo-admin" type="button" data-abrir-categorias>Categorías</button>
           <button class="btn" type="button" id="btn-etq-ubicaciones">Etiquetas de estantes</button>
           <button class="btn primary" type="button" id="btn-etq-productos">Etiquetas de productos</button>
         </div>
@@ -875,6 +877,20 @@
   </form>
 </dialog>
 
+<!-- Categorías de productos y estantes (crear, renombrar, borrar) -->
+<dialog id="dlg-categorias" class="dlg-chico" aria-labelledby="cat-titulo">
+  <header class="dlg-h"><h2 id="cat-titulo">Categorías <button type="button" class="ayuda-ico" data-ayuda="La categoría de un producto o de un estante es opcional. Si le cambiás el nombre a una, cambia en todos los productos y estantes que la usan. Si la borrás, esos quedan sin categoría.">?</button></h2></header>
+  <div class="dlg-b campos-col">
+    <form id="cat-form" class="cat-nueva" novalidate>
+      <label class="f" for="cat-nombre">Categoría nueva<input id="cat-nombre" type="text" maxlength="60" autocomplete="off" placeholder="Ej.: Herramientas eléctricas"></label>
+      <button class="btn primary" type="submit">Agregar</button>
+    </form>
+    <p class="err" id="cat-err" role="alert"></p>
+    <ul class="cat-lista" id="cat-lista"></ul>
+  </div>
+  <footer class="dlg-f"><span class="sp"></span><button type="button" class="btn" data-cerrar>Cerrar</button></footer>
+</dialog>
+
 <!-- Estante nuevo (Depósito) -->
 <dialog id="dlg-estante" class="dlg-chico" aria-labelledby="est-titulo">
   <form id="est-form" novalidate>
@@ -1116,6 +1132,7 @@
 <script src="js/logica/importar-planilla.js"></script>
 <script src="js/logica/reportes.js"></script>
 <script src="js/logica/deposito.js"></script>
+<script src="js/logica/categorias.js"></script>
 <script src="js/logica/etiquetas.js"></script>
 <script src="js/logica/celular.js"></script>
 <script src="js/logica/puente-cargador.js"></script>
@@ -1139,6 +1156,7 @@
 <script src="js/pantallas/respaldo.js"></script>
 <script src="js/pantallas/datos-danados.js"></script>
 <script src="js/pantallas/deposito.js"></script>
+<script src="js/pantallas/categorias.js"></script>
 <script src="js/pantallas/etiquetadora.js"></script>
 <script src="js/pantallas/celular.js"></script>
 <script src="js/arranque.js"></script>

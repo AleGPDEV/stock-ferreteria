@@ -56,7 +56,8 @@ function completarEstantes(d) {
 /** Crea o cambia un estante. Si cambia el nombre, los productos de ese estante pasan al nombre nuevo. Devuelve { estante } o { error }. */
 function guardarEstante(d, datos, id) {
   const codigo = String(datos.codigo || '').replace(/\s+/g, ' ').trim();
-  const categoria = String(datos.categoria || '').replace(/\s+/g, ' ').trim();
+  // Como está en la lista de categorías (js/logica/categorias.js): «tornilleria» queda «Tornillería»
+  const categoria = typeof categoriaComoEnLista === 'function' ? categoriaComoEnLista(d, datos.categoria) : String(datos.categoria || '').replace(/\s+/g, ' ').trim();
   if (!codigo) return { error: 'Escribí el nombre del estante, por ejemplo A-1.' };
   if (!claveUbic(codigo)) return { error: 'Usá letras y números para el nombre del estante, por ejemplo A-1.' };
   const repetido = estantesDe(d).find((e) => e.id !== id && claveUbic(e.codigo) === claveUbic(codigo));
