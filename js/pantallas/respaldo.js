@@ -19,7 +19,26 @@ function reemplazarDatos(nuevo, conservarUsuarios = true) {
   if (!sesion) mostrarLogin(); else { aplicarPermisos(); render(); }
 }
 
-/** Lee una copia: .json, o .json.gz (los respaldos automáticos diarios). */
+/**
+ * Prepara una copia leída para restaurarla: las fotos que trae adentro (fotosIncluidas) no son datos,
+ * las guarda la PC aparte en la carpeta Fotos (ver traerFotosDeCopia).
+ */
+function datosDeCopia(datos) {
+  const d = Object.assign(baseVacia(), datos);
+  delete d.fotosIncluidas;
+  return d;
+}
+/** Después de restaurar en la PC: trae las fotos de la copia y avisa cuántas hay. */
+async function fotosAlRestaurar(file) {
+  if (!escritorio() || !window.almacen.traerFotosDeCopia) return '';
+  try {
+    const r = await window.almacen.traerFotosDeCopia(file);
+    if (!r || !r.enUso) return '';
+    if (r.faltan) return ` Fotos: ${numero.format(r.hay)} de ${numero.format(r.enUso)}; las otras ${numero.format(r.faltan)} no estaban en la copia.`;
+    return ` Con las ${numero.format(r.enUso)} fotos.`;
+  } catch (e) { return ''; }
+}
+/** Lee una copia: .json, o .json.gz (los respaldos automáticos diarios y las copias con fotos). */
 async function leerCopia(file) {
   if (/\.gz$/i.test(file.name)) {
     const flujo = file.stream().pipeThrough(new DecompressionStream('gzip'));
@@ -49,7 +68,7 @@ function renderRespaldoExtra(info) {
 
 /** Texto de la tarjeta: se guarda solo, y si el último respaldo falló, el aviso (queda hasta que salga uno bueno). */
 function renderRespaldoTexto(info) {
-  const detalle = `Cada día se hace un respaldo comprimido en ${info.respaldos} (al abrir, al cerrar la caja y al cerrar el programa). Se guardan los 7 más nuevos, uno por semana del último mes y uno por mes del último año. Las fotos de los productos se copian a la carpeta Fotos que está ahí mismo.`;
+  const detalle = `Cada día se hace un respaldo comprimido en ${info.respaldos} (al abrir, al cerrar la caja y al cerrar el programa). Se guardan los 7 más nuevos, uno por semana del último mes y uno por mes del último año. Las fotos de los productos se copian a la carpeta Fotos que está ahí mismo. Para pasar todo a otra PC, usá «Descargar copia»: guarda los datos y las fotos en un solo archivo.`;
   const est = info.estadoRespaldo;
   const fallo = est && !est.ok ? ` <span class="chip warn" title="${esc(est.error || '')}">El respaldo de hoy falló (${fechaHora(est.fecha)})</span>` : '';
   $('#respaldo-texto').innerHTML = `Los cambios se guardan solos en esta PC. <button type="button" class="ayuda-ico" data-ayuda="${esc(detalle)}">?</button>${fallo}`;
@@ -87,7 +106,20 @@ function iniciarRespaldo() {
       $('#btn-respaldar-ahora').addEventListener('click', () => usar(window.almacen.respaldarAhora, (r) => (r && r.error ? 'No se pudo hacer la copia.' : 'Copia de seguridad hecha.')));
     }
   }
-  $('#btn-respaldo').addEventListener('click', () => {
+  $('#btn-respaldo').addEventListener('click', async () => {
+    // En la PC: un solo archivo con los datos y las fotos, para llevar a otra computadora
+    if (escritorio() && window.almacen.copiaCompleta) {
+      const b = $('#btn-respaldo');
+      b.disabled = true;
+      try {
+        const r = await window.almacen.copiaCompleta();
+        if (!r || r.cancelado) return;
+        if (r.error) { toast('No se pudo guardar la copia: ' + r.error); return; }
+        const mb = (r.bytes / 1048576).toLocaleString('es-UY', { maximumFractionDigits: 1 });
+        toast(`Copia guardada con ${numero.format(r.fotos)} foto${r.fotos === 1 ? '' : 's'} (${mb} MB).${r.faltan ? ` ${numero.format(r.faltan)} foto${r.faltan === 1 ? '' : 's'} no estaba${r.faltan === 1 ? '' : 'n'} en esta PC.` : ''}`);
+      } finally { b.disabled = false; }
+      return;
+    }
     descargarBlob(JSON.stringify(db), 'application/json', `respaldo_stock_${isoLocal()}.json`);
     toast('Descargando la copia de seguridad.');
   });
@@ -100,8 +132,9 @@ function iniciarRespaldo() {
       try { datos = JSON.parse(await leerCopia(file)); } catch (err) { toast('El archivo no es una copia válida.'); return; }
       if (!datos || !Array.isArray(datos.productos) || !Array.isArray(datos.movimientos)) { toast('El archivo no es una copia de Stock Ferretería.'); return; }
       if (!(await confirmar(`¿Reemplazar los datos actuales por la copia (${datos.productos.length} productos)? Lo que no esté en la copia se pierde.`, 'Restaurar', true))) return;
-      reemplazarDatos(Object.assign(baseVacia(), datos), !Array.isArray(datos.usuarios) || !datos.usuarios.length);
-      toast('Copia restaurada.');
+      reemplazarDatos(datosDeCopia(datos), !Array.isArray(datos.usuarios) || !datos.usuarios.length);
+      toast('Copia restaurada.' + (await fotosAlRestaurar(file)));
+      if (sesion) render(); // para que se vean las fotos que llegaron
     })();
   });
   $('#btn-cargar-ejemplo').addEventListener('click', async () => {

@@ -44,13 +44,14 @@ function iniciarDanado() {
       try { datos = JSON.parse(await leerCopia(file)); } catch (err) { $('#danado-err').textContent = 'Ese archivo no es una copia válida. Probá con el respaldo del día anterior.'; return; }
       if (!datos || !Array.isArray(datos.productos) || !Array.isArray(datos.movimientos)) { $('#danado-err').textContent = 'Ese archivo no es una copia de Stock Ferretería.'; return; }
       if (!(await confirmar(`¿Restaurar la copia «${file.name}» (${datos.productos.length} productos, ${(datos.ventas || []).length} ventas)? En la versión instalada, los datos dañados se guardan aparte por las dudas.`, 'Restaurar'))) return;
-      db = Object.assign(baseVacia(), datos);
+      db = datosDeCopia(datos);
       asegurarUsuarios(db);
       fotoGuardada = null;
       if (!guardar({ completo: true })) { $('#danado-err').textContent = 'No se pudo guardar la copia: ' + errorGuardado; return; }
       datosDanados = null;
       $('#danado').hidden = true;
-      toast('Copia restaurada.');
+      const fotos = await fotosAlRestaurar(file);
+      toast('Copia restaurada.' + fotos);
       if (cargar()) arrancar(); else mostrarDanado();
     })();
   });

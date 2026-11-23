@@ -2,7 +2,7 @@
 'use strict';
 
 /* ---------- Fotos de los productos ----------
- * En la versión de escritorio cada foto es un archivo .jpg (unos 900 px) en la carpeta Fotos y el producto
+ * En la versión de escritorio cada foto es un archivo .webp (o .jpg las de antes, unos 800-900 px) en la carpeta Fotos y el producto
  * guarda solo el nombre (p.foto). En el navegador, que es para probar, se guarda una foto chica dentro de los
  * datos (p.fotoData). */
 let fotosUrlBase = null;
@@ -30,8 +30,10 @@ function verFoto(id) {
   $('#dlg-foto').showModal();
 }
 
-/** Achica una imagen a JPEG. Devuelve un Blob, o tira un Error con un texto para la persona. */
-async function achicarFoto(file, max = 900, calidad = 0.82) {
+/**
+ * Achica una imagen a 800 px, en WebP o JPEG: el que pese menos (WebP suele ser bastante más liviano). Devuelve un Blob, o tira un Error con un texto para la persona.
+ */
+async function achicarFoto(file, max = 800, calidad = 0.8) {
   if (/\.hei[cf]$/i.test(file.name) || /heic|heif/i.test(file.type)) {
     throw new Error('Esa foto está en formato HEIC (iPhone) y no se puede abrir. En el iPhone: Ajustes → Cámara → Formatos → «Más compatible», o pasala a la PC como JPG.');
   }
@@ -51,7 +53,10 @@ async function achicarFoto(file, max = 900, calidad = 0.82) {
   g.fillRect(0, 0, w, h);
   g.drawImage(img, 0, 0, w, h);
   if (img.close) img.close();
-  const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', calidad));
+  // Se prueban WebP y JPEG y queda el más liviano (WebP suele pesar un 30 % menos; en fotos con mucho detalle, no)
+  const webp = await new Promise((res) => c.toBlob(res, 'image/webp', calidad));
+  const jpeg = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.82));
+  const blob = webp && webp.type === 'image/webp' && (!jpeg || webp.size <= jpeg.size) ? webp : jpeg;
   if (!blob) throw new Error('No se pudo achicar la foto.');
   return blob;
 }
@@ -85,7 +90,7 @@ async function aplicarFotoPendiente(p) {
   if (!fotoPendiente) return null;
   if (fotoPendiente === 'quitar') { delete p.foto; delete p.fotoData; fotoPendiente = null; return null; }
   if (escritorio() && window.almacen.guardarFoto) {
-    const nombre = `${String(p.id).replace(/[^\w-]/g, '').slice(0, 40)}-${Date.now()}.jpg`;
+    const nombre = `${String(p.id).replace(/[^\w-]/g, '').slice(0, 40)}-${Date.now()}.${fotoPendiente.blob.type === 'image/webp' ? 'webp' : 'jpg'}`;
     const bytes = new Uint8Array(await fotoPendiente.blob.arrayBuffer());
     const r = await window.almacen.guardarFoto(nombre, bytes);
     if (!r || r.error) return 'No se pudo guardar la foto' + (r && r.error ? `: ${r.error}` : '.');
