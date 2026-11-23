@@ -1,5 +1,5 @@
 /* Etiquetas para impresoras térmicas (Unnion LP4206D y otras que entienden TSPL), 203 dpi = 8 puntos por mm.
- * Arma el dibujo de una etiqueta (nombre, código de barras Code 128, código y estante: lo mismo que imprime el programa)
+ * Arma el dibujo de una etiqueta (nombre, código de barras EAN-13 o Code 128, código y estante: lo mismo que imprime el programa)
  * y lo pasa a comandos TSPL. El código de barras se dibuja barra por barra con el mismo armado que el programa
  * (js/codigo-barras.js), así sale igual en la vista previa, en la impresora y en las etiquetas de la PC.
  * Lo usan la app del celular (herramientas/fuentes/etiquetador.html) y el programa (impresión directa a la etiquetadora) y se prueba en tests/logica.test.js. */
@@ -34,6 +34,16 @@
       r.push(ult.length > max ? ult.slice(0, max - 3).trimEnd() + '...' : ult);
     }
     return r;
+  }
+
+  /** Cuántos puntos tiene la barra más fina si el código ocupa «lugar» puntos (con su zona en blanco). */
+  const finoPara = (anchos, blanco, lugar) => Math.min(4, Math.floor(lugar / (anchos.reduce((s, x) => s + x, 0) + 2 * blanco)));
+  /** El código de barras de la etiqueta: el EAN de fábrica si sale con barras más gruesas; si no, Code 128 (como siempre). */
+  function elegirCodigo(codigo, lugar) {
+    const c128 = CB.anchos128 ? CB.anchos128(codigo) : CB.anchos(codigo);
+    const e = CB.ean && CB.ean(codigo) ? CB.anchos(codigo) : null;
+    if (e && (!c128 || finoPara(e, 11, lugar) > finoPara(c128, 10, lugar))) return { anchos: e, blanco: 11, tipo: CB.ean(codigo).tipo };
+    return c128 ? { anchos: c128, blanco: 10, tipo: 'code128' } : null;
   }
 
   /**
@@ -75,16 +85,23 @@
     const yBarras = m + lineas.length * (chN + 4) + 6;
 
     // En el medio: el código de barras, centrado, con su zona en blanco a los costados
-    const a = CB && codigo ? CB.anchos(codigo) : null;
+    // EAN-13 / EAN-8 (el de fábrica) si con eso las barras salen más gruesas que en Code 128; si no, Code 128
+    const cb = CB && codigo ? elegirCodigo(codigo, W - 2 * m) : null;
+    const a = cb && cb.anchos;
     if (a) {
-      const modulos = a.reduce((s, x) => s + x, 0) + 20; // + 10 módulos en blanco de cada lado
+      const blanco = cb.blanco;
+      const modulos = a.reduce((s, x) => s + x, 0) + 2 * blanco;
       let fino = Math.min(4, Math.floor((W - 2 * m) / modulos));
       if (fino < 1) { fino = 1; aviso = 'El código es muy largo para esta etiqueta: puede no leerse.'; }
       else if (fino < 2) aviso = 'Etiqueta angosta para este código: las barras salen muy finas. Probá que el lector la lea.';
-      const ancho = (modulos - 20) * fino;
+      const ancho = (modulos - 2 * blanco) * fino;
       const alto = Math.max(4 * PUNTOS_MM, Math.min(30 * PUNTOS_MM, yPie - 6 - yBarras));
+      // La impresora térmica engorda cada barra: con barras de 3 puntos o más se dibujan un punto más finas,
+      // así los espacios angostos no se tapan (lo que lee la cámara del celular). El lector mide de borde a borde
+      // de barras iguales, así que el código no cambia.
+      const afinar = fino >= 3 ? 1 : 0;
       let x = Math.round((W - ancho) / 2);
-      a.forEach((w, i) => { if (i % 2 === 0) barras.push({ x, y: yBarras, w: w * fino, h: alto }); x += w * fino; });
+      a.forEach((w, i) => { if (i % 2 === 0) barras.push({ x, y: yBarras, w: w * fino - afinar, h: alto }); x += w * fino; });
     } else if (codigo) aviso = 'Ese código tiene letras que el código de barras no acepta.';
     return { ancho: medida.ancho, alto: medida.alto, puntos: [W, H], textos, barras, aviso };
   }
@@ -113,11 +130,16 @@
     ];
     for (const c of d.cajas || []) l.push(`BOX ${X(c.x1)},${Y(c.y1)},${X(c.x2)},${Y(c.y2)},${c.grosor || 3}`);
     for (const t of d.textos) l.push(`TEXT ${X(t.x)},${Y(t.y)},"${t.fuente}",0,1,1,"${t.texto.replace(/"/g, "'")}"`);
-    for (const b of d.barras) {
-      // Si queda corrida hacia afuera, se recorta en lugar de mandar coordenadas negativas.
-      const x = b.x + dx, y = b.y + dy;
-      const w = b.w + Math.min(0, x), h = b.h + Math.min(0, y);
-      if (w > 0 && h > 0) l.push(`BAR ${Math.max(0, x)},${Math.max(0, y)},${w},${h}`);
+    // El código de barras nunca se recorta: si el corrimiento lo deja (en parte) fuera de la zona que imprime la
+    // impresora, se acomoda entero para que entre. Una barra cortada cambia el número que lee el lector.
+    const xs = d.barras.map((b) => b.x + dx);
+    const anchoImp = Math.round(Math.max(d.ancho, Number(opc.cabezal) || 0) * PUNTOS_MM);
+    const izq = xs.length ? Math.min(...xs) : 0, der = xs.length ? Math.max(...d.barras.map((b, i) => xs[i] + b.w)) : 0;
+    const acomodar = izq < 0 ? -izq : der > anchoImp ? Math.max(-izq, anchoImp - der) : 0;
+    for (const [i, b] of d.barras.entries()) {
+      const x = xs[i] + acomodar, y = b.y + dy;
+      const h = b.h + Math.min(0, y);
+      if (b.w > 0 && h > 0) l.push(`BAR ${Math.max(0, x)},${Math.max(0, y)},${b.w},${h}`);
     }
     l.push(`PRINT 1,${copias}`);
     return l.join('\r\n') + '\r\n';
@@ -171,7 +193,7 @@
     }
   }
 
-  const api = { ascii, renglones, disenoEtiqueta, tspl, tsplPrueba, tsplRegla, dibujar, FUENTES, PUNTOS_MM };
+  const api = { ascii, renglones, disenoEtiqueta, elegirCodigo, tspl, tsplPrueba, tsplRegla, dibujar, FUENTES, PUNTOS_MM };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.EtiquetaTSPL = api;
 })(typeof window !== 'undefined' ? window : globalThis);
