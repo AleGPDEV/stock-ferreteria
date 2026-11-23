@@ -530,6 +530,15 @@
             <div class="f-wide"><button class="btn primary" type="submit">Guardar datos</button></div>
           </form>
         </article>
+        <article class="card" id="card-impresora-ticket" hidden>
+          <header class="card-h">
+            <div><h2>Impresora de tickets <button type="button" class="ayuda-ico" data-ayuda="Los tickets de venta, las devoluciones y los cierres de caja salen directo por esta impresora, sin el cuadro de imprimir de Windows. Con «Preguntar cada vez» se abre el cuadro de Windows como antes.">?</button></h2></div>
+          </header>
+          <div class="campos">
+            <label class="f f-wide" for="tk-impresora">Imprimir los tickets en<select id="tk-impresora"><option value="">Preguntar cada vez (cuadro de Windows)</option></select></label>
+            <div class="f-wide botonera"><button class="btn sm" type="button" id="tk-prueba">Imprimir un ticket de prueba</button><span class="meta" id="tk-estado" role="status"></span></div>
+          </div>
+        </article>
         <article class="card">
           <header class="card-h">
             <div><h2>Copia de seguridad</h2><p class="sub" id="respaldo-texto">Los datos se guardan en este navegador. Descargá una copia seguido y guardala en un pendrive o en la nube.</p></div>
@@ -893,7 +902,6 @@
       <span class="etq-config-txt"><span class="meta">Imprime en</span> <strong id="etq-config-resumen"></strong></span>
       <button class="btn sm" type="button" id="etq-config-cambiar">Cambiar</button>
     </div>
-    <label class="f etq-saltear" id="etq-saltear-campo" for="etq-saltear"><span>Stickers ya usados en la hoja <button type="button" class="ayuda-ico" data-ayuda="Si la hoja ya tiene stickers despegados, poné cuántos: se empieza después.">?</button></span><input id="etq-saltear" type="number" min="0" max="23" step="1" value="0" inputmode="numeric"></label>
     <div class="etq-filtros">
       <input id="etq-buscar" type="search" autocomplete="off" placeholder="Buscar" aria-label="Buscar">
       <span id="etq-filtro-ubic"><select id="etq-ubic" aria-label="Ubicación"></select>
@@ -902,7 +910,7 @@
       <button class="btn sm" type="button" id="etq-ninguno">Desmarcar</button>
     </div>
     <ul id="etq-lista" class="etq-lista"></ul>
-    <div class="etq-pie"><div><strong id="etq-cuenta"></strong><p class="meta">Así queda: <button type="button" class="ayuda-ico" data-ayuda="El código de barras se lee con el lector, en Vender o en Depósito.">?</button></p></div><div id="etq-muestra" class="etq-muestra a4"></div></div>
+    <div class="etq-pie"><div><strong id="etq-cuenta"></strong><p class="meta">Así queda: <button type="button" class="ayuda-ico" data-ayuda="Los productos llevan código de barras, que se lee con el lector en Vender o en Depósito. Los estantes llevan un QR, para no confundirlos: se lee con el celular (Cambiar estante).">?</button></p></div><div id="etq-muestra" class="etq-muestra"></div></div>
   </div>
   <footer class="dlg-f">
     <span class="sp"></span>
@@ -914,16 +922,13 @@
 <!-- ¿En qué imprimís? Ajustes de etiquetas (Depósito) -->
 <dialog id="etq-ajustes-dlg" aria-labelledby="etq-ajustes-titulo">
   <header class="dlg-h">
-    <h2 id="etq-ajustes-titulo">Cómo se imprimen las etiquetas</h2>
+    <h2 id="etq-ajustes-titulo">Impresora de etiquetas</h2>
   </header>
   <div class="dlg-b">
     <fieldset class="imp-campos">
-      <legend>¿En qué imprimís?</legend>
-      <label class="check"><input type="radio" name="etq-formato" value="hoja"> <span><strong>Hoja A4 común</strong> (se recortan; el tamaño se ajusta a cuántas van por hoja)</span></label>
-      <label class="f etq-porhoja" id="etq-porhoja-campo" for="etq-porhoja" hidden>Etiquetas por hoja<select id="etq-porhoja"></select><small id="etq-porhoja-ayuda"></small></label>
-      <label class="check"><input type="radio" name="etq-formato" value="a4" checked> <span><strong>Hoja A4 de stickers</strong> (24 por hoja, de 70 × 37 mm)</span></label>
-      <label class="check"><input type="radio" name="etq-formato" value="rollo"> <span><strong>Impresora de etiquetas</strong> (rollo, una por etiqueta)</span></label>
-      <div class="etq-rollo" id="etq-rollo-campo" hidden>
+      <legend class="visualmente-oculto">Impresora de etiquetas</legend>
+      <p class="meta">Lo que elijas queda guardado: no hace falta volver a ajustarlo.</p>
+      <div class="etq-rollo" id="etq-rollo-campo">
         <label class="f" for="etq-rollo"><span>Medida de la etiqueta del rollo <button type="button" class="ayuda-ico" data-ayuda="La medida de UNA etiqueta del rollo, sin contar el espacio entre etiquetas.">?</button></span><select id="etq-rollo"></select></label>
         <span class="etq-rollo-otra" id="etq-rollo-otra" hidden>
           <label class="f" for="etq-rollo-ancho">Ancho (mm)<input id="etq-rollo-ancho" type="number" min="20" max="108" step="1" inputmode="numeric"></label>

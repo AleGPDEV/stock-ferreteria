@@ -158,11 +158,11 @@ function iniciarAperturaCaja() {
     render();
     mostrarResultadoCierre(r.caja);
   });
-  $('#cr-imprimir').addEventListener('click', () => { if (cajaParaImprimir) imprimir(htmlArqueo(cajaParaImprimir)); });
+  $('#cr-imprimir').addEventListener('click', () => { if (cajaParaImprimir) imprimirTicket(htmlArqueo(cajaParaImprimir)); });
   $('#cr-listo').addEventListener('click', () => $('#dlg-caja-resultado').close());
   $('#tabla-cajas').addEventListener('click', (e) => {
     const bt = e.target.closest('[data-imprimir-caja]');
     const c = bt && (db.cajas || []).find((x) => x.id === bt.dataset.imprimirCaja);
-    if (c) imprimir(htmlArqueo(c));
+    if (c) imprimirTicket(htmlArqueo(c));
   });
 }

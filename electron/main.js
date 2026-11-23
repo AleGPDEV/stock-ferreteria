@@ -491,6 +491,24 @@ ipcMain.handle('almacen:respaldarAhora', async () => hacerRespaldo(true));
 ipcMain.handle('etiquetadora:impresoras', async (e) => {
   try { return (await e.sender.getPrintersAsync()).map((p) => ({ nombre: p.name, nombreVisible: p.displayName || p.name, predeterminada: !!p.isDefault })); } catch (err) { return []; }
 });
+/**
+ * Imprime lo que está preparado para imprimir en la ventana (el ticket, con el mismo estilo de impresión que
+ * window.print) directo en una impresora, sin el cuadro de Windows. Devuelve null o el texto del error.
+ */
+ipcMain.handle('imprimir:directo', async (e, impresora) => {
+  if (!ventana || e.sender !== ventana.webContents) return 'No permitido.';
+  if (!impresora || typeof impresora !== 'string') return 'Falta elegir la impresora.';
+  try {
+    const hay = (await e.sender.getPrintersAsync()).some((p) => p.name === impresora);
+    if (!hay) return `No encuentro la impresora «${impresora}». ¿Está conectada y encendida?`;
+  } catch (err) { /* si no se puede listar, se intenta igual */ }
+  return new Promise((listo) => {
+    e.sender.print({ silent: true, deviceName: impresora, printBackground: false, margins: { marginType: 'none' } }, (ok, motivo) => {
+      if (!ok) registro.aviso('imprimir', `No se pudo imprimir el ticket en «${impresora}»`, motivo);
+      listo(ok ? null : `No se pudo imprimir en «${impresora}»${motivo ? ` (${motivo})` : ''}.`);
+    });
+  });
+});
 ipcMain.handle('etiquetadora:imprimir', async (e, impresora, tspl) => imprimirCrudo(impresora, tspl));
 
 /* ---------- Ventana ---------- */

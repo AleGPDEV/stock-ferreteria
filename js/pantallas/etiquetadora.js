@@ -2,16 +2,42 @@
 'use strict';
 
 /* ---------- Impresión directa a la etiquetadora (TSPL, igual que la app del celular) ---------- */
-const AJUSTES_ETIQUETADORA = { directo: true, impresora: '', separacion: 2, oscuridad: 8, correrX: 0, correrY: 0, girar: false };
+/* Los ajustes de la impresora de etiquetas se guardan en los datos (db.ajustesEtiquetas): quedan puestos de una
+ * vez para siempre, en todas las computadoras y también al restaurar una copia. Antes estaban en el
+ * almacenamiento del navegador (localStorage): la primera vez se pasan de ahí. */
+const AJUSTES_ETIQUETADORA = { rollo: '50x40', directo: true, impresora: '', separacion: 2, oscuridad: 8, correrX: 0, correrY: 0, girar: false };
 const puedeEtiquetadora = () => typeof window !== 'undefined' && !!(window.almacen && window.almacen.imprimirEtiquetadora) && typeof EtiquetaTSPL !== 'undefined';
+/** Los de antes, guardados en este navegador (para pasarlos a los datos la primera vez). */
+function ajustesEtiquetasViejos() {
+  try {
+    const a = JSON.parse(localStorage.getItem('etiquetadora') || 'null') || {};
+    const r = localStorage.getItem('etiquetasRollo');
+    if (r) a.rollo = r;
+    return a;
+  } catch { return {}; }
+}
 function ajustesEtiquetadora() {
-  try { return { ...AJUSTES_ETIQUETADORA, ...(JSON.parse(localStorage.getItem('etiquetadora') || 'null') || {}) }; } catch { return { ...AJUSTES_ETIQUETADORA }; }
+  const guardados = db && db.ajustesEtiquetas && typeof db.ajustesEtiquetas === 'object' ? db.ajustesEtiquetas : ajustesEtiquetasViejos();
+  return { ...AJUSTES_ETIQUETADORA, ...guardados };
+}
+/** Pone en la ventana los ajustes guardados (al abrirla, así toma también los de una copia restaurada). */
+function ponerAjustesEtiquetasEnPantalla() {
+  const a = ajustesEtiquetadora();
+  const g = String(a.rollo || '').split('x').map(Number);
+  if (g.length === 2 && medidaRollo(g[0], g[1])) {
+    if ($(`#etq-rollo option[value="${g[0]}x${g[1]}"]`)) $('#etq-rollo').value = `${g[0]}x${g[1]}`;
+    else { $('#etq-rollo').value = 'otra'; $('#etq-rollo-ancho').value = g[0]; $('#etq-rollo-alto').value = g[1]; }
+  }
+  $('#etq-directo').checked = a.directo !== false;
+  $('#etq-sep').value = a.separacion; $('#etq-osc').value = a.oscuridad; $('#etq-cx').value = a.correrX; $('#etq-cy').value = a.correrY; $('#etq-girar').checked = !!a.girar;
+  if (impresorasCargadas && a.impresora && $(`#etq-impresora option[value="${CSS.escape(a.impresora)}"]`)) $('#etq-impresora').value = a.impresora;
 }
 /** Lo que va impreso en la etiqueta térmica: { nombre, codigo, ubicacion } (el mismo dibujo que el celular). */
 function itemEtiquetadora(x) {
   if (x.producto) return { nombre: x.producto.nombre, codigo: codigoEtiqueta(x.producto), ubicacion: x.producto.ubicacion || '' };
   const u = x.ubicacion;
-  return { nombre: u.categoria ? `${u.categoria}: ${u.ubicacion}` : `Ubicación ${u.ubicacion}`, codigo: u.corto || PREFIJO_UBIC + u.clave, ubicacion: u.ubicacion };
+  // Estante: QR con el número corto (U12), el estante grande y la categoría (ver disenoEstante)
+  return { qr: true, nombre: u.categoria || 'Ubicación', codigo: u.corto || PREFIJO_UBIC + u.clave, ubicacion: u.ubicacion };
 }
 /** Comandos TSPL de todas las etiquetas elegidas. sel: [{ producto | ubicacion, copias }]. */
 function tsplEtiquetas(sel, medida, opc) {
@@ -23,7 +49,16 @@ function leerAjustesEtiquetadora() {
   return { directo: $('#etq-directo').checked, impresora: $('#etq-impresora').value, separacion: num('#etq-sep', 2, 0, 10), oscuridad: Math.round(num('#etq-osc', 8, 1, 15)),
     correrX: num('#etq-cx', 0, -40, 40), correrY: num('#etq-cy', 0, -40, 40), girar: $('#etq-girar').checked };
 }
-function guardarAjustesEtiquetadora() { try { localStorage.setItem('etiquetadora', JSON.stringify(leerAjustesEtiquetadora())); } catch { /* nada */ } }
+function guardarAjustesEtiquetadora() {
+  const nuevos = leerAjustesEtiquetadora();
+  const m = rolloElegido();
+  nuevos.rollo = m ? `${m.ancho}x${m.alto}` : ajustesEtiquetadora().rollo;
+  // Si todavía no se cargó la lista de impresoras, no se pisa la que estaba guardada
+  if (!impresorasCargadas) nuevos.impresora = ajustesEtiquetadora().impresora;
+  if (JSON.stringify(db.ajustesEtiquetas || null) === JSON.stringify(nuevos)) return;
+  db.ajustesEtiquetas = nuevos;
+  guardar();
+}
 let impresorasCargadas = false;
 async function cargarImpresoras() {
   const a = ajustesEtiquetadora();
@@ -36,6 +71,8 @@ async function cargarImpresoras() {
     : '<option value="">No encontré impresoras instaladas en Windows</option>';
   if (elegida) $('#etq-impresora').value = elegida.nombre;
   impresorasCargadas = true;
+  // La primera vez queda guardada la que se eligió sola, así la próxima ya está
+  if (elegida && !a.impresora) guardarAjustesEtiquetadora();
   actualizarResumenEtiquetas();
 }
 function prepararEtiquetadora(formato) {
@@ -71,23 +108,20 @@ function rolloElegido() {
   return medidaRollo(a, h);
 }
 function imprimirEtiquetas() {
-  const formato = $('#etq-ajustes-dlg [name=etq-formato]:checked').value;
+  const formato = 'rollo'; // solo impresora de etiquetas (las hojas A4 se sacaron)
   const sel = itemsEtiquetas().filter((x) => etq.copias.get(x.id) > 0).map((x) => ({ ...x, copias: etq.copias.get(x.id) }));
   const rollo = formato === 'rollo' ? rolloElegido() : null;
   if (formato === 'rollo' && !rollo) { aviso('Revisá la medida de la etiqueta: ancho de 20 a 108 mm y alto de 15 a 300 mm.'); return; }
   if (formato === 'rollo' && puedeEtiquetadora() && $('#etq-directo').checked) {
     const total = sel.reduce((s, x) => s + x.copias, 0);
     if (!total) return;
-    try { localStorage.setItem('formatoEtiquetas', formato); localStorage.setItem('etiquetasRollo', `${rollo.ancho}x${rollo.alto}`); } catch { /* nada */ }
+    guardarAjustesEtiquetadora();
     mandarEtiquetadora(tsplEtiquetas(sel, rollo, leerAjustesEtiquetadora()), `${plural(total, 'etiqueta enviada', 'etiquetas enviadas')} a la impresora.`);
     return;
   }
-  const r = htmlEtiquetas(sel, formato, Number($('#etq-saltear').value), Number($('#etq-porhoja').value), rollo);
+  const r = htmlEtiquetas(sel, formato, 0, 0, rollo);
   if (!r.etiquetas) return;
-  try {
-    localStorage.setItem('formatoEtiquetas', formato); localStorage.setItem('etiquetasPorHoja', $('#etq-porhoja').value);
-    if (rollo) localStorage.setItem('etiquetasRollo', `${rollo.ancho}x${rollo.alto}`);
-  } catch { /* sin almacenamiento: no pasa nada */ }
+  guardarAjustesEtiquetadora();
   // La hoja de las etiquetas es distinta a la del ticket: se cambia solo mientras se imprime
   $('#impresion').classList.add('etiquetas');
   $('#estilo-etiquetas').textContent = r.pagina || FORMATOS_ETIQUETA[formato].pagina;

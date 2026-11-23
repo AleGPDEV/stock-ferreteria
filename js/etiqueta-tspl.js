@@ -6,6 +6,8 @@
 (function (global) {
   'use strict';
   const CB = global.CodigoBarras || (typeof require === 'function' ? require('./codigo-barras.js') : null);
+  // QR de las etiquetas de estante (vendor/qrcode.js). Se busca al usarlo: en la app del celular no hace falta.
+  const QR = () => global.qrcode || (typeof require === 'function' ? (() => { try { return require('../vendor/qrcode.js'); } catch (e) { return null; } })() : null);
   const PUNTOS_MM = 8;
   // Letras de la impresora: ancho y alto de cada letra, en puntos
   const FUENTES = { 1: [8, 12], 2: [12, 20], 3: [16, 24], 4: [24, 32], 5: [32, 48] };
@@ -41,6 +43,7 @@
    * Devuelve { ancho, alto, textos: [{ x, y, fuente, texto }], barras: [{ x, y, w, h }], aviso } en puntos.
    */
   function disenoEtiqueta(item, medida) {
+    if (item.qr && QR()) return disenoEstante(item, medida);
     const W = Math.round(medida.ancho * PUNTOS_MM), H = Math.round(medida.alto * PUNTOS_MM);
     const m = medida.alto < 30 ? 12 : 16; // margen
     const k = Math.min((medida.ancho - 2) / 70, (medida.alto - 2) / 37); // 1 = etiqueta de 70 × 37 mm
@@ -87,6 +90,63 @@
       a.forEach((w, i) => { if (i % 2 === 0) barras.push({ x, y: yBarras, w: w * fino, h: alto }); x += w * fino; });
     } else if (codigo) aviso = 'Ese código tiene letras que el código de barras no acepta.';
     return { ancho: medida.ancho, alto: medida.alto, puntos: [W, H], textos, barras, aviso };
+  }
+
+  /** Los cuadraditos de un QR: { n (módulos por lado), negro(fila, col) }. Corrección media (M): se lee aunque se raspe un poco. */
+  function modulosQR(texto) {
+    const q = QR()(0, 'M');
+    q.addData(String(texto));
+    q.make();
+    const n = q.getModuleCount();
+    return { n, negro: (f, c) => q.isDark(f, c) };
+  }
+
+  /**
+   * El dibujo de una etiqueta de estante: un QR a la izquierda (para no confundirla con una de producto, que lleva
+   * código de barras) y a la derecha el estante en letras grandes, la categoría y el número corto.
+   * item: { qr: true, codigo (lo que lleva el QR, el número corto: U12), ubicacion (B-3), nombre (la categoría) }.
+   */
+  function disenoEstante(item, medida) {
+    const W = Math.round(medida.ancho * PUNTOS_MM), H = Math.round(medida.alto * PUNTOS_MM);
+    const m = medida.alto < 30 ? 12 : 16;
+    const codigo = ascii(item.codigo).toUpperCase();
+    const estante = ascii(item.ubicacion).toUpperCase();
+    const categoria = ascii(item.nombre);
+    const textos = [], barras = [];
+    let aviso = '';
+    // El QR: lo más grande que entre en el alto, sin pasar del 55 % del ancho, con 2 módulos de blanco alrededor
+    const { n, negro } = modulosQR(codigo);
+    const lado = Math.min(H - 2 * m, Math.floor(W * 0.55));
+    const mod = Math.max(1, Math.floor(lado / (n + 4)));
+    if (mod < 3) aviso = 'Etiqueta chica para el QR: probá que el celular lo lea.';
+    const qr = mod * n;
+    const x0 = m + 2 * mod, y0 = Math.round((H - qr) / 2);
+    for (let f = 0; f < n; f++) {
+      // Cada tira seguida de cuadraditos negros de una fila va como una sola barra (menos comandos para la impresora)
+      for (let c = 0; c < n;) {
+        if (!negro(f, c)) { c++; continue; }
+        let fin = c;
+        while (fin + 1 < n && negro(f, fin + 1)) fin++;
+        barras.push({ x: x0 + c * mod, y: y0 + f * mod, w: (fin - c + 1) * mod, h: mod });
+        c = fin + 1;
+      }
+    }
+    // A la derecha: el estante (lo más grande que entre), la categoría y el número corto
+    const xT = x0 + qr + 2 * mod + 8;
+    const anchoT = W - m - xT;
+    let fE = 5;
+    while (fE > 2 && estante.length * FUENTES[fE][0] > anchoT) fE--;
+    const fCat = fE >= 4 ? 2 : 1;
+    const [cwE, chE] = FUENTES[fE], [cwC, chC] = FUENTES[fCat];
+    const lineasCat = categoria ? renglones(categoria, Math.max(4, Math.floor(anchoT / cwC)), H - 2 * m - chE - chC > 2 * (chC + 4) ? 2 : 1) : [];
+    const altoBloque = chE + (lineasCat.length ? 8 + lineasCat.length * (chC + 4) : 0) + 8 + FUENTES[1][1];
+    let y = Math.max(m, Math.round((H - altoBloque) / 2));
+    if (estante) textos.push({ x: xT, y, fuente: fE, texto: estante.slice(0, Math.max(1, Math.floor(anchoT / cwE))) });
+    y += chE + 8;
+    lineasCat.forEach((l) => { textos.push({ x: xT, y, fuente: fCat, texto: l }); y += chC + 4; });
+    if (codigo) textos.push({ x: xT, y: Math.min(H - m - FUENTES[1][1], y + 4), fuente: 1, texto: codigo.slice(0, Math.max(1, Math.floor(anchoT / FUENTES[1][0]))) });
+    if (anchoT < 8 * PUNTOS_MM) aviso = 'Etiqueta angosta: el nombre del estante puede no entrar al lado del QR.';
+    return { ancho: medida.ancho, alto: medida.alto, puntos: [W, H], textos, barras, aviso, qr: true };
   }
 
   /**
@@ -171,7 +231,7 @@
     }
   }
 
-  const api = { ascii, renglones, disenoEtiqueta, tspl, tsplPrueba, tsplRegla, dibujar, FUENTES, PUNTOS_MM };
+  const api = { ascii, renglones, disenoEtiqueta, disenoEstante, modulosQR, tspl, tsplPrueba, tsplRegla, dibujar, FUENTES, PUNTOS_MM };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.EtiquetaTSPL = api;
 })(typeof window !== 'undefined' ? window : globalThis);
