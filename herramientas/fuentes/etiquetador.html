@@ -1121,10 +1121,11 @@ async function camaraMover() {
 }
 
 // ---------- Fotos ----------
-/* La foto se achica en el celular (900 px, JPEG) y se manda a la PC, que la guarda en su carpeta Fotos y se la
+/* La foto se achica en el celular (800 px, WebP) y se manda a la PC, que la guarda en su carpeta Fotos y se la
  * asigna al producto: queda igual que una foto cargada a mano en el programa (con sus copias de seguridad). */
 let fotoForm = null; // { blob, url } de la foto sacada en la ficha, todavía sin mandar
-async function achicarFoto(file, max = 900, calidad = 0.82) {
+// 800 px, en WebP o JPEG: el que pese menos (WebP suele ser bastante más liviano y viaja más rápido por el WiFi).
+async function achicarFoto(file, max = 800, calidad = 0.8) {
   if (!file) throw new Error('No se sacó la foto.');
   let img;
   try { img = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
@@ -1136,16 +1137,33 @@ async function achicarFoto(file, max = 900, calidad = 0.82) {
   g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
   g.drawImage(img, 0, 0, c.width, c.height);
   if (img.close) img.close();
-  const blob = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', calidad));
+  // Se prueban WebP y JPEG y queda el más liviano
+  const webp = await new Promise((ok) => c.toBlob(ok, 'image/webp', calidad));
+  const jpeg = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.82));
+  const blob = webp && webp.type === 'image/webp' && (!jpeg || webp.size <= jpeg.size) ? webp : jpeg;
   if (!blob) throw new Error('No se pudo preparar la foto.');
   return blob;
+}
+/** Pasa una foto a JPEG (para una PC con una versión vieja que solo acepta JPEG). */
+async function aJpeg(blob) {
+  const img = await createImageBitmap(blob);
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(img, 0, 0);
+  if (img.close) img.close();
+  return new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.82));
 }
 const base64De = (blob) => new Promise((ok, mal) => { const r = new FileReader(); r.onload = () => ok(String(r.result).replace(/^data:[^,]*,/, '')); r.onerror = mal; r.readAsDataURL(blob); });
 /** Manda la foto a la PC para ese producto. Devuelve null si salió bien, o el texto del problema. */
 async function subirFoto(x, blob) {
   if (!pcOk()) return textoSinPC();
   try {
-    const r = await pedirPC('/api/fotos', undefined, 25000, { equipo: aj().equipo, codigo: x.codigo, productoId: x.productoId, imagen: await base64De(blob) });
+    const mandar = async (b) => pedirPC('/api/fotos', undefined, 25000, { equipo: aj().equipo, codigo: x.codigo, productoId: x.productoId, imagen: await base64De(b) });
+    let r = await mandar(blob);
+    // Una PC con el programa viejo solo acepta JPEG: se reintenta así
+    if (r.status === 400 && blob.type === 'image/webp' && /JPEG/.test(JSON.stringify(r.data || ''))) r = await mandar(await aJpeg(blob));
     if (r.status !== 200) return errorDePC(r);
     x.foto = true;
     guardar(); pintar();

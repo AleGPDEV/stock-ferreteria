@@ -224,3 +224,33 @@ test('margen en la ficha: solo para el administrador (#1)', () => {
   assert.equal(textoMargen('', 620, true), '');
   assert.equal(textoMargen(390, 0, true), '');
 });
+
+/* global claveCodigo, buscarPorCodigo, codigoUsado, asignarBarras, agregarCodigoExtra */
+test('códigos: un UPC de 12 números y su EAN-13 con 0 adelante son el mismo', () => {
+  const d = app.baseVacia();
+  d.productos.push(
+    { id: 'u', codigo: 'TAL-1', nombre: 'Taladro importado', barras: ['012345678905'] }, // guardado con 12
+    { id: 'e', codigo: '0098765432109', nombre: 'Disco de corte', barras: [] },        // guardado con 13
+    { id: 'w', codigo: '4061975716071', nombre: 'Amoladora 2000w WURTH', barras: [] },
+  );
+  assert.equal(claveCodigo('012345678905'), '0012345678905');
+  assert.equal(claveCodigo(' 0012345678905 '), '0012345678905');
+  assert.equal(claveCodigo('4061975716071'), '4061975716071'); // un EAN-13 queda igual
+  assert.equal(claveCodigo('PIN-ROD22'), 'PIN-ROD22');
+  assert.equal(claveCodigo('12345'), '12345');
+  // La pistola manda 13 y está guardado con 12, o al revés
+  assert.equal(buscarPorCodigo(d, '0012345678905').id, 'u');
+  assert.equal(buscarPorCodigo(d, '012345678905').id, 'u');
+  assert.equal(buscarPorCodigo(d, '098765432109').id, 'e');
+  assert.equal(buscarPorCodigo(d, '4061975716071').id, 'w');
+  assert.equal(buscarPorCodigo(d, '061975716071'), null, 'un código cortado no es el de la amoladora');
+  // No se puede cargar el mismo código escrito distinto
+  assert.equal(codigoUsado(d, '0012345678905').id, 'u');
+  assert.equal(codigoUsado(d, '098765432109', 'x').id, 'e');
+  assert.equal(codigoUsado(d, '098765432109', 'e'), null);
+  assert.match(asignarBarras(d, d.productos[2], '098765432109'), /ya es de «Disco de corte»/);
+  assert.equal(asignarBarras(d, d.productos[0], '0012345678905'), null);
+  assert.deepEqual(d.productos[0].barras, ['012345678905'], 'no se duplica');
+  assert.match(agregarCodigoExtra(d, ['012345678905'], '0012345678905', 'TAL-1', 'u').error, /ya está en la lista/);
+  assert.match(agregarCodigoExtra(d, [], '098765432109', '0098765432109', 'e').error, /ya es el código de este producto/);
+});

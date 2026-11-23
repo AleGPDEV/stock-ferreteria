@@ -9,7 +9,7 @@ const zlib = require('zlib');
 const { promisify } = require('util');
 const { pathToFileURL } = require('url');
 const { Almacen } = require('./datos');
-const { fotosEnUso, planLimpiezaFotos } = require('./fotos');
+const { fotosEnUso, planLimpiezaFotos, NOMBRE_FOTO, esNombreFoto, esImagenFoto, empaquetarFotos, fotosDeCopia } = require('./fotos');
 const { imprimirCrudo } = require('./etiquetadora');
 const { crearServidorCelular, datosVinculo, ipsLocales, nuevoToken, nuevoPcId } = require('./servidor-celular');
 const { crearRegistro, informeSoporte } = require('./registro');
@@ -158,10 +158,10 @@ function copiarAExtra(archivo) {
 }
 
 /* ---------- Fotos de los productos ----------
- * Cada foto es un .jpg achicado en la carpeta Fotos de los datos. No van en la base (la harían pesada);
- * se copian a Respaldos\Fotos y a la carpeta extra. Si en esta PC falta una foto que está en
- * Respaldos\Fotos (por ejemplo, al pasar a una PC nueva), se trae de ahí. */
-const NOMBRE_FOTO = /^[\w-]{1,80}\.jpg$/;
+ * Cada foto es un archivo achicado (.webp las nuevas, .jpg las de antes) en la carpeta Fotos de los datos.
+ * No van en la base (la harían pesada) ni en los respaldos diarios: se copian a Respaldos\Fotos y a la carpeta
+ * extra. Si en esta PC falta una foto que está en Respaldos\Fotos (por ejemplo, al pasar a una PC nueva), se
+ * trae de ahí. «Descargar copia» sí las lleva adentro, para pasar todo a otra PC en un solo archivo. */
 
 /** Copia a destino las fotos que no tiene (solo las de «solo», si se pasa). Devuelve cuántas copió. */
 function sincronizarFotos(origen, destino, solo = null) {
@@ -443,12 +443,12 @@ ipcMain.on('almacen:info', (e) => {
   const r = rutas();
   e.returnValue = { datos: r.datos, respaldos: r.respaldos, fotos: r.fotos, fotosUrl: pathToFileURL(r.fotos).href + '/', version: app.getVersion(), ...infoRespaldos() };
 });
-/** Guarda una foto ya achicada (JPEG) en la carpeta Fotos. Devuelve { nombre } o { error }. */
+/** Guarda una foto ya achicada (WebP o JPEG) en la carpeta Fotos. Devuelve { nombre } o { error }. */
 function guardarFotoEnDisco(nombre, bytes) {
   try {
-    if (!NOMBRE_FOTO.test(String(nombre))) return { error: 'Nombre de foto no válido.' };
+    if (!esNombreFoto(nombre)) return { error: 'Nombre de foto no válido.' };
     const datos = Buffer.from(bytes);
-    if (datos.length > 5 * 1024 * 1024 || datos[0] !== 0xff || datos[1] !== 0xd8) return { error: 'La foto no es válida.' };
+    if (!esImagenFoto(datos, nombre)) return { error: 'La foto no es válida.' };
     const { fotos } = rutas();
     fs.mkdirSync(fotos, { recursive: true });
     fs.writeFileSync(path.join(fotos, nombre + '.tmp'), datos);
@@ -460,9 +460,96 @@ function guardarFotoEnDisco(nombre, bytes) {
 }
 /** Borra una foto que no se llegó a usar (el celular la mandó pero el producto no se encontró). */
 function borrarFotoSinUso(nombre) {
-  try { if (NOMBRE_FOTO.test(String(nombre))) fs.unlinkSync(path.join(rutas().fotos, nombre)); } catch (e) { /* nada */ }
+  try { if (esNombreFoto(nombre)) fs.unlinkSync(path.join(rutas().fotos, nombre)); } catch (e) { /* nada */ }
 }
-// Guarda una foto ya achicada por la pantalla (JPEG). Devuelve el nombre del archivo o { error }.
+
+/* ---------- Copia completa (datos + fotos en un solo archivo) ---------- */
+/** Lee una foto de esta PC, o de Respaldos\Fotos si acá no está. */
+function leerFotoGuardada(nombre) {
+  const r = rutas();
+  for (const c of [r.fotos, path.join(r.respaldos, 'Fotos')]) {
+    try { return fs.readFileSync(path.join(c, nombre)); } catch (e) { /* probar la siguiente */ }
+  }
+  return null;
+}
+/**
+ * «Descargar copia»: los datos y las fotos que usan los productos, comprimidos en un solo .json.gz.
+ * Se elige dónde guardarlo. Devuelve { archivo, fotos, faltan, bytes } o { cancelado } o { error }.
+ */
+ipcMain.handle('almacen:copiaCompleta', async () => {
+  try {
+    if (!almacen) return { error: 'La base no está abierta.' };
+    const texto = almacen.leerJson();
+    const d = JSON.parse(texto);
+    const enUso = fotosEnUso(texto) || new Set();
+    traerFotosQueFaltan(enUso);
+    const { incluidas, faltan } = empaquetarFotos(enUso, leerFotoGuardada);
+    d.fotosIncluidas = incluidas;
+    const nombre = `copia_stock_${hoy()}.json.gz`;
+    const elegido = await dialog.showSaveDialog(ventana, {
+      title: 'Guardar la copia con las fotos',
+      defaultPath: path.join(app.getPath('documents'), nombre),
+      filters: [{ name: 'Copia de Stock Ferretería', extensions: ['gz'] }],
+    });
+    if (elegido.canceled || !elegido.filePath) return { cancelado: true };
+    let archivo = elegido.filePath;
+    if (!/\.json\.gz$/i.test(archivo)) archivo = archivo.replace(/(\.json)?(\.gz)?$/i, '') + '.json.gz';
+    const comprimido = await gzip(JSON.stringify(d), { level: 6 });
+    fs.writeFileSync(archivo + '.tmp', comprimido);
+    fs.renameSync(archivo + '.tmp', archivo);
+    registro.info('copia', `Copia con fotos guardada: ${Object.keys(incluidas).length} fotos, ${(comprimido.length / 1048576).toFixed(1)} MB${faltan.length ? `, faltan ${faltan.length} fotos` : ''}`);
+    return { archivo, fotos: Object.keys(incluidas).length, faltan: faltan.length, bytes: comprimido.length };
+  } catch (err) {
+    anotarError('copia', 'No se pudo guardar la copia con fotos', err);
+    return { error: String(err.message || err) };
+  }
+});
+
+/**
+ * Después de restaurar una copia: trae las fotos que usan los productos y faltan en esta PC, desde
+ * 1) las fotos que vienen dentro del archivo (copias hechas con «Descargar copia»),
+ * 2) la carpeta Fotos que esté al lado del archivo (por ejemplo, si se copió la carpeta Respaldos entera),
+ * 3) Respaldos\Fotos y la carpeta extra de esta PC.
+ * Devuelve { enUso, hay, faltan, traidas }.
+ */
+ipcMain.handle('fotos:traerDeCopia', async (e, ruta) => {
+  const r = rutas();
+  const enUso = fotosUsadasAhora() || new Set();
+  let traidas = 0;
+  try {
+    fs.mkdirSync(r.fotos, { recursive: true });
+    const hay = () => new Set(fs.readdirSync(r.fotos));
+    if (ruta && typeof ruta === 'string' && fs.existsSync(ruta) && fs.statSync(ruta).isFile()) {
+      // 1) Dentro del archivo
+      try {
+        const crudo = fs.readFileSync(ruta);
+        const texto = (/\.gz$/i.test(ruta) ? zlib.gunzipSync(crudo) : crudo).toString('utf8');
+        if (texto.includes('"fotosIncluidas"')) {
+          const { fotos } = fotosDeCopia(JSON.parse(texto));
+          const ya = hay();
+          for (const [n, b] of fotos) {
+            if (ya.has(n) || !enUso.has(n)) continue;
+            fs.writeFileSync(path.join(r.fotos, n + '.tmp'), b);
+            fs.renameSync(path.join(r.fotos, n + '.tmp'), path.join(r.fotos, n));
+            traidas++;
+          }
+        }
+      } catch (err) { anotarError('fotos', 'No se pudieron leer las fotos de la copia', err); }
+      // 2) Carpeta Fotos al lado del archivo
+      traidas += sincronizarFotos(path.join(path.dirname(ruta), 'Fotos'), r.fotos, enUso);
+    }
+    // 3) Las de siempre
+    traidas += traerFotosQueFaltan(enUso);
+    const presentes = hay();
+    const faltan = [...enUso].filter((n) => !presentes.has(n)).length;
+    if (traidas || faltan) registro.info('fotos', `Al restaurar: ${traidas} fotos traídas, faltan ${faltan} de ${enUso.size}`);
+    return { enUso: enUso.size, hay: enUso.size - faltan, faltan, traidas };
+  } catch (err) {
+    anotarError('fotos', 'No se pudieron traer las fotos al restaurar', err);
+    return { error: String(err.message || err), enUso: enUso.size };
+  }
+});
+// Guarda una foto ya achicada por la pantalla (WebP o JPEG). Devuelve el nombre del archivo o { error }.
 ipcMain.handle('fotos:guardar', async (e, nombre, bytes) => guardarFotoEnDisco(nombre, bytes));
 ipcMain.handle('almacen:abrirRespaldos', async () => {
   const { respaldos } = rutas();

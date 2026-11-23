@@ -1,5 +1,5 @@
 // Puente seguro entre la página y el disco. La página solo ve window.almacen.
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('almacen', {
   escritorio: true,
@@ -12,6 +12,14 @@ contextBridge.exposeInMainWorld('almacen', {
   quitarCarpetaExtra: () => ipcRenderer.invoke('almacen:quitarCarpetaExtra'),
   respaldarAhora: () => ipcRenderer.invoke('almacen:respaldarAhora'),
   guardarFoto: (nombre, bytes) => ipcRenderer.invoke('fotos:guardar', nombre, bytes),
+  // «Descargar copia» con las fotos adentro (se elige dónde guardarla)
+  copiaCompleta: () => ipcRenderer.invoke('almacen:copiaCompleta'),
+  // Después de restaurar: traer las fotos de la copia (adentro del archivo o en la carpeta Fotos de al lado)
+  traerFotosDeCopia: (file) => {
+    let ruta = null;
+    try { ruta = file && webUtils && webUtils.getPathForFile ? webUtils.getPathForFile(file) : null; } catch (e) { ruta = null; }
+    return ipcRenderer.invoke('fotos:traerDeCopia', ruta || null);
+  },
   impresoras: () => ipcRenderer.invoke('etiquetadora:impresoras'),
   // El ticket directo a la impresora de tickets elegida en Configuración (sin el cuadro de Windows)
   imprimirDirecto: (impresora) => ipcRenderer.invoke('imprimir:directo', impresora),

@@ -112,12 +112,14 @@ function crearServidorCelular({ clave, preguntar, version = '', puerto = PUERTO,
   async function recibirFoto(req, res) {
     if (!guardarFoto) return responder(res, 404, { error: 'Esta PC no guarda fotos.' });
     const x = await leerCuerpo(req, MAX_CUERPO_FOTO);
-    const b64 = String(x.imagen || '').replace(/^data:image\/jpeg;base64,/, '');
+    const b64 = String(x.imagen || '').replace(/^data:image\/(jpeg|webp);base64,/, '');
     if (!/^[A-Za-z0-9+/]+=*$/.test(b64)) return responder(res, 400, { error: 'La foto no se entiende.' });
     const bytes = Buffer.from(b64, 'base64');
-    if (bytes.length < 100 || bytes.length > MAX_FOTO || bytes[0] !== 0xff || bytes[1] !== 0xd8) return responder(res, 400, { error: 'La foto tiene que ser un JPEG de hasta 3 MB.' });
+    const webp = bytes.length > 12 && bytes.toString('latin1', 0, 4) === 'RIFF' && bytes.toString('latin1', 8, 12) === 'WEBP';
+    const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+    if (bytes.length < 100 || bytes.length > MAX_FOTO || !(jpeg || webp)) return responder(res, 400, { error: 'La foto tiene que ser JPEG o WebP, de hasta 3 MB.' });
     ultimoPedido = { fecha: new Date().toISOString(), ip: String(req.socket.remoteAddress || '').replace(/^::ffff:/, '') };
-    const nombre = `cel-${Date.now()}-${crypto.randomBytes(3).toString('hex')}.jpg`;
+    const nombre = `cel-${Date.now()}-${crypto.randomBytes(3).toString('hex')}.${webp ? 'webp' : 'jpg'}`;
     const g = await guardarFoto(nombre, bytes);
     if (!g || g.error) return responder(res, 500, { error: `No se pudo guardar la foto en la PC${g && g.error ? `: ${g.error}` : '.'}` });
     const datos = limpio(x);
