@@ -976,7 +976,7 @@ test('celular: etiqueta TSPL para la etiquetadora (mismo código de barras que e
   }
   const t = E.tspl(E.disenoEtiqueta({ nombre: 'Gancho "S"', codigo: 'C1-0002', ubicacion: 'B-2' }, { ancho: 50, alto: 25 }), { copias: 3, separacion: 3, oscuridad: 10 });
   assert.match(t, /^SIZE 50 mm,25 mm\r\nGAP 3 mm,0 mm\r\nDENSITY 10\r\n/);
-  assert.match(t, /TEXT \d+,\d+,"2",0,1,1,"Gancho 'S'"/);
+  assert.match(t, /TEXT \d+,\d+,"3",0,1,1,"Gancho 'S'"/);
   assert.match(t, /PRINT 1,3\r\n$/);
   assert.match(E.tsplPrueba({ ancho: 50, alto: 25 }), /BOX 4,4,396,196,3/);
   // corrida y girada (impresoras que no la ponen justo en la etiqueta)
