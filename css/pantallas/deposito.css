@@ -165,3 +165,10 @@
 .cat-acc { display: flex; gap: 6px; flex: none; }
 .cat-renombrar { display: flex; gap: 6px; align-items: center; }
 .cat-renombrar input { flex: 1; min-width: 0; }
+
+/* Precio en la etiqueta de producto: abajo en el medio, entre el número y el estante */
+.et-prod .et-pie > * { flex: 1 1 0; min-width: 0; }
+.et-prod .et-pie .et-precio { text-align: center; font-weight: 800; font-size: 13pt; white-space: nowrap; }
+.et-prod .et-pie .et-ubi { text-align: right; }
+.rollo .et-prod .et-pie .et-precio { font-size: 10pt; }
+.pagina.hoja .et-prod .et-pie .et-precio { font-size: calc(13pt * var(--k)); }

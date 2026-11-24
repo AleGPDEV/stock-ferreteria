@@ -72,6 +72,11 @@ function qrEtiquetaSvg(texto) {
   for (let f = 0; f < n; f++) for (let c = 0; c < n; c++) if (q.isDark(f, c)) d += `M${c + 2} ${f + 2}h1v1h-1z`;
   return `<svg class="et-qr" viewBox="0 0 ${n + 4} ${n + 4}" role="img" aria-label="QR ${esc(texto)}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
 }
+/** El precio de la etiqueta, igual que en la etiquetadora (js/etiqueta-tspl.js): «$ 2.700» o «U$S 9,90». */
+function EtiquetaTSPLPrecio(p) {
+  const T = typeof EtiquetaTSPL !== 'undefined' ? EtiquetaTSPL : require('./etiqueta-tspl.js');
+  return T.textoPrecio({ precio: p.precio, moneda: p.moneda });
+}
 /** Una etiqueta (HTML). item: { producto } o { ubicacion } (de ubicacionesDe). */
 function htmlEtiqueta(item, formato) {
   const alto = formato === 'rollo' ? '9mm' : formato === 'hoja' ? 'calc(12mm * var(--k))' : '12mm';
@@ -80,7 +85,7 @@ function htmlEtiqueta(item, formato) {
     const cod = codigoEtiqueta(p);
     return `<div class="et et-prod"><div class="et-nom">${esc(p.nombre)}</div>
       <div class="et-cb">${cod ? barras128().svg(cod, { alto }) : '<span class="et-sin">Sin código para imprimir</span>'}</div>
-      <div class="et-pie"><span class="et-cod">${esc(cod)}</span>${p.ubicacion ? `<span class="et-ubi">${esc(p.ubicacion)}</span>` : ''}</div></div>`;
+      <div class="et-pie"><span class="et-cod">${esc(cod)}</span>${EtiquetaTSPLPrecio(p) ? `<span class="et-precio">${esc(EtiquetaTSPLPrecio(p))}</span>` : ''}${p.ubicacion ? `<span class="et-ubi">${esc(p.ubicacion)}</span>` : '<span class="et-ubi"></span>'}</div></div>`;
   }
   const u = item.ubicacion;
   const nombres = u.productos.slice(0, formato === 'rollo' ? 0 : 3).map((p) => esc(p.nombre));

@@ -52,40 +52,74 @@
    * El dibujo de una etiqueta de producto. item: { nombre, codigo, ubicacion }. medida: { ancho, alto } en mm.
    * Devuelve { ancho, alto, textos: [{ x, y, fuente, texto }], barras: [{ x, y, w, h }], aviso } en puntos.
    */
+  /**
+   * El precio para la etiqueta: «$ 2.700», «$ 4,50» o «U$S 9,90» (sin decimales si es redondo).
+   * Sale de item.precio y item.moneda (UYU o USD); vacío si no tiene precio.
+   */
+  function textoPrecio(item) {
+    const n = typeof item.precio === 'number' ? item.precio : Number(String(item.precio == null ? '' : item.precio).replace(',', '.'));
+    if (item.precio == null || item.precio === '' || !Number.isFinite(n) || n <= 0) return '';
+    const redondo = Math.abs(n - Math.round(n)) < 0.005;
+    const [ent, dec] = (redondo ? Math.round(n).toFixed(0) : n.toFixed(2)).split('.');
+    const miles = ent.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return `${item.moneda === 'USD' ? 'U$S' : '$'} ${miles}${dec ? ',' + dec : ''}`;
+  }
+
   function disenoEtiqueta(item, medida) {
     if (item.qr && QR()) return disenoEstante(item, medida);
     const W = Math.round(medida.ancho * PUNTOS_MM), H = Math.round(medida.alto * PUNTOS_MM);
     const m = medida.alto < 30 ? 12 : 16; // margen
     const k = Math.min((medida.ancho - 2) / 70, (medida.alto - 2) / 37); // 1 = etiqueta de 70 × 37 mm
-    const fN = k < 0.75 ? 2 : k < 1.2 ? 3 : k < 1.8 ? 4 : 5;     // nombre
+    const fN = k < 0.75 ? 3 : k < 1.2 ? 4 : 5;                   // nombre (grande: es lo primero que se lee)
     const fC = k < 0.75 ? 1 : k < 1.2 ? 2 : k < 1.8 ? 3 : 4;     // número del producto
-    const fE = Math.min(5, fN + 1);                              // estante, más grande
+    const fE = fN;                                               // estante, del tamaño del nombre
     const codigo = ascii(item.codigo).toUpperCase();
     const estante = ascii(item.ubicacion).toUpperCase();
     const nombre = ascii(item.nombre);
+    const precio = ascii(textoPrecio(item));
     const textos = [];
     const barras = [];
     let aviso = '';
 
-    // Abajo: el número a la izquierda y el estante a la derecha
-    const [cwE, chE] = FUENTES[fE];
-    let fCod = fC;
-    const xE = W - m - estante.length * cwE;
-    while (fCod > 1 && m + codigo.length * FUENTES[fCod][0] + 10 > (estante ? xE : W - m)) fCod--;
-    const [cwC, chC] = FUENTES[fCod];
-    const altoPie = Math.max(estante ? chE : 0, chC);
+    // Abajo: el número a la izquierda, el precio en el medio (grande: si el código de barras no se lee, el precio
+    // está ahí) y el estante a la derecha. Si no entran, se achica primero el número, después el estante y el precio.
+    const gap = 10;
+    let fCod = fC, fEst = fE, fP = Math.min(5, fN + 1); // el precio, lo más grande de la etiqueta
+    const ancho = (t, f) => (t ? t.length * FUENTES[f][0] : 0);
+    const total = () => ancho(codigo, fCod) + ancho(precio, fP) + ancho(estante, fEst) + gap * ([codigo, precio, estante].filter(Boolean).length - 1);
+    while (total() > W - 2 * m) {
+      if (fCod > 1) fCod--;
+      else if (fEst > 2) fEst--;
+      else if (fP > 2) fP--;
+      else if (fEst > 1) fEst--;
+      else break;
+    }
+    let cod = codigo;
+    // Si igual no entra, el número se corta (está también abajo de las barras… y en el sistema)
+    while (cod.length > 3 && total() - ancho(codigo, fCod) + ancho(cod, fCod) > W - 2 * m) cod = cod.slice(0, -1);
+    const [, chC] = FUENTES[fCod], [cwE, chE] = FUENTES[fEst], [cwP, chP] = FUENTES[fP];
+    const altoPie = Math.max(estante ? chE : 0, precio ? chP : 0, cod ? chC : 0);
     const yPie = H - m - altoPie;
-    if (codigo) textos.push({ x: m, y: yPie + (altoPie - chC), fuente: fCod, texto: codigo.slice(0, Math.floor((W - 2 * m) / cwC)) });
-    if (estante) textos.push({ x: Math.max(m, xE), y: yPie, fuente: fE, texto: estante });
+    if (cod) textos.push({ x: m, y: yPie + (altoPie - chC), fuente: fCod, texto: cod });
+    const xE = W - m - estante.length * cwE;
+    if (estante) textos.push({ x: Math.max(m, xE), y: yPie + (altoPie - chE), fuente: fEst, texto: estante });
+    if (precio) {
+      // Centrado en la etiqueta, pero sin pisar el número ni el estante
+      const izq = m + (cod ? ancho(cod, fCod) + gap : 0), der = (estante ? xE - gap : W - m) - precio.length * cwP;
+      const x = Math.round(Math.max(izq, Math.min(der, (W - precio.length * cwP) / 2)));
+      textos.push({ x, y: yPie + (altoPie - chP), fuente: fP, texto: precio });
+    }
 
     // Arriba: el nombre, en uno o dos renglones
     const [cwN, chN] = FUENTES[fN];
     const max = Math.max(4, Math.floor((W - 2 * m) / cwN));
     const libre = yPie - m - 8; // alto para el nombre y el código de barras
-    const dos = libre - 2 * (chN + 4) >= 7 * PUNTOS_MM; // dos renglones si igual queda lugar para un código de 7 mm
-    const lineas = nombre ? renglones(nombre, max, dos ? 2 : 1) : [];
+    // Hasta tres renglones de nombre, siempre que quede lugar para un código de barras de 6 mm
+    const minBarras = 6 * PUNTOS_MM;
+    const cuantos = [3, 2, 1].find((n) => libre - n * (chN + 4) >= minBarras) || 1;
+    const lineas = nombre ? renglones(nombre, max, cuantos) : [];
     lineas.forEach((l, i) => textos.push({ x: m, y: m + i * (chN + 4), fuente: fN, texto: l }));
-    const yBarras = m + lineas.length * (chN + 4) + 6;
+    const yNombreFin = m + lineas.length * (chN + 4) + 6;
 
     // En el medio: el código de barras, centrado, con su zona en blanco a los costados
     // EAN-13 / EAN-8 (el de fábrica) si con eso las barras salen más gruesas que en Code 128; si no, Code 128
@@ -94,11 +128,15 @@
     if (a) {
       const blanco = cb.blanco;
       const modulos = a.reduce((s, x) => s + x, 0) + 2 * blanco;
-      let fino = Math.min(4, Math.floor((W - 2 * m) / modulos));
+      // Barras finas (hasta 3 puntos): se leen bien y dejan lugar a letras más grandes
+      let fino = Math.min(3, Math.floor((W - 2 * m) / modulos));
       if (fino < 1) { fino = 1; aviso = 'El código es muy largo para esta etiqueta: puede no leerse.'; }
       else if (fino < 2) aviso = 'Etiqueta angosta para este código: las barras salen muy finas. Probá que el lector la lea.';
       const ancho = (modulos - 2 * blanco) * fino;
-      const alto = Math.max(4 * PUNTOS_MM, Math.min(30 * PUNTOS_MM, yPie - 6 - yBarras));
+      // Bajo: cerca de un tercio de la etiqueta (mínimo 6 mm), centrado entre el nombre y el pie
+      const lugar = yPie - 6 - yNombreFin;
+      const alto = Math.max(Math.min(4 * PUNTOS_MM, lugar), Math.min(lugar, Math.max(minBarras, Math.round(H * 0.32)), 20 * PUNTOS_MM));
+      const yBarras = yNombreFin + Math.max(0, Math.round((lugar - alto) / 2));
       // La impresora térmica engorda cada barra: con barras de 3 puntos o más se dibujan un punto más finas,
       // así los espacios angostos no se tapan (lo que lee la cámara del celular). El lector mide de borde a borde
       // de barras iguales, así que el código no cambia.
@@ -253,7 +291,7 @@
     }
   }
 
-  const api = { ascii, renglones, disenoEtiqueta, disenoEstante, modulosQR, tspl, tsplPrueba, tsplRegla, dibujar, FUENTES, PUNTOS_MM };
+  const api = { ascii, renglones, textoPrecio, disenoEtiqueta, disenoEstante, modulosQR, tspl, tsplPrueba, tsplRegla, dibujar, FUENTES, PUNTOS_MM };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.EtiquetaTSPL = api;
   api.elegirCodigo = elegirCodigo; // EAN-13 o Code 128 (aparte, para no chocar con otros cambios de la lista de arriba)

@@ -35,7 +35,7 @@ function ponerAjustesEtiquetasEnPantalla() {
 }
 /** Lo que va impreso en la etiqueta térmica: { nombre, codigo, ubicacion } (el mismo dibujo que el celular). */
 function itemEtiquetadora(x) {
-  if (x.producto) return { nombre: x.producto.nombre, codigo: codigoEtiqueta(x.producto), ubicacion: x.producto.ubicacion || '' };
+  if (x.producto) return { nombre: x.producto.nombre, codigo: codigoEtiqueta(x.producto), ubicacion: x.producto.ubicacion || '', precio: x.producto.precio, moneda: x.producto.moneda || 'UYU' };
   const u = x.ubicacion;
   // Estante: QR con el número corto (U12), el estante grande y la categoría (ver disenoEstante)
   return { qr: true, nombre: u.categoria || 'Ubicación', codigo: u.corto || PREFIJO_UBIC + u.clave, ubicacion: u.ubicacion };
