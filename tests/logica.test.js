@@ -1064,3 +1064,27 @@ test('etiqueta de estante: QR con el número corto, cuadradito por cuadradito', 
   // La de producto sigue con código de barras
   assert.ok(!T.disenoEtiqueta({ codigo: 'C1-0007', nombre: 'Arandela', ubicacion: 'B-3' }, { ancho: 50, alto: 40 }).qr);
 });
+
+test('etiqueta de producto: abajo el número a la izquierda, el precio en el medio y el estante a la derecha', () => {
+  const T = require('../js/etiqueta-tspl.js');
+  assert.equal(T.textoPrecio({ precio: 2700, moneda: 'UYU' }), '$ 2.700');
+  assert.equal(T.textoPrecio({ precio: 4.5 }), '$ 4,50');
+  assert.equal(T.textoPrecio({ precio: 9.9, moneda: 'USD' }), 'U$S 9,90');
+  assert.equal(T.textoPrecio({ precio: 0 }), '');
+  assert.equal(T.textoPrecio({}), '');
+  for (const [ancho, alto] of [[50, 40], [50, 25], [40, 30], [60, 40], [100, 50]]) {
+    const d = T.disenoEtiqueta({ codigo: '7791293049632', nombre: 'Taladro percutor 13 mm', ubicacion: 'MAR-16', precio: 12.5, moneda: 'USD' }, { ancho, alto });
+    const t = (s) => d.textos.find((x) => x.texto === s);
+    const cod = t('7791293049632'), pre = t('U$S 12,50'), est = t('MAR-16');
+    assert.ok(cod && pre && est, `${ancho}x${alto}: están los tres`);
+    const ancho1 = (x) => x.texto.length * { 1: 8, 2: 12, 3: 16, 4: 24, 5: 32 }[x.fuente];
+    assert.ok(cod.x + ancho1(cod) < pre.x && pre.x + ancho1(pre) < est.x, `${ancho}x${alto}: no se pisan`);
+    assert.ok(est.x + ancho1(est) <= d.puntos[0], `${ancho}x${alto}: el estante entra`);
+    const barrasAbajo = Math.max(...d.barras.map((b) => b.y + b.h));
+    assert.ok(Math.min(cod.y, pre.y, est.y) > barrasAbajo, `${ancho}x${alto}: van abajo de las barras`);
+    assert.ok(pre.fuente >= cod.fuente, 'el precio no es más chico que el número');
+  }
+  // Sin precio, como antes
+  const sin = T.disenoEtiqueta({ codigo: 'C1-0007', nombre: 'Arandela', ubicacion: 'B-3' }, { ancho: 50, alto: 40 });
+  assert.ok(!sin.textos.some((x) => x.texto.startsWith('$')));
+});

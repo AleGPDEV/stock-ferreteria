@@ -52,6 +52,19 @@
    * El dibujo de una etiqueta de producto. item: { nombre, codigo, ubicacion }. medida: { ancho, alto } en mm.
    * Devuelve { ancho, alto, textos: [{ x, y, fuente, texto }], barras: [{ x, y, w, h }], aviso } en puntos.
    */
+  /**
+   * El precio para la etiqueta: «$ 2.700», «$ 4,50» o «U$S 9,90» (sin decimales si es redondo).
+   * Sale de item.precio y item.moneda (UYU o USD); vacío si no tiene precio.
+   */
+  function textoPrecio(item) {
+    const n = typeof item.precio === 'number' ? item.precio : Number(String(item.precio == null ? '' : item.precio).replace(',', '.'));
+    if (item.precio == null || item.precio === '' || !Number.isFinite(n) || n <= 0) return '';
+    const redondo = Math.abs(n - Math.round(n)) < 0.005;
+    const [ent, dec] = (redondo ? Math.round(n).toFixed(0) : n.toFixed(2)).split('.');
+    const miles = ent.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return `${item.moneda === 'USD' ? 'U$S' : '$'} ${miles}${dec ? ',' + dec : ''}`;
+  }
+
   function disenoEtiqueta(item, medida) {
     if (item.qr && QR()) return disenoEstante(item, medida);
     const W = Math.round(medida.ancho * PUNTOS_MM), H = Math.round(medida.alto * PUNTOS_MM);
@@ -63,20 +76,39 @@
     const codigo = ascii(item.codigo).toUpperCase();
     const estante = ascii(item.ubicacion).toUpperCase();
     const nombre = ascii(item.nombre);
+    const precio = ascii(textoPrecio(item));
     const textos = [];
     const barras = [];
     let aviso = '';
 
-    // Abajo: el número a la izquierda y el estante a la derecha
-    const [cwE, chE] = FUENTES[fE];
-    let fCod = fC;
-    const xE = W - m - estante.length * cwE;
-    while (fCod > 1 && m + codigo.length * FUENTES[fCod][0] + 10 > (estante ? xE : W - m)) fCod--;
-    const [cwC, chC] = FUENTES[fCod];
-    const altoPie = Math.max(estante ? chE : 0, chC);
+    // Abajo: el número a la izquierda, el precio en el medio (grande: si el código de barras no se lee, el precio
+    // está ahí) y el estante a la derecha. Si no entran, se achica primero el número, después el estante y el precio.
+    const gap = 10;
+    let fCod = fC, fEst = fE, fP = fE; // el precio, del tamaño del estante
+    const ancho = (t, f) => (t ? t.length * FUENTES[f][0] : 0);
+    const total = () => ancho(codigo, fCod) + ancho(precio, fP) + ancho(estante, fEst) + gap * ([codigo, precio, estante].filter(Boolean).length - 1);
+    while (total() > W - 2 * m) {
+      if (fCod > 1) fCod--;
+      else if (fEst > Math.max(2, fP)) fEst--;
+      else if (fP > 2) fP--;
+      else if (fEst > 1) fEst--;
+      else break;
+    }
+    let cod = codigo;
+    // Si igual no entra, el número se corta (está también abajo de las barras… y en el sistema)
+    while (cod.length > 3 && total() - ancho(codigo, fCod) + ancho(cod, fCod) > W - 2 * m) cod = cod.slice(0, -1);
+    const [, chC] = FUENTES[fCod], [cwE, chE] = FUENTES[fEst], [cwP, chP] = FUENTES[fP];
+    const altoPie = Math.max(estante ? chE : 0, precio ? chP : 0, cod ? chC : 0);
     const yPie = H - m - altoPie;
-    if (codigo) textos.push({ x: m, y: yPie + (altoPie - chC), fuente: fCod, texto: codigo.slice(0, Math.floor((W - 2 * m) / cwC)) });
-    if (estante) textos.push({ x: Math.max(m, xE), y: yPie, fuente: fE, texto: estante });
+    if (cod) textos.push({ x: m, y: yPie + (altoPie - chC), fuente: fCod, texto: cod });
+    const xE = W - m - estante.length * cwE;
+    if (estante) textos.push({ x: Math.max(m, xE), y: yPie + (altoPie - chE), fuente: fEst, texto: estante });
+    if (precio) {
+      // Centrado en la etiqueta, pero sin pisar el número ni el estante
+      const izq = m + (cod ? ancho(cod, fCod) + gap : 0), der = (estante ? xE - gap : W - m) - precio.length * cwP;
+      const x = Math.round(Math.max(izq, Math.min(der, (W - precio.length * cwP) / 2)));
+      textos.push({ x, y: yPie + (altoPie - chP), fuente: fP, texto: precio });
+    }
 
     // Arriba: el nombre, en uno o dos renglones
     const [cwN, chN] = FUENTES[fN];
@@ -253,7 +285,7 @@
     }
   }
 
-  const api = { ascii, renglones, disenoEtiqueta, disenoEstante, modulosQR, tspl, tsplPrueba, tsplRegla, dibujar, FUENTES, PUNTOS_MM };
+  const api = { ascii, renglones, textoPrecio, disenoEtiqueta, disenoEstante, modulosQR, tspl, tsplPrueba, tsplRegla, dibujar, FUENTES, PUNTOS_MM };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.EtiquetaTSPL = api;
   api.elegirCodigo = elegirCodigo; // EAN-13 o Code 128 (aparte, para no chocar con otros cambios de la lista de arriba)
