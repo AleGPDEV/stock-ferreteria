@@ -1,7 +1,7 @@
 // Servidor para la app del celular (Etiquetador) en el WiFi del local.
 // Todo pedido pasa por la pantalla del programa (preguntar), que es la dueña de los datos:
 // nunca se lee ni se escribe SQLite por fuera de ella, así un guardado de la pantalla no pisa nada.
-// Consultas: estado, buscar un producto por código o por nombre, estantes y el próximo código libre del celular.
+// Consultas: estado, buscar un producto por código o por nombre, todo el inventario, estantes y el próximo código libre del celular.
 // Escrituras (fase 2): producto nuevo, conteo de uno que ya existe, cambio de estante y foto de un producto. Los estantes NO: se crean
 // solo en la PC (el celular elige de la lista que le manda la PC). Son idempotentes (el celular
 // manda un id propio): si el WiFi se corta y reintenta, no se duplica nada.
@@ -156,6 +156,7 @@ function crearServidorCelular({ clave, preguntar, version = '', puerto = PUERTO,
         case '/api/producto': return deLaPantalla(res, `productoParaCelular(${texto(searchParams.get('codigo'))})`);
         case '/api/productos': return deLaPantalla(res, `productosParaCelular(${texto(searchParams.get('q'))})`);
         case '/api/estantes': return deLaPantalla(res, 'estantesParaCelular()');
+        case '/api/inventario': return deLaPantalla(res, 'inventarioParaCelular()');
         case '/api/codigo-libre': return deLaPantalla(res, `codigoLibreParaCelular(${texto(searchParams.get('equipo'))})`);
         default: return responder(res, 404, { error: 'No existe.' });
       }

@@ -12,7 +12,7 @@ d.productos.push({ id: 'a', codigo: 'MAR-16', barras: ['7790001112223'], nombre:
 app.guardarEstante(d, { codigo: 'B-9', categoria: 'Herramientas' });
 app.guardarEstante(d, { codigo: 'C-1', categoria: 'Herramientas' });
 const pantalla = {
-  estadoParaCelular: () => ({ listo: true, productos: d.productos.length }), productoParaCelular: (c) => app.productoCelular(d, c), productosParaCelular: (q) => app.productosCelular(d, q), estantesParaCelular: () => app.estantesCelular(d),
+  estadoParaCelular: () => ({ listo: true, productos: d.productos.length }), productoParaCelular: (c) => app.productoCelular(d, c), productosParaCelular: (q) => app.productosCelular(d, q), estantesParaCelular: () => app.estantesCelular(d), inventarioParaCelular: () => app.inventarioCelular(d),
   productoDesdeCelular: (x) => app.altaDesdeCelularEn(d, x), conteoDesdeCelular: (x) => app.conteoDesdeCelularEn(d, x), codigoLibreParaCelular: (e) => app.codigoLibreCelular(d, e),
   fotoDesdeCelular: (x) => app.fotoDesdeCelularEn(d, x),
   moverDesdeCelular: (x) => app.moverDesdeCelularEn(d, x),

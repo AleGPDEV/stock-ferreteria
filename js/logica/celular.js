@@ -31,6 +31,13 @@ function productosCelular(d, texto, max = 20) {
   return { productos: lista.slice(0, max).map((x) => datosParaCelular(d, x.p)), mas: Math.max(0, lista.length - max) };
 }
 const estantesCelular = (d) => ({ estantes: ubicacionesDe(d).map((u) => ({ codigo: u.ubicacion, categoria: u.categoria || '', corto: u.corto || '' })) });
+/** Todo el inventario para la pantalla «Productos» del celular: cada producto (sin la foto, solo si tiene) con su marca
+ *  «para revisar», más los estantes y las categorías para agrupar y filtrar. */
+function inventarioCelular(d) {
+  const productos = d.productos.map((p) => ({ ...datosParaCelular(d, p), revisar: !!p.revisar }))
+    .sort((a, b) => ordenNatural(a.nombre, b.nombre));
+  return { productos, estantes: estantesCelular(d).estantes, categorias: nombresCategorias(d) };
+}
 const SIN_DATOS_CELULAR = { error: 'Los datos del programa están dañados: hay que restaurar una copia en la PC.', noListo: true };
 
 /* ---------- Lo que guarda el celular en la PC (fase 2) ----------
@@ -203,3 +210,4 @@ function estadoParaCelular() { return datosDanados ? { ...SIN_DATOS_CELULAR, lis
 const productoParaCelular = (codigo) => (datosDanados ? SIN_DATOS_CELULAR : productoCelular(db, codigo));
 const productosParaCelular = (texto) => (datosDanados ? SIN_DATOS_CELULAR : productosCelular(db, texto));
 const estantesParaCelular = () => (datosDanados ? SIN_DATOS_CELULAR : estantesCelular(db));
+const inventarioParaCelular = () => (datosDanados ? SIN_DATOS_CELULAR : inventarioCelular(db));
