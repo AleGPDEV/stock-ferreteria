@@ -169,6 +169,14 @@ function marcarProductoNuevo(d, p, usuario, rol, origen = 'Nuevo producto') {
   if (p.precio > 0) anotarHistorial(d, { productoId: p.id, codigo: p.codigo, producto: p.nombre, antes: null, despues: red2(p.precio), motivo: `Producto nuevo (${origen})`, usuario: usuario || '' });
 }
 
+/** Un administrador da el visto bueno a un producto que cargó un empleado: se le saca la marca «para revisar». */
+function marcarRevisado(d, id) {
+  const p = (d.productos || []).find((x) => x.id === id);
+  if (!p || !p.revisar) return null;
+  delete p.revisar;
+  return p;
+}
+
 function anotarHistorial(d, x) {
   d.historialPrecios = Array.isArray(d.historialPrecios) ? d.historialPrecios : [];
   d.historialPrecios.push({ id: uid(), fecha: new Date().toISOString(), usuario: sesion ? sesion.nombre : '', ...x });

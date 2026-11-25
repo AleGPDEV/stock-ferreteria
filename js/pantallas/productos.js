@@ -35,13 +35,14 @@ function renderProductos() {
   $('#tabla-prod').innerHTML = lista.length
     ? visibles.map((p) => `
       <tr>
-        <td><div class="con-foto">${miniatura(p)}<div><div class="nom">${esc(p.nombre)}${p.revisar && esAdmin() ? ` <span class="chip info" title="Lo creó ${esc(p.creadoPor || 'un empleado')}${p.creadoEl ? ` el ${fechaHora(p.creadoEl)}` : ''}. Al editarlo queda revisado.">Nuevo · revisar</span>` : ''}</div><div class="meta"><span class="mono">${esc(p.codigo)}${(p.barras || []).length ? ' · ' + (p.barras || []).map(esc).join(' · ') : ''}</span> · ${[p.categoria || 'Sin categoría', p.ubicacion, nombreProv(p.proveedorId)].filter(Boolean).map(esc).join(' · ')}</div></div></div></td>
+        <td><div class="con-foto">${miniatura(p)}<div><div class="nom">${esc(p.nombre)}${p.revisar && esAdmin() ? ` <span class="chip info" title="Lo creó ${esc(p.creadoPor || 'un empleado')}${p.creadoEl ? ` el ${fechaHora(p.creadoEl)}` : ''}. Tocá «Revisado ✓» si está bien, o editalo.">Nuevo · revisar</span>` : ''}</div><div class="meta"><span class="mono">${esc(p.codigo)}${(p.barras || []).length ? ' · ' + (p.barras || []).map(esc).join(' · ') : ''}</span> · ${[p.categoria || 'Sin categoría', p.ubicacion, nombreProv(p.proveedorId)].filter(Boolean).map(esc).join(' · ')}</div></div></div></td>
         <td class="num"><strong>${n(p.stock)}</strong> <span class="u">${esc(p.unidad)}</span></td>
         <td class="num">${n(p.minimo)}</td>
         <td>${chipEstado(p)}</td>
         <td class="num solo-admin">${$m(p.costo, p.moneda)}</td>
         <td class="num">${$m(p.precio, p.moneda)}${precioBajoCosto(p) && esAdmin() ? `<div><span class="chip danger" title="El precio de venta no supera el costo (${$m(p.costo, p.moneda)}).">${p.precio < p.costo ? 'Bajo el costo' : 'Igual al costo'}</span></div>` : ''}</td>
         <td class="acc"><div class="acc-botones">
+          ${p.revisar && esAdmin() ? `<button class="btn sm primary" type="button" data-accion="revisado" data-id="${p.id}" title="Está bien cargado: sacarle la marca «Nuevo · revisar»" aria-label="Marcar ${esc(p.nombre)} como revisado">Revisado ✓</button>` : ''}
           <button class="btn sm verde-suave" type="button" data-accion="entrada" data-id="${p.id}" title="Sumar stock a ${esc(p.nombre)}" aria-label="Sumar stock a ${esc(p.nombre)}">+ Sumar</button>
           <button class="btn sm" type="button" data-accion="salida" data-id="${p.id}" title="Restar stock de ${esc(p.nombre)}" aria-label="Restar stock de ${esc(p.nombre)}">− Restar</button>
           <button class="btn sm ghost" type="button" data-accion="editar" data-id="${p.id}" aria-label="Editar ${esc(p.nombre)}">Editar</button>
@@ -109,7 +110,10 @@ function abrirProducto(id) {
   $('#p-categoria').value = p.categoria;
   $('#p-unidad').value = p.unidad;
   $('#p-proveedor').innerHTML = opcionesProv(p.proveedorId);
-  $('#p-ubicacion').value = p.ubicacion;
+  // El estante se elige de la lista (no se escribe a mano)
+  const gruposEst = opcionesEstanteProducto(db, p.ubicacion);
+  $('#p-ubicacion').innerHTML = `<option value="">${gruposEst.length ? 'Sin estante' : 'Sin estante (todavía no hay estantes: se crean en Depósito)'}</option>`
+    + gruposEst.map((g) => `<optgroup label="${esc(g.grupo)}">${g.opciones.map((o) => `<option value="${esc(o.valor)}"${o.elegido ? ' selected' : ''}>${esc(o.texto)}</option>`).join('')}</optgroup>`).join('');
   $('#p-costo').value = esAdmin() ? p.costo : ''; // el empleado no ve el costo (ni oculto en la página)
   $('#p-precio').value = p.precio;
   $('#p-moneda').value = esUSD(p) ? 'USD' : 'UYU';
@@ -152,7 +156,14 @@ function iniciarProductos() {
     if (!b) return;
     const { accion, id } = b.dataset;
     if (accion === 'editar') abrirProducto(id);
-    else abrirMovRapido(accion, id);
+    else if (accion === 'revisado') {
+      if (!esAdmin()) return;
+      const p = marcarRevisado(db, id);
+      if (!p) return;
+      guardar();
+      render();
+      toast(`${p.nombre}: revisado.`);
+    } else abrirMovRapido(accion, id);
   });
 
   $('#p-foto-archivo').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; elegirFotoForm(f); });

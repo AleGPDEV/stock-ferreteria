@@ -617,7 +617,7 @@
         </select>
       </label>
       <label class="f" for="p-proveedor">Proveedor<select id="p-proveedor"></select></label>
-      <label class="f" for="p-ubicacion">Ubicación<input id="p-ubicacion" type="text" placeholder="Ej.: Estante A-01"></label>
+      <label class="f" for="p-ubicacion"><span>Estante <button type="button" class="ayuda-ico" data-ayuda="Se elige de la lista de estantes. Los estantes se crean en Depósito, con «Nuevo estante».">?</button></span><select id="p-ubicacion"></select></label>
       <label class="f f-wide p-moneda" for="p-moneda"><span>Moneda <button type="button" class="ayuda-ico" data-ayuda="El costo y el precio van en esta moneda. Los productos en dólares se cobran en dólares.">?</button></span><select id="p-moneda"><option value="UYU">Pesos ($)</option><option value="USD">Dólares (U$S)</option></select></label>
       <label class="f solo-admin" for="p-costo"><span id="p-costo-lbl">Costo</span><input id="p-costo" type="number" step="any" min="0" inputmode="decimal"></label>
       <label class="f" for="p-precio"><span><span id="p-precio-lbl">Precio de venta</span> <button type="button" class="ayuda-ico" data-ayuda="Solo el administrador puede cambiar el precio." id="p-precio-nota" hidden>?</button></span><input id="p-precio" type="number" step="any" min="0.01" inputmode="decimal"><small class="muted" id="p-margen"></small></label>
