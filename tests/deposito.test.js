@@ -74,3 +74,19 @@ test('etiquetas: el código de barras nunca se recorta al correr el dibujo (pasa
   // En 40 mm el EAN no gana: sigue en Code 128
   assert.equal(E.elegirCodigo('4061975716071', 288).tipo, 'code128');
 });
+
+test('ficha de producto: el estante se elige de la lista (y se conserva uno viejo que no está)', () => {
+  const app = require('../js/cargar-en-node.js');
+  const d = app.baseVacia();
+  d.estantes = [{ id: 'e1', codigo: 'B-3', categoria: 'Bulonería' }, { id: 'e2', codigo: 'A-10', categoria: '' }, { id: 'e3', codigo: 'A-2', categoria: '' }, { id: 'e4', codigo: 'B-1', categoria: 'Bulonería' }];
+  const g = app.opcionesEstanteProducto(d, 'b-3');
+  assert.deepEqual(g.map((x) => x.grupo), ['Bulonería', 'Sin categoría']);
+  assert.deepEqual(g[0].opciones.map((o) => o.texto), ['B-1', 'B-3']);
+  assert.deepEqual(g[1].opciones.map((o) => o.texto), ['A-2', 'A-10'], 'orden natural');
+  assert.equal(g[0].opciones.find((o) => o.elegido).valor, 'B-3', 'elige el suyo aunque esté escrito distinto');
+  // Uno escrito a mano que no es un estante: queda arriba, elegido, para no perderlo
+  const v = app.opcionesEstanteProducto(d, 'Galpón fondo');
+  assert.equal(v[0].grupo, 'No está en la lista de estantes');
+  assert.deepEqual(v[0].opciones, [{ valor: 'Galpón fondo', texto: 'Galpón fondo (no está en la lista)', elegido: true }]);
+  assert.ok(!app.opcionesEstanteProducto(d, '').some((x) => x.opciones.some((o) => o.elegido)), 'sin estante');
+});
