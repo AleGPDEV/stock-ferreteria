@@ -147,7 +147,7 @@ function exportar(tipo) {
   const COLOR_ESTADO = { sin: 'rojo', bajo: 'naranja' };
   if (tipo === 'inventario') {
     descargarExcel([...db.productos].sort((a, b) => a.nombre.localeCompare(b.nombre)).map((p) => ({
-      'Código': p.codigo, 'Códigos de barras': (p.barras || []).join(' '), 'Producto': p.nombre, 'Categoría': p.categoria, 'Unidad': p.unidad, 'Proveedor': nombreProv(p.proveedorId),
+      'Código': p.codigo, 'Códigos de barras': (p.barras || []).join(' '), 'Producto': p.nombre, 'Categoría': p.categoria, 'Subcategoría': p.subcategoria || '', 'Unidad': p.unidad, 'Proveedor': nombreProv(p.proveedorId),
       'Ubicación': p.ubicacion, 'Stock': p.stock, 'Stock mínimo': p.minimo, 'Estado': { ok: 'En stock', bajo: 'Bajo mínimo', sin: 'Sin stock' }[estado(p)],
       'Moneda': esUSD(p) ? 'USD' : 'UYU', 'Costo': p.costo, 'Precio': p.precio, 'Valor a costo': red(Math.max(p.stock, 0) * p.costo), 'Valor a venta': red(Math.max(p.stock, 0) * p.precio),
     })), 'Inventario', 'inventario', {

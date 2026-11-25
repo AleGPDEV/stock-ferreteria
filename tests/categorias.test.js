@@ -90,3 +90,58 @@ test('las categorías predeterminadas se agregan una sola vez y se pueden borrar
   assert.ok(!app.nombresCategorias(d).includes('Gas'));
   assert.equal(JSON.parse(app.calcularCambios(null, d).cambios.config).categoriasIniciales, true);
 });
+
+test('subcategorías predeterminadas: las 137 de la planilla, una sola vez y solo en categorías que existen', () => {
+  assert.equal(Object.values(app.SUBCATEGORIAS_PREDETERMINADAS).flat().length, 137);
+  const d = app.baseVacia();
+  app.sembrarCategorias(d);
+  app.borrarCategoria(d, 'Gas');
+  const n = app.sembrarSubcategorias(d);
+  assert.equal(n, 137 - 3);
+  assert.deepEqual(app.nombresSubcategorias(d, 'Gas'), []);
+  assert.ok(app.nombresSubcategorias(d, 'herramientas manuales').includes('Pinzas y alicates'));
+  app.borrarSubcategoria(d, 'Herramientas manuales', 'Pinzas y alicates');
+  assert.equal(app.sembrarSubcategorias(d), 0, 'no vuelven');
+  assert.ok(!app.nombresSubcategorias(d, 'Herramientas manuales').includes('Pinzas y alicates'));
+});
+
+test('subcategorías: crear, renombrar (y unir), borrar; siguen a su categoría', () => {
+  const d = local();
+  assert.ok(app.crearSubcategoria(d, 'Herramientas', 'Taladros').nombre);
+  assert.ok(app.crearSubcategoria(d, 'herramientas', 'taladros').error, 'repetida');
+  assert.ok(app.crearSubcategoria(d, 'No existe', 'X').error);
+  d.productos[2].subcategoria = 'Taladros';
+  d.productos.push({ id: 'z', codigo: 'Z', barras: [], nombre: 'Atornillador', categoria: 'Herramientas', subcategoria: 'Atornilladores', stock: 1 });
+  assert.deepEqual(app.subcategoriasDe(d, 'Herramientas'), [{ nombre: 'Atornilladores', productos: 1 }, { nombre: 'Taladros', productos: 1 }]);
+  const r = app.renombrarSubcategoria(d, 'Herramientas', 'Atornilladores', 'taladros');
+  assert.equal(r.unidas, true);
+  assert.equal(d.productos.find((p) => p.id === 'z').subcategoria, 'Taladros');
+  assert.deepEqual(app.nombresSubcategorias(d, 'Herramientas'), ['Taladros']);
+  // Renombrar la categoría se lleva sus subcategorías
+  app.renombrarCategoria(d, 'Herramientas', 'Herramientas eléctricas');
+  assert.deepEqual(app.nombresSubcategorias(d, 'Herramientas eléctricas'), ['Taladros']);
+  assert.deepEqual(app.nombresSubcategorias(d, 'Herramientas'), []);
+  assert.equal(app.subcategoriaComoEnLista(d, 'herramientas electricas', 'TALADROS'), 'Taladros');
+  // Borrar la subcategoría: los productos quedan con la categoría
+  assert.equal(app.borrarSubcategoria(d, 'Herramientas eléctricas', 'Taladros').productos, 2);
+  assert.equal(d.productos.find((p) => p.id === 'z').subcategoria, undefined);
+  assert.equal(d.productos.find((p) => p.id === 'z').categoria, 'Herramientas eléctricas');
+  // Borrar la categoría borra sus subcategorías
+  app.crearSubcategoria(d, 'Tornillería', 'Bulones');
+  d.productos[0].subcategoria = 'Bulones';
+  app.borrarCategoria(d, 'Tornillería');
+  assert.equal(d.productos[0].subcategoria, undefined);
+  assert.deepEqual(app.nombresSubcategorias(d, 'Tornillería'), []);
+});
+
+test('importar con columna «Subcategoría»: la pone y la agrega a la lista de su categoría', () => {
+  const d = local();
+  const plan = app.planImportacion(d, [{ 'Código': 'C', 'Categoría': 'Herramientas', 'Subcategoría': 'Taladros' }, { 'Código': 'A', 'Categoría': 'Otra', 'Subcategoría': '' }]);
+  d.productos[0].subcategoria = 'Vieja';
+  app.aplicarImportacion(d, plan, { otros: true });
+  assert.equal(d.productos.find((p) => p.id === 'c').subcategoria, 'Taladros');
+  assert.deepEqual(app.nombresSubcategorias(d, 'Herramientas'), ['Taladros']);
+  const a = d.productos.find((p) => p.id === 'a');
+  assert.equal(a.categoria, 'Otra');
+  assert.equal(a.subcategoria, undefined, 'cambió de categoría: la subcategoría vieja no sirve');
+});

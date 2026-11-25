@@ -45,7 +45,12 @@ function entrar(u) {
   sesion = u;
   loginUsuario = null;
   // La primera vez, la lista de categorías arranca con las de una ferretería (js/logica/categorias.js)
-  if (sembrarCategorias(db)) guardar();
+  // y sus subcategorías (cada una, una sola vez: queda marcado en los datos)
+  if (!db.categoriasIniciales || !db.subcategoriasIniciales) {
+    sembrarCategorias(db);
+    sembrarSubcategorias(db);
+    guardar();
+  }
   $('#login').hidden = true;
   aplicarPermisos();
   if (!esAdmin()) $('#ventas-fecha').value = isoLocal();

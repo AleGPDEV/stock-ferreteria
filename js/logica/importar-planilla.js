@@ -12,6 +12,7 @@ const COLUMNAS = {
   barras: ['codigo de barras', 'codigos de barras', 'ean', 'barras'],
   nombre: ['producto', 'nombre', 'descripcion', 'articulo', 'detalle'],
   categoria: ['categoria', 'rubro', 'familia'],
+  subcategoria: ['subcategoria', 'sub categoria', 'subrubro', 'sub rubro'],
   unidad: ['unidad', 'um', 'unidad de medida'],
   proveedor: ['proveedor'],
   ubicacion: ['ubicacion', 'estante', 'lugar'],
@@ -146,7 +147,7 @@ function planImportacion(d, filas) {
     }
     vistos.set(clave, nombre);
     const datos = {
-      nombre, categoria: txt('categoria'), unidad: txt('unidad') ? normUnidad(txt('unidad')) : '', proveedor: provFila,
+      nombre, categoria: txt('categoria'), subcategoria: txt('subcategoria'), unidad: txt('unidad') ? normUnidad(txt('unidad')) : '', proveedor: provFila,
       ubicacion: txt('ubicacion'), stock: num('stock'), minimo: num('minimo'), costo: num('costo'), precio: num('precio'),
       entrada: num('entrada'), factura: txt('factura'), barras, codprov: codprov || (choca ? codigo : ''),
       moneda: leerMoneda(txt('moneda')),
@@ -239,6 +240,7 @@ function aplicarImportacion(d, plan, campos) {
       ubicacion: x.ubicacion, costo: pos(x.costo) || 0, precio: pos(x.precio) || 0, minimo: pos(x.minimo) || 0, stock: 0,
       ...(x.moneda === 'USD' ? { moneda: 'USD' } : {}),
     };
+    if (p.categoria && x.subcategoria) p.subcategoria = asegurarSubcategoria(d, p.categoria, x.subcategoria);
     d.productos.push(p);
     if (x.codprov && p.proveedorId) anotarCodigoProv(p, p.proveedorId, x.codprov, x.nombre);
     (x.barras || []).forEach((b) => { if (b !== p.codigo) asignarBarras(d, p, b); });
@@ -253,7 +255,12 @@ function aplicarImportacion(d, plan, campos) {
     if (x.codprov && x.proveedor) anotarCodigoProv(p, provId(x.proveedor), x.codprov, x.nombre); // y el código del proveedor
     if (c.nombre && x.nombre) p.nombre = x.nombre;
     if (c.otros) {
-      if (x.categoria) p.categoria = x.categoria;
+      if (x.categoria) {
+        // Otra categoría: la subcategoría vieja era de la anterior
+        if (claveCategoria(x.categoria) !== claveCategoria(p.categoria)) delete p.subcategoria;
+        p.categoria = x.categoria;
+      }
+      if (x.subcategoria && p.categoria) p.subcategoria = asegurarSubcategoria(d, p.categoria, x.subcategoria);
       if (x.unidad) p.unidad = x.unidad;
       if (x.ubicacion) p.ubicacion = x.ubicacion;
       if (x.proveedor) p.proveedorId = provId(x.proveedor);

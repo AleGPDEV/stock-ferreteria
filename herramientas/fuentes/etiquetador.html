@@ -1625,7 +1625,7 @@ function pintarInv() {
   const sinFoto = todos.filter((p) => !p.foto).length;
   $('#inv-sub').textContent = inv.cargando ? 'Actualizando…' : `${numero.format(todos.length)} productos · ${numero.format(sinFoto)} sin foto`;
   const pal = normal(inv.q).trim().split(/\s+/).filter(Boolean);
-  const buscados = pal.length ? todos.filter((p) => { const t = normal(`${p.nombre} ${p.codigo} ${(p.barras || []).join(' ')}`); return pal.every((w) => t.includes(w)); }) : todos;
+  const buscados = pal.length ? todos.filter((p) => { const t = normal(`${p.nombre} ${p.codigo} ${(p.barras || []).join(' ')} ${p.subcategoria || ''}`); return pal.every((w) => t.includes(w)); }) : todos;
   const cuenta = Object.fromEntries(FILTROS_INV.map(([k, , f]) => [k, buscados.filter(f).length]));
   $('#inv-filtros').innerHTML = FILTROS_INV
     .filter(([k]) => k === 'todos' || k === inv.filtro || cuenta[k] > 0)
@@ -1649,7 +1649,8 @@ function pintarInv() {
   inv.todoAbierto = pal.length > 0 || inv.filtro !== 'todos' || claves.length === 1;
   const fila = (i) => {
     const p = lista[i];
-    const otro = porEstante ? (p.categoria ? esc(p.categoria) : '') : p.ubicacion ? `Estante ${esc(p.ubicacion)}` : 'Sin estante';
+    const cat = p.categoria ? esc(p.categoria) + (p.subcategoria ? ' › ' + esc(p.subcategoria) : '') : '';
+    const otro = porEstante ? cat : (p.subcategoria ? esc(p.subcategoria) + ' · ' : '') + (p.ubicacion ? `Estante ${esc(p.ubicacion)}` : 'Sin estante');
     const precio = Number(p.precio) > 0 ? $m(p.precio, p.moneda) : 'Sin precio';
     const hay = p.stock == null || p.stock === '' ? '' : `Hay ${numero.format(p.stock)}${p.unidad && p.unidad !== 'unidad' ? ' ' + esc(p.unidad) : ''}`;
     const chips = (!p.foto ? '<span class="chip warn">Sin foto</span>' : inv.fotoNueva.has(p.codigo) ? '<span class="chip ok">Foto nueva</span>' : '')
