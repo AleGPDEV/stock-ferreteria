@@ -97,8 +97,7 @@ function abrirEstante(clave, codigoNuevo = '') {
   $('#est-form').dataset.id = e ? e.id : '';
   $('#est-titulo').textContent = e ? `Estante ${e.codigo}` : 'Nuevo estante';
   $('#est-codigo').value = e ? e.codigo : (u ? u.ubicacion : codigoNuevo);
-  $('#est-categoria').value = e ? e.categoria : '';
-  $('#est-cats').innerHTML = opcionesCategorias();
+  $('#est-categoria').innerHTML = opcionesLista(nombresCategorias(db), e ? e.categoria : '', 'Sin categoría');
   $('#est-borrar').hidden = !(e && esAdmin());
   $('#est-err').textContent = '';
   $('#dlg-estante').showModal();

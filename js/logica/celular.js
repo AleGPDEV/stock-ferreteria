@@ -9,7 +9,7 @@
  * caja o usuarios. Funciona aunque nadie haya entrado al programa: el celular se usa en el depósito mientras la PC
  * del mostrador puede estar en la pantalla de ingreso. */
 function datosParaCelular(d, p) {
-  return { codigo: p.codigo, barras: codigosDe(p).filter((c) => c !== p.codigo), nombre: p.nombre, categoria: p.categoria || '', unidad: p.unidad || '',
+  return { codigo: p.codigo, barras: codigosDe(p).filter((c) => c !== p.codigo), nombre: p.nombre, categoria: p.categoria || '', subcategoria: p.subcategoria || '', unidad: p.unidad || '',
     proveedor: nombreProveedorDe(d, p.proveedorId), ubicacion: p.ubicacion || '', stock: p.stock, minimo: p.minimo, precio: p.precio, moneda: esUSD(p) ? 'USD' : 'UYU', foto: !!(p.foto || p.fotoData) };
 }
 /** Por código propio, de barras o de proveedor. { producto } (null si no está). */

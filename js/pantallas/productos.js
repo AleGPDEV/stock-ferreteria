@@ -3,12 +3,18 @@
 
 /* ---------- Productos ---------- */
 
+/** Separa categoría y subcategoría en el filtro de la lista y en la ficha. */
+const SEP_SUBCAT = '\u001f';
+
 function renderProductos() {
-  const cats = [...new Set(db.productos.map((p) => p.categoria).filter(Boolean))].sort();
+  // Categorías con productos y, abajo de cada una, sus subcategorías con productos (valor «categoría␟subcategoría»)
+  const cats = categoriasDe(db).filter((c) => c.productos);
   const selCat = $('#prod-cat');
   const actual = selCat.value;
-  selCat.innerHTML = '<option value="">Todas las categorías</option>' + cats.map((c) => `<option${c === actual ? ' selected' : ''}>${esc(c)}</option>`).join('');
-  $('#lista-cat').innerHTML = opcionesCategorias();
+  selCat.innerHTML = '<option value="">Todas las categorías</option>' + cats.map((c) => `<option value="${esc(c.nombre)}">${esc(c.nombre)} (${c.productos})</option>`
+    + subcategoriasDe(db, c.nombre).filter((s) => s.productos).map((s) => `<option value="${esc(c.nombre + SEP_SUBCAT + s.nombre)}">\u00a0\u00a0\u00a0› ${esc(s.nombre)} (${s.productos})</option>`).join('')).join('');
+  selCat.value = actual;
+  if (selCat.value !== actual) selCat.value = '';
   // Estantes: los mismos que en Depósito, con su categoría y cuántos productos tiene cada uno
   const selEst = $('#prod-estante');
   const estElegido = selEst.value;
@@ -20,12 +26,12 @@ function renderProductos() {
   if (selEst.value !== estElegido) selEst.value = ''; // el estante ya no existe: se muestran todos
 
   const q = normal($('#prod-buscar').value.trim());
-  const cat = selCat.value;
+  const [cat, subcat] = selCat.value.split(SEP_SUBCAT);
   const est = $('#prod-estado').value;
   const estante = selEst.value;
   const lista = db.productos
-    .filter((p) => !q || coincide(`${textoCodigos(p)} ${p.nombre} ${p.ubicacion} ${nombreProv(p.proveedorId)}`, q))
-    .filter((p) => !cat || p.categoria === cat)
+    .filter((p) => !q || coincide(`${textoCodigos(p)} ${p.nombre} ${p.ubicacion} ${nombreProv(p.proveedorId)} ${p.categoria || ''} ${p.subcategoria || ''}`, q))
+    .filter((p) => !cat || (claveCategoria(p.categoria) === claveCategoria(cat) && (!subcat || claveCategoria(p.subcategoria) === claveCategoria(subcat))))
     .filter((p) => enEstante(p, estante))
     .filter((p) => !est || (est === 'reponer' ? estado(p) !== 'ok' : est === 'sincosto' ? !(p.costo > 0) : est === 'sinprecio' ? !(p.precio > 0) : est === 'sinfoto' ? !tieneFoto(p) : est === 'bajocosto' ? precioBajoCosto(p) : est === 'revisar' ? !!p.revisar : estado(p) === est))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
@@ -35,7 +41,7 @@ function renderProductos() {
   $('#tabla-prod').innerHTML = lista.length
     ? visibles.map((p) => `
       <tr>
-        <td><div class="con-foto">${miniatura(p)}<div><div class="nom">${esc(p.nombre)}${p.revisar && esAdmin() ? ` <span class="chip info" title="Lo creó ${esc(p.creadoPor || 'un empleado')}${p.creadoEl ? ` el ${fechaHora(p.creadoEl)}` : ''}. Tocá «Revisado ✓» si está bien, o editalo.">Nuevo · revisar</span>` : ''}</div><div class="meta"><span class="mono">${esc(p.codigo)}${(p.barras || []).length ? ' · ' + (p.barras || []).map(esc).join(' · ') : ''}</span> · ${[p.categoria || 'Sin categoría', p.ubicacion, nombreProv(p.proveedorId)].filter(Boolean).map(esc).join(' · ')}</div></div></div></td>
+        <td><div class="con-foto">${miniatura(p)}<div><div class="nom">${esc(p.nombre)}${p.revisar && esAdmin() ? ` <span class="chip info" title="Lo creó ${esc(p.creadoPor || 'un empleado')}${p.creadoEl ? ` el ${fechaHora(p.creadoEl)}` : ''}. Tocá «Revisado ✓» si está bien, o editalo.">Nuevo · revisar</span>` : ''}</div><div class="meta"><span class="mono">${esc(p.codigo)}${(p.barras || []).length ? ' · ' + (p.barras || []).map(esc).join(' · ') : ''}</span> · ${[p.categoria ? p.categoria + (p.subcategoria ? ' › ' + p.subcategoria : '') : 'Sin categoría', p.ubicacion, nombreProv(p.proveedorId)].filter(Boolean).map(esc).join(' · ')}</div></div></div></td>
         <td class="num"><strong>${n(p.stock)}</strong> <span class="u">${esc(p.unidad)}</span></td>
         <td class="num">${n(p.minimo)}</td>
         <td>${chipEstado(p)}</td>
@@ -88,6 +94,25 @@ function renderCodProv() {
   $('#p-codprov-prov').innerHTML = '<option value="">Proveedor…</option>' + db.proveedores.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')).map((v) => `<option value="${v.id}">${esc(v.nombre)}</option>`).join('');
 }
 
+/* Categoría y subcategoría de la ficha: se eligen de la lista (las crea el administrador en «Categorías») */
+function opcionesLista(nombres, actual, vacio) {
+  const k = claveCategoria(actual);
+  const esta = !k || nombres.some((n) => claveCategoria(n) === k);
+  return `<option value="">${esc(vacio)}</option>`
+    + (esta ? '' : `<option value="${esc(actual)}" selected>${esc(actual)}</option>`)
+    + nombres.map((n) => `<option value="${esc(n)}"${k && claveCategoria(n) === k ? ' selected' : ''}>${esc(n)}</option>`).join('');
+}
+function pintarSubcategoriasFicha(actual) {
+  const cat = $('#p-categoria').value;
+  const subs = cat ? nombresSubcategorias(db, cat) : [];
+  $('#p-subcategoria').innerHTML = opcionesLista(subs, actual, !cat ? 'Elegí primero la categoría' : subs.length ? 'Sin subcategoría' : 'Esta categoría no tiene subcategorías');
+  $('#p-subcategoria').disabled = !cat || (!subs.length && !actual);
+}
+function pintarCategoriasFicha(categoria, subcategoria) {
+  $('#p-categoria').innerHTML = opcionesLista(nombresCategorias(db), categoria || '', 'Sin categoría');
+  pintarSubcategoriasFicha(subcategoria || '');
+}
+
 function abrirProducto(id) {
   editandoProd = id || null;
   const p = id ? producto(id) : { codigo: '', nombre: '', categoria: '', unidad: 'unidad', proveedorId: '', ubicacion: '', costo: '', precio: '', minimo: '' };
@@ -107,7 +132,7 @@ function abrirProducto(id) {
   $('#p-unir-buscar').value = '';
   $('#p-unir-res').innerHTML = '';
   $('#p-nombre').value = p.nombre;
-  $('#p-categoria').value = p.categoria;
+  pintarCategoriasFicha(p.categoria, p.subcategoria);
   $('#p-unidad').value = p.unidad;
   $('#p-proveedor').innerHTML = opcionesProv(p.proveedorId);
   // El estante se elige de la lista (no se escribe a mano)
@@ -145,6 +170,13 @@ function actualizarMargen() {
 }
 
 function iniciarProductos() {
+  // Al cambiar la categoría, la subcategoría se elige de nuevo (de las de esa categoría)
+  $('#p-categoria').addEventListener('change', () => pintarSubcategoriasFicha(''));
+  // «Administrar categorías» desde la ficha: al cerrar la ventana, las listas de la ficha quedan al día
+  $('#p-admin-cat').addEventListener('click', abrirCategorias);
+  $('#dlg-categorias').addEventListener('close', () => {
+    if ($('#dlg-prod').open) pintarCategoriasFicha(categoriaComoEnLista(db, $('#p-categoria').value), $('#p-subcategoria').value);
+  });
   $('#btn-nuevo-prod').addEventListener('click', () => abrirProducto());
   ['#prod-cat', '#prod-estante', '#prod-estado'].forEach((s) => $(s).addEventListener('input', renderProductos));
   alDejarDeEscribir($('#prod-buscar'), renderProductos);
@@ -220,6 +252,7 @@ function iniciarProductos() {
       codigo: $('#p-codigo').value.trim().toUpperCase(),
       nombre: $('#p-nombre').value.trim(),
       categoria: categoriaComoEnLista(db, $('#p-categoria').value), // como está en la lista (mayúsculas y tildes)
+      subcategoria: $('#p-categoria').value ? subcategoriaComoEnLista(db, $('#p-categoria').value, $('#p-subcategoria').value) : '',
       unidad: $('#p-unidad').value,
       proveedorId: $('#p-proveedor').value,
       ubicacion: $('#p-ubicacion').value.trim(),
@@ -228,6 +261,7 @@ function iniciarProductos() {
       minimo: Number($('#p-minimo').value) || 0,
       moneda: $('#p-moneda').value === 'USD' ? 'USD' : 'UYU',
     };
+    if (!datos.subcategoria) delete datos.subcategoria;
     if (!datos.codigo) return err('Escribí un código para el producto.');
     if (!datos.nombre) return err('Escribí el nombre del producto.');
     const actual = editandoProd ? producto(editandoProd) : null;
@@ -276,7 +310,8 @@ function iniciarProductos() {
       anotarPrecio(db, actual, datos.precio, 'Editar producto', moneda);
       Object.assign(actual, datos);
       if (moneda === 'USD') actual.moneda = 'USD'; else delete actual.moneda;
-      if (esAdmin()) delete actual.revisar; // un administrador lo revisó
+      if (!datos.subcategoria) delete actual.subcategoria;
+      // La marca «Nuevo · revisar» se saca solo con el botón «Revisado ✓» (editar no alcanza)
       toast('Producto guardado.');
     } else {
       const p = { id: nuevoId, ...datos, ...(moneda === 'USD' ? { moneda } : {}), stock: 0 };
