@@ -34,6 +34,26 @@ function ubicacionesDe(d) {
 /* Estantes: las ubicaciones se cargan de antemano, cada una con su categoría («A-1 · Sanitaria»).
  * El producto guarda en p.ubicacion el nombre del estante. Se guardan en db.estantes (configuración). */
 const estantesDe = (d) => (Array.isArray(d.estantes) ? d.estantes : []);
+
+/**
+ * Las opciones para elegir el estante de un producto: los estantes cargados (agrupados por categoría) y, si el
+ * producto ya tenía escrito uno que no está en la lista, ese también (para no perderlo al editar).
+ * Devuelve [{ grupo, opciones: [{ valor, texto, elegido }] }]; el valor es el nombre del estante.
+ */
+function opcionesEstanteProducto(d, actual) {
+  const k = claveUbic(actual);
+  const est = estantesDe(d).filter((e) => claveUbic(e.codigo));
+  const grupos = new Map();
+  for (const e of est) {
+    const g = e.categoria || 'Sin categoría';
+    if (!grupos.has(g)) grupos.set(g, []);
+    grupos.get(g).push({ valor: e.codigo, texto: e.codigo, elegido: !!k && claveUbic(e.codigo) === k });
+  }
+  const orden = [...grupos.keys()].sort((x, y) => (x === 'Sin categoría') - (y === 'Sin categoría') || ordenNatural(x, y));
+  const lista = orden.map((g) => ({ grupo: g, opciones: grupos.get(g).sort((a, b) => ordenNatural(a.texto, b.texto)) }));
+  if (k && !est.some((e) => claveUbic(e.codigo) === k)) lista.unshift({ grupo: 'No está en la lista de estantes', opciones: [{ valor: String(actual).trim(), texto: `${String(actual).trim()} (no está en la lista)`, elegido: true }] });
+  return lista;
+}
 /* Cada estante tiene un número fijo y corto (U1, U2…): es lo que lleva el código de barras de su etiqueta.
  * Así la etiqueta se lee aunque el nombre sea largo («Herramientas eléctricas 12»). No se vuelve a usar. */
 const idEstante = (e) => (e && Number(e.num) > 0 ? `U${e.num}` : '');

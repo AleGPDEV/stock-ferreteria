@@ -254,3 +254,15 @@ test('códigos: un UPC de 12 números y su EAN-13 con 0 adelante son el mismo', 
   assert.match(agregarCodigoExtra(d, ['012345678905'], '0012345678905', 'TAL-1', 'u').error, /ya está en la lista/);
   assert.match(agregarCodigoExtra(d, [], '098765432109', '0098765432109', 'e').error, /ya es el código de este producto/);
 });
+
+test('«Revisado ✓»: le saca la marca de revisar a un producto que cargó un empleado', () => {
+  const app = require('../js/cargar-en-node.js');
+  const d = app.baseVacia();
+  d.productos.push({ id: 'a', codigo: 'A', nombre: 'Martillo', revisar: true, creadoPor: 'Empleado' }, { id: 'b', codigo: 'B', nombre: 'Pinza' });
+  assert.equal(app.marcarRevisado(d, 'a').nombre, 'Martillo');
+  assert.equal('revisar' in d.productos[0], false);
+  assert.equal(d.productos[0].creadoPor, 'Empleado', 'queda quién lo cargó');
+  assert.equal(app.marcarRevisado(d, 'a'), null, 'ya estaba revisado');
+  assert.equal(app.marcarRevisado(d, 'b'), null);
+  assert.equal(app.marcarRevisado(d, 'no-existe'), null);
+});
