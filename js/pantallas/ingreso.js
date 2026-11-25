@@ -44,6 +44,8 @@ function aplicarPermisos() {
 function entrar(u) {
   sesion = u;
   loginUsuario = null;
+  // La primera vez, la lista de categorías arranca con las de una ferretería (js/logica/categorias.js)
+  if (sembrarCategorias(db)) guardar();
   $('#login').hidden = true;
   aplicarPermisos();
   if (!esAdmin()) $('#ventas-fecha').value = isoLocal();
