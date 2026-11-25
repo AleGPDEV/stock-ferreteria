@@ -84,7 +84,7 @@ test('servidor: pide el token, contesta lo que dice la pantalla y no deja escrib
   let clave = { token: 'secreto-123', pcId: 'pc-1' };
   const preguntados = [];
   // Hace de pantalla: corre la función pedida sobre los datos de prueba
-  const pantalla = { estadoParaCelular: () => ({ listo: true, productos: d.productos.length }), productoParaCelular: (c) => app.productoCelular(d, c), productosParaCelular: (q) => app.productosCelular(d, q), estantesParaCelular: () => app.estantesCelular(d) };
+  const pantalla = { estadoParaCelular: () => ({ listo: true, productos: d.productos.length }), productoParaCelular: (c) => app.productoCelular(d, c), productosParaCelular: (q) => app.productosCelular(d, q), estantesParaCelular: () => app.estantesCelular(d), inventarioParaCelular: () => app.inventarioCelular(d) };
   const preguntar = async (js) => { preguntados.push(js); return Function(...Object.keys(pantalla), `return ${js}`)(...Object.values(pantalla)); };
   const s = crearServidorCelular({ clave: () => clave, preguntar, version: '9.9.9', puerto: 0, host: '127.0.0.1' });
   assert.equal(await s.iniciar(), null);
@@ -101,6 +101,9 @@ test('servidor: pide el token, contesta lo que dice la pantalla y no deja escrib
     const r2 = await pedir(p, `/api/productos?q=${encodeURIComponent('cable 2,5')}`, 'secreto-123');
     assert.deepEqual(r2.data.productos.map((x) => x.codigo), ['CAB-25']);
     assert.ok((await pedir(p, '/api/estantes', 'secreto-123')).data.estantes.length >= 2);
+    const inv = (await pedir(p, '/api/inventario', 'secreto-123')).data;
+    assert.equal(inv.productos.length, d.productos.length);
+    assert.ok(Array.isArray(inv.estantes) && Array.isArray(inv.categorias));
     // Lo escrito por el celular no puede cerrar la llamada a la pantalla e inyectar código
     const malo = `x"); estadoParaCelular("`;
     await pedir(p, `/api/producto?codigo=${encodeURIComponent(malo)}`, 'secreto-123');
@@ -383,4 +386,21 @@ test('servidor: POST /api/mover cambia el estante en la PC', async () => {
     assert.equal(mal.status, 422);
     assert.equal(mal.data.noEsEstante, true);
   } finally { await s.detener(); }
+});
+
+test('inventario del celular: todos los productos, sin la foto, con «revisar», y las categorías', () => {
+  const d = base();
+  d.productos[0].fotoData = 'data:image/jpeg;base64,AAAA';
+  d.productos[1].revisar = true;
+  d.productos[2].categoria = 'Electricidad';
+  const r = app.inventarioCelular(d);
+  assert.equal(r.productos.length, d.productos.length);
+  const de = (id) => r.productos.find((x) => x.codigo === d.productos[id].codigo);
+  assert.equal(de(0).foto, true);
+  assert.ok(!JSON.stringify(r).includes('AAAA'), 'la foto en sí no viaja');
+  assert.equal(de(1).revisar, true);
+  assert.equal(de(0).revisar, false);
+  assert.ok(r.categorias.includes('Electricidad'));
+  const nombres = r.productos.map((x) => x.nombre);
+  assert.deepEqual(nombres, nombres.slice().sort((a, b) => a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' })));
 });

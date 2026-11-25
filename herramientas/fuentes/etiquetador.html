@@ -94,9 +94,9 @@ h2 { margin: 0; font-size: 17px; line-height: 1.3; font-weight: 700; }
 .buscador::before { content: ""; position: absolute; left: 14px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); pointer-events: none; background: var(--muted);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='m15.5 15.5 5 5'/%3E%3C/svg%3E") center / contain no-repeat;
           mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='m15.5 15.5 5 5'/%3E%3C/svg%3E") center / contain no-repeat; }
-#escanear, #buscar { width: 100%; min-height: 48px; padding: 10px 14px 10px 42px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); font-size: 16px; }
-#escanear:focus, #buscar:focus { outline: none; border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
-#escanear::placeholder, #buscar::placeholder { color: var(--muted); }
+#escanear, #buscar, #inv-buscar { width: 100%; min-height: 48px; padding: 10px 14px 10px 42px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); font-size: 16px; }
+#escanear:focus, #buscar:focus, #inv-buscar:focus { outline: none; border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
+#escanear::placeholder, #buscar::placeholder, #inv-buscar::placeholder { color: var(--muted); }
 .v-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .v-lista:empty { display: none; }
 .v-lista li + li { border-top: 1px solid var(--line-2); }
@@ -185,6 +185,55 @@ label.btn input { display: none; }
 .chip { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--surface-2); color: var(--muted); line-height: 1.4; }
 .chip.ok { background: var(--verde-soft); color: var(--verde); }
 .chip.nuevo { background: var(--accent-soft); color: var(--accent-ink); }
+.chip.warn { background: var(--warn-soft); color: var(--warn); }
+
+/* ---------- Productos: todo el inventario de la PC, en una pantalla propia ---------- */
+html.con-inv body { overflow: hidden; }
+.pantalla { position: fixed; inset: 0; z-index: 15; background: var(--bg); display: flex; flex-direction: column; }
+.pantalla .top { position: static; }
+.inv-herr { background: var(--surface); border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px;
+  padding: 8px max(12px, env(safe-area-inset-right, 0px)) 10px max(12px, env(safe-area-inset-left, 0px)); }
+.inv-herr > *, .inv-cuerpo > * { width: 100%; max-width: 640px; margin-left: auto; margin-right: auto; }
+.segmento { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-2); }
+.segmento button { flex: 1; min-height: 40px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-weight: 600; font-size: 14.5px; cursor: pointer; }
+.segmento button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(20, 24, 28, .14); }
+.filtros { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.filtros::-webkit-scrollbar { display: none; }
+.filtros button { flex: none; min-height: 36px; padding: 4px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); color: var(--fg);
+  font-weight: 600; font-size: 14px; white-space: nowrap; cursor: pointer; }
+.filtros button b { margin-left: 4px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.filtros button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.filtros button[aria-pressed="true"] b { color: inherit; opacity: .85; }
+.inv-cuerpo { flex: 1; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px;
+  padding: 12px max(12px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); }
+.grupo { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; box-shadow: var(--sombra); }
+.grupo > summary { list-style: none; display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 8px 12px 8px 16px; cursor: pointer; }
+.grupo > summary::-webkit-details-marker { display: none; }
+.grupo > summary::after { content: "▾"; color: var(--muted); transition: transform .15s; }
+.grupo[open] > summary::after { transform: rotate(180deg); }
+.grupo .g-nom { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.grupo .g-sub { color: var(--muted); font-size: 13px; font-weight: 400; }
+.grupo .g-n { margin-left: auto; display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.inv-lista { list-style: none; margin: 0; padding: 0; }
+.inv-lista li { display: flex; align-items: stretch; border-top: 1px solid var(--line-2); }
+.inv-prod { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 10px 4px 10px 16px; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.inv-prod:active, .inv-foto:active { background: var(--surface-2); }
+.inv-prod .nom { font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.inv-prod .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; color: var(--muted); font-size: 13px; }
+.inv-foto { flex: none; width: 56px; border: 0; background: transparent; color: var(--accent-ink); font-size: 22px; cursor: pointer; }
+
+/* ---------- Cámara para las fotos: dentro de la app y siempre la de atrás ---------- */
+html.con-camara body { overflow: hidden; }
+.camara { position: fixed; inset: 0; z-index: 40; background: #000; color: #fff; display: flex; flex-direction: column; justify-content: space-between;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+.camara video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.camara > :not(video) { position: relative; }
+.cam-pie { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: rgba(0, 0, 0, .55); border-radius: 16px; padding: 12px; }
+.cam-pie .btn { flex: 1 1 0; min-width: 0; background: rgba(255, 255, 255, .14); border-color: rgba(255, 255, 255, .3); color: #fff; }
+.cam-pie .btn[hidden] { display: inline-flex !important; visibility: hidden; }
+.cam-disparo { flex: none; width: 72px; height: 72px; border-radius: 50%; border: 4px solid #fff; background: rgba(255, 255, 255, .25); cursor: pointer; }
+.cam-disparo:active { background: #fff; }
+.cam-disparo:disabled { opacity: .4; }
 
 /* ---------- Ventanas: hojas que suben desde abajo ---------- */
 dialog { border: 0; padding: 0; background: var(--surface); color: var(--fg); width: 100%; max-width: 100%; max-height: 92vh; margin: auto auto 0; border-radius: 20px 20px 0 0;
@@ -285,6 +334,7 @@ html.escaneando body > :not(#visor) { visibility: hidden !important; }
       <div class="buscador"><input id="escanear" type="text" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="Buscar por código o nombre" aria-label="Buscar un producto por código o nombre"></div>
       <ul class="v-lista" id="b-lista"></ul>
       <div class="botonera pareja mosaicos">
+        <button class="btn tono" type="button" id="btn-productos"><span class="ico" aria-hidden="true">☰</span>Productos</button>
         <button class="btn tono" type="button" id="sin-codigo"><span class="ico" aria-hidden="true">+</span>Sin código</button>
         <button class="btn tono" type="button" id="btn-mover"><span class="ico" aria-hidden="true">⇄</span>Cambiar estante</button>
       </div>
@@ -313,8 +363,8 @@ html.escaneando body > :not(#visor) { visibility: hidden !important; }
         <div class="foto-campo">
           <div class="foto-prev" id="c-foto-prev"><span>Sin foto</span></div>
           <div>
-            <label class="btn sm" for="c-foto" id="c-foto-btn">📷 Sacar foto</label>
-            <input id="c-foto" class="visualmente-oculto" type="file" accept="image/*" capture="environment">
+            <button class="btn sm" type="button" id="c-foto-btn">📷 Sacar foto</button>
+            <input id="c-foto" class="visualmente-oculto" type="file" accept="image/*" capture="environment" aria-hidden="true" tabindex="-1">
             <button class="btn sm ghost" type="button" id="c-foto-quitar" hidden>No usar esta foto</button>
             <p class="ayuda" id="c-foto-ayuda"></p>
           </div>
@@ -358,6 +408,39 @@ html.escaneando body > :not(#visor) { visibility: hidden !important; }
   </section>
   <p class="pie" id="pie-version"></p>
 </main>
+
+<!-- Productos: todo el inventario de la PC, para ver qué falta (foto, estante, categoría, precio) -->
+<section class="pantalla" id="inv" hidden aria-labelledby="inv-titulo">
+  <header class="top">
+    <button class="icono" type="button" id="inv-volver" aria-label="Volver">←</button>
+    <div class="tit"><h1 id="inv-titulo">Productos</h1><p class="sub" id="inv-sub"></p></div>
+    <button class="icono" type="button" id="inv-actualizar" aria-label="Traer de nuevo los productos de la PC">⟳</button>
+  </header>
+  <div class="inv-herr">
+    <div class="buscador"><input id="inv-buscar" type="search" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="Buscar por nombre o código" aria-label="Buscar en los productos"></div>
+    <div class="segmento" role="group" aria-label="Agrupar">
+      <button type="button" data-agrupar="categoria" aria-pressed="true">Por categoría</button>
+      <button type="button" data-agrupar="estante" aria-pressed="false">Por estante</button>
+    </div>
+    <div class="filtros" id="inv-filtros" role="group" aria-label="Mostrar"></div>
+  </div>
+  <div class="inv-cuerpo" id="inv-cuerpo">
+    <p class="aviso" id="inv-aviso" role="status" hidden></p>
+    <div id="inv-grupos" class="col" style="gap:8px"></div>
+  </div>
+  <input id="foto-inv" class="visualmente-oculto" type="file" accept="image/*" capture="environment" aria-hidden="true" tabindex="-1">
+</section>
+
+<!-- Cámara para sacar fotos de productos (la de atrás) -->
+<div class="camara" id="camara" hidden role="dialog" aria-modal="true" aria-labelledby="cam-titulo">
+  <video id="cam-video" playsinline muted autoplay></video>
+  <p class="visor-titulo" id="cam-titulo">Foto del producto</p>
+  <div class="cam-pie">
+    <button class="btn" type="button" id="cam-cancelar">Cancelar</button>
+    <button class="cam-disparo" type="button" id="cam-sacar" aria-label="Sacar la foto"></button>
+    <button class="btn" type="button" id="cam-linterna">Linterna</button>
+  </div>
+</div>
 
 <div class="barra-escaneo">
   <div class="dentro">
@@ -1085,6 +1168,7 @@ async function escanearCamara() {
 
 function abrirForm(x, id = null) {
   if (moviendo()) cerrarMover();
+  volverAInv = false;
   editando = id;
   limpiarFotoForm();
   $('#form').dataset.foto = x.foto ? '1' : '';
@@ -1405,6 +1489,232 @@ async function guardarForm() {
   return x;
 }
 
+// ---------- Cámara para fotos ----------
+/* Las fotos se sacan con una cámara dentro de la app que abre siempre la de atrás (la cámara del sistema abre la
+ * última que se usó, a veces la de adelante). Si no se puede (sin permiso, celular viejo), se usa la del sistema.
+ * Devuelve la foto (Blob), null si se canceló, o false si hay que usar la del sistema. */
+let camaraPropia = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+let camAbierta = null;
+let ignorarAtras = 0; // pasos del historial que se sacan a propósito (no son el botón «Atrás»)
+async function flujoCamara() {
+  const tam = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+  try { return await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...tam, facingMode: { exact: 'environment' } } }); }
+  catch (e) {
+    if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) throw e;
+    return navigator.mediaDevices.getUserMedia({ audio: false, video: { ...tam, facingMode: 'environment' } });
+  }
+}
+async function camaraFoto(titulo = 'Foto del producto') {
+  if (camAbierta || lectorAbierto) return null;
+  if (!camaraPropia) return false;
+  let flujo;
+  try { flujo = await flujoCamara(); } catch (e) { camaraPropia = false; return false; }
+  const video = $('#cam-video');
+  const pista = flujo.getVideoTracks()[0];
+  let cap = {};
+  try { cap = (pista && pista.getCapabilities && pista.getCapabilities()) || {}; } catch (e) { /* nada */ }
+  try { if (Array.isArray(cap.focusMode) && cap.focusMode.includes('continuous')) await pista.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) { /* nada */ }
+  return new Promise((resolver) => {
+    let terminado = false, luz = false;
+    const terminar = (r) => {
+      if (terminado) return;
+      terminado = true;
+      flujo.getTracks().forEach((t) => t.stop());
+      video.srcObject = null;
+      $('#camara').hidden = true;
+      document.documentElement.classList.remove('con-camara');
+      if (!camAbierta.atras) { ignorarAtras++; try { history.back(); } catch (e) { ignorarAtras--; } }
+      camAbierta = null;
+      resolver(r);
+    };
+    camAbierta = {
+      atras: false,
+      cancelar: () => terminar(null),
+      sacar: () => {
+        if (!video.videoWidth) return;
+        const c = document.createElement('canvas');
+        c.width = video.videoWidth; c.height = video.videoHeight;
+        c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+        $('#cam-sacar').disabled = true;
+        avisar(30);
+        c.toBlob((b) => { $('#cam-sacar').disabled = false; terminar(b || null); }, 'image/jpeg', 0.92);
+      },
+      linterna: async () => {
+        try { luz = !luz; await pista.applyConstraints({ advanced: [{ torch: luz }] }); } catch (e) { luz = false; toast('No se pudo prender la linterna.'); }
+      },
+    };
+    try { history.pushState({ camara: true }, ''); } catch (e) { /* nada */ }
+    $('#cam-titulo').textContent = titulo;
+    $('#cam-linterna').hidden = !cap.torch;
+    $('#cam-sacar').disabled = false;
+    document.documentElement.classList.add('con-camara');
+    $('#camara').hidden = false;
+    video.srcObject = flujo;
+    video.play().catch(() => { /* autoplay: igual arranca */ });
+    $('#cam-sacar').focus();
+  });
+}
+
+// ---------- Productos: todo el inventario de la PC ----------
+/* Para ver qué le falta a cada producto (foto, estante, categoría, precio) y arreglarlo desde el celular.
+ * Se agrupa por categoría o por estante, como en el programa. Tocar un producto abre su ficha (foto, estante,
+ * conteo); el botón 📷 le saca la foto en el momento. Al guardar o cancelar la ficha se vuelve acá. */
+const FILTROS_INV = [
+  ['todos', 'Todos', () => true, ''],
+  ['sin-foto', 'Sin foto', (p) => !p.foto, 'Todos los productos tienen foto.'],
+  ['sin-estante', 'Sin estante', (p) => !p.ubicacion, 'Todos los productos tienen estante.'],
+  ['sin-categoria', 'Sin categoría', (p) => !p.categoria, 'Todos los productos tienen categoría.'],
+  ['revisar', 'A revisar', (p) => !!p.revisar, 'No hay productos para revisar.'],
+  ['sin-precio', 'Sin precio', (p) => !(Number(p.precio) > 0), 'Todos los productos tienen precio.'],
+  ['bajo', 'Stock bajo', (p) => Number(p.minimo) > 0 && Number(p.stock) <= Number(p.minimo), 'Ningún producto está por debajo del mínimo.'],
+];
+const inv = { datos: null, cargando: false, error: '', agrupar: datos.invAgrupar === 'estante' ? 'estante' : 'categoria', filtro: 'todos', q: '',
+  abiertos: new Set(), fotoNueva: new Set(), visibles: [], todoAbierto: false };
+let volverAInv = false;
+let fotoInvDe = null;
+function avisoInv(html, tipo = 'info') {
+  const el = $('#inv-aviso');
+  inv.avisoConexion = false;
+  el.className = 'aviso ' + tipo; el.innerHTML = html; el.hidden = !html;
+}
+function abrirInv() {
+  if ($('#inv').hidden) {
+    try { history.pushState({ inv: true }, ''); } catch (e) { /* nada */ }
+    document.documentElement.classList.add('con-inv');
+    $('#inv').hidden = false;
+  }
+  avisoInv('');
+  pintarInv();
+  if (inv.scroll) $('#inv-cuerpo').scrollTop = inv.scroll;
+  traerInventario();
+}
+function cerrarInv(porAtras = false) {
+  if ($('#inv').hidden) return;
+  inv.scroll = $('#inv-cuerpo').scrollTop;
+  $('#inv').hidden = true;
+  document.documentElement.classList.remove('con-inv');
+  if (!porAtras) { ignorarAtras++; try { history.back(); } catch (e) { ignorarAtras--; } }
+}
+async function traerInventario() {
+  if (inv.cargando) return;
+  if (!pcOk()) { inv.error = textoSinPC(); pintarInv(); return; }
+  inv.cargando = true; pintarInv();
+  try {
+    const r = await pedirPC('/api/inventario', undefined, 20000);
+    if (r.status === 404) inv.error = 'Para ver los productos acá hay que actualizar el programa de la PC (versión 1.55 o más nueva).';
+    else if (r.status !== 200 || !r.data || !Array.isArray(r.data.productos)) inv.error = errorDePC(r);
+    else { inv.datos = r.data; inv.error = ''; }
+  } catch (e) { sinPC(); inv.error = textoSinPC(); }
+  inv.cargando = false;
+  pintarInv();
+}
+function pintarInv() {
+  const d = inv.datos;
+  document.querySelectorAll('[data-agrupar]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.agrupar === inv.agrupar)));
+  // El aviso de conexión se va solo cuando la PC vuelve a contestar (los de las fotos quedan)
+  if (inv.error) { avisoInv(esc(inv.error) + (d ? ' Lo que ves es de la última vez que se trajo.' : ''), 'warn'); inv.avisoConexion = true; }
+  else if (inv.avisoConexion) { avisoInv(''); inv.avisoConexion = false; }
+  if (!d) {
+    $('#inv-sub').textContent = inv.cargando ? 'Trayendo los productos de la PC…' : '';
+    $('#inv-filtros').innerHTML = '';
+    $('#inv-grupos').innerHTML = inv.cargando ? '<p class="vacio">Trayendo los productos de la PC…</p>' : '';
+    inv.visibles = [];
+    return;
+  }
+  const todos = d.productos;
+  const sinFoto = todos.filter((p) => !p.foto).length;
+  $('#inv-sub').textContent = inv.cargando ? 'Actualizando…' : `${numero.format(todos.length)} productos · ${numero.format(sinFoto)} sin foto`;
+  const pal = normal(inv.q).trim().split(/\s+/).filter(Boolean);
+  const buscados = pal.length ? todos.filter((p) => { const t = normal(`${p.nombre} ${p.codigo} ${(p.barras || []).join(' ')}`); return pal.every((w) => t.includes(w)); }) : todos;
+  const cuenta = Object.fromEntries(FILTROS_INV.map(([k, , f]) => [k, buscados.filter(f).length]));
+  $('#inv-filtros').innerHTML = FILTROS_INV
+    .filter(([k]) => k === 'todos' || k === inv.filtro || cuenta[k] > 0)
+    .map(([k, t]) => `<button type="button" data-filtro="${k}" aria-pressed="${k === inv.filtro}">${t}<b>${numero.format(cuenta[k])}</b></button>`).join('');
+  const [, , filtro, vacio] = FILTROS_INV.find(([k]) => k === inv.filtro) || FILTROS_INV[0];
+  const lista = buscados.filter((p) => filtro(p) || (inv.filtro === 'sin-foto' && inv.fotoNueva.has(p.codigo)));
+  inv.visibles = lista;
+  if (!lista.length) {
+    $('#inv-grupos').innerHTML = `<p class="vacio">${pal.length ? 'Ningún producto coincide con la búsqueda.' : esc(vacio || 'No hay productos en el programa.')}</p>`;
+    return;
+  }
+  const porEstante = inv.agrupar === 'estante';
+  const catEstante = new Map((d.estantes || []).map((e) => [e.codigo, e.categoria || '']));
+  const grupos = new Map();
+  lista.forEach((p, i) => {
+    const k = (porEstante ? p.ubicacion : p.categoria) || '';
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(i);
+  });
+  const claves = [...grupos.keys()].sort((a, b) => (a === '') - (b === '') || a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' }));
+  inv.todoAbierto = pal.length > 0 || inv.filtro !== 'todos' || claves.length === 1;
+  const fila = (i) => {
+    const p = lista[i];
+    const otro = porEstante ? (p.categoria ? esc(p.categoria) : '') : p.ubicacion ? `Estante ${esc(p.ubicacion)}` : 'Sin estante';
+    const precio = Number(p.precio) > 0 ? $m(p.precio, p.moneda) : 'Sin precio';
+    const hay = p.stock == null || p.stock === '' ? '' : `Hay ${numero.format(p.stock)}${p.unidad && p.unidad !== 'unidad' ? ' ' + esc(p.unidad) : ''}`;
+    const chips = (!p.foto ? '<span class="chip warn">Sin foto</span>' : inv.fotoNueva.has(p.codigo) ? '<span class="chip ok">Foto nueva</span>' : '')
+      + (p.revisar ? '<span class="chip nuevo">A revisar</span>' : '');
+    return `<li><button type="button" class="inv-prod" data-abrir="${i}"><span class="nom">${esc(p.nombre)}</span>`
+      + `<span class="meta"><span class="mono">${esc(p.codigo)}</span>${otro ? `<span>${otro}</span>` : ''}<span>${precio}</span>${hay ? `<span>${hay}</span>` : ''}</span>`
+      + (chips ? `<span class="meta">${chips}</span>` : '') + `</button>`
+      + `<button type="button" class="inv-foto" data-foto-inv="${i}" aria-label="${p.foto ? 'Sacar otra foto' : 'Sacar foto'}: ${esc(p.nombre)}">📷</button></li>`;
+  };
+  $('#inv-grupos').innerHTML = claves.map((k) => {
+    const idx = grupos.get(k);
+    const faltan = idx.filter((i) => !lista[i].foto).length;
+    const abierto = inv.todoAbierto || inv.abiertos.has(inv.agrupar + ':' + k);
+    const nombre = k ? (porEstante ? `Estante ${k}` : k) : (porEstante ? 'Sin estante' : 'Sin categoría');
+    const sub = porEstante && k && catEstante.get(k) ? `<span class="g-sub">${esc(catEstante.get(k))}</span>` : '';
+    return `<details class="grupo" data-grupo="${esc(k)}"${abierto ? ' open' : ''}><summary><span><span class="g-nom">${esc(nombre)}</span>${sub ? '<br>' + sub : ''}</span>`
+      + `<span class="g-n">${faltan && inv.filtro !== 'sin-foto' ? `<span class="chip warn">${numero.format(faltan)} sin foto</span>` : ''}${numero.format(idx.length)}</span></summary>`
+      + `<ul class="inv-lista">${idx.map(fila).join('')}</ul></details>`;
+  }).join('');
+}
+function abrirDesdeInv(p) {
+  cerrarInv();
+  const x = datos.items.find((i) => i.codigo && i.codigo.toUpperCase() === String(p.codigo).toUpperCase());
+  // Si ya está en «Lo que cargaste» se corrige ese (con lo que hay ahora en la PC)
+  if (x) abrirForm({ ...x, nombre: p.nombre, precio: p.precio, moneda: p.moneda, ubicacion: p.ubicacion, categoria: p.categoria, barras: p.barras || x.barras, foto: p.foto || x.foto }, x.id);
+  else abrirForm({ ...p, cantidad: '', existente: true });
+  volverAInv = true;
+  estado(`<strong>${esc(p.nombre)}</strong>: sacale la foto, cambiale el estante o contalo. Al guardar volvés a «Productos».`, 'info');
+}
+/** Después de guardar o cancelar una ficha abierta desde «Productos», se vuelve ahí. */
+function volverAlInventario(x) {
+  if (!volverAInv) return false;
+  volverAInv = false;
+  const p = x && inv.datos && inv.datos.productos.find((q) => q.codigo === x.codigo);
+  if (p) {
+    if (x.foto && !p.foto) inv.fotoNueva.add(p.codigo);
+    Object.assign(p, { foto: !!(x.foto || p.foto), ubicacion: x.ubicacion != null ? x.ubicacion : p.ubicacion, categoria: x.categoria != null ? x.categoria : p.categoria, stock: x.stock != null ? x.stock : p.stock });
+  }
+  const aviso = $('#estado').classList.contains('warn') ? $('#estado').innerHTML : '';
+  abrirInv();
+  if (aviso) avisoInv(aviso, 'warn');
+  return true;
+}
+async function fotoDesdeInv(p) {
+  if (!pcOk()) { avisoInv(esc(textoSinPC()), 'warn'); return; }
+  fotoInvDe = p;
+  const r = await camaraFoto(p.nombre);
+  if (r === false) { $('#foto-inv').click(); return; }
+  if (r) await subirFotoInv(r); else fotoInvDe = null;
+}
+async function subirFotoInv(file) {
+  const p = fotoInvDe;
+  fotoInvDe = null;
+  if (!p || !file) return;
+  avisoInv(`Mandando la foto de <strong>${esc(p.nombre)}</strong> a la PC…`, 'info');
+  let blob;
+  try { blob = await achicarFoto(file); } catch (e) { avisoInv(esc(e.message), 'warn'); return; }
+  const err = await subirFoto({ codigo: p.codigo, nombre: p.nombre }, blob);
+  if (err) { avisoInv(`La foto de <strong>${esc(p.nombre)}</strong> no se guardó: ${esc(err)}`, 'warn'); return; }
+  if (!p.foto) inv.fotoNueva.add(p.codigo);
+  p.foto = true;
+  avisoInv(`Foto de <strong>${esc(p.nombre)}</strong> guardada en la PC.`, 'ok');
+  pintarInv();
+}
+
 // ---------- Lista ----------
 function pintar() {
   const items = datos.items;
@@ -1504,7 +1814,41 @@ $('#btn-camara').addEventListener('click', escanearCamara);
 $('#visor-cancelar').addEventListener('click', () => { if (lectorAbierto) lectorAbierto.cancelar(); });
 $('#visor-linterna').addEventListener('click', async () => { try { await Camara().toggleTorch(); } catch (e) { toast('Este celular no tiene linterna o no se pudo prender.'); } });
 // El botón «Atrás» de Android cierra el lector en vez de salir de la app (al abrirlo se agrega un paso al historial)
-window.addEventListener('popstate', () => { if (lectorAbierto) { lectorAbierto.atras = true; lectorAbierto.cancelar(); } });
+// Lo mismo con la cámara de fotos y la pantalla «Productos»
+window.addEventListener('popstate', () => {
+  if (ignorarAtras > 0) { ignorarAtras--; return; }
+  if (camAbierta) { camAbierta.atras = true; camAbierta.cancelar(); return; }
+  if (lectorAbierto) { lectorAbierto.atras = true; lectorAbierto.cancelar(); return; }
+  if (!$('#inv').hidden) cerrarInv(true);
+});
+$('#btn-productos').addEventListener('click', abrirInv);
+$('#inv-volver').addEventListener('click', () => cerrarInv());
+$('#inv-actualizar').addEventListener('click', traerInventario);
+$('#inv-buscar').addEventListener('input', () => { inv.q = $('#inv-buscar').value; pintarInv(); });
+document.querySelectorAll('[data-agrupar]').forEach((b) => b.addEventListener('click', () => {
+  inv.agrupar = b.dataset.agrupar; datos.invAgrupar = inv.agrupar; guardar(); pintarInv(); $('#inv-cuerpo').scrollTop = 0;
+}));
+$('#inv-filtros').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-filtro]');
+  if (!b) return;
+  inv.filtro = b.dataset.filtro; inv.fotoNueva.clear(); pintarInv(); $('#inv-cuerpo').scrollTop = 0;
+});
+$('#inv-grupos').addEventListener('toggle', (e) => {
+  const g = e.target.closest && e.target.closest('details[data-grupo]');
+  if (!g || inv.todoAbierto) return;
+  const k = inv.agrupar + ':' + g.dataset.grupo;
+  if (g.open) inv.abiertos.add(k); else inv.abiertos.delete(k);
+}, true);
+$('#inv-grupos').addEventListener('click', (e) => {
+  const a = e.target.closest('[data-abrir]');
+  if (a) { const p = inv.visibles[Number(a.dataset.abrir)]; if (p) abrirDesdeInv(p); return; }
+  const f = e.target.closest('[data-foto-inv]');
+  if (f) { const p = inv.visibles[Number(f.dataset.fotoInv)]; if (p) fotoDesdeInv(p); }
+});
+$('#foto-inv').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; subirFotoInv(f); });
+$('#cam-cancelar').addEventListener('click', () => { if (camAbierta) camAbierta.cancelar(); });
+$('#cam-sacar').addEventListener('click', () => { if (camAbierta) camAbierta.sacar(); });
+$('#cam-linterna').addEventListener('click', () => { if (camAbierta) camAbierta.linterna(); });
 $('#seguir').checked = !!datos.seguir;
 $('#seguir').addEventListener('change', () => { datos.seguir = $('#seguir').checked; guardar(); });
 $('#escanear').addEventListener('input', pintarBusqueda);
@@ -1523,15 +1867,22 @@ $('#form').addEventListener('submit', async (e) => {
   const x = await guardarForm();
   if (!x) return;
   toast(`Guardado en la PC: ${x.nombre}.`);
+  volverAlInventario(x);
   abrirImprimir(x, 1);
 });
 $('#btn-solo-guardar').addEventListener('click', async () => {
   const x = await guardarForm();
   if (!x) return;
   toast(`Guardado en la PC: ${x.nombre}.`);
+  if (volverAlInventario(x)) return;
   if ($('#seguir').checked && Camara()) setTimeout(escanearCamara, 700);
 });
-$('#cancelar').addEventListener('click', cerrarForm);
+$('#cancelar').addEventListener('click', () => { cerrarForm(); volverAlInventario(null); });
+$('#c-foto-btn').addEventListener('click', async () => {
+  const r = await camaraFoto($('#c-nombre').value.trim() || 'Foto del producto');
+  if (r === false) $('#c-foto').click();
+  else if (r) alSacarFotoForm(r);
+});
 $('#c-foto').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) alSacarFotoForm(f); });
 $('#c-foto-quitar').addEventListener('click', () => { limpiarFotoForm(); pintarFotoForm($('#form').dataset.foto === '1'); });
 $('#foto-lista').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; alSacarFotoLista(f); });
@@ -1545,7 +1896,11 @@ $('#lista').addEventListener('click', async (e) => {
   if (fo) {
     if (!pcOk()) { estado(esc(textoSinPC()), 'warn'); return; }
     fotoParaItem = fo.dataset.foto;
-    $('#foto-lista').click();
+    const x = datos.items.find((i) => i.id === fotoParaItem);
+    const r = await camaraFoto(x ? x.nombre : 'Foto del producto');
+    if (r === false) $('#foto-lista').click();
+    else if (r) alSacarFotoLista(r);
+    else fotoParaItem = null;
     return;
   }
   const ed = e.target.closest('[data-editar]');
