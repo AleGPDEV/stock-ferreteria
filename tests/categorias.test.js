@@ -74,3 +74,19 @@ test('la lista de categorías se guarda con los datos (config), no se pierde', (
   const r = app.calcularCambios(null, d);
   assert.deepEqual(JSON.parse(r.cambios.config).categorias, ['Jardín']);
 });
+
+test('las categorías predeterminadas se agregan una sola vez y se pueden borrar', () => {
+  const d = local(); // ya tiene «Herramientas» y «Tornillería»
+  d.categorias = ['herramientas manuales'];
+  const n = app.sembrarCategorias(d);
+  assert.equal(n, app.CATEGORIAS_PREDETERMINADAS.length - 1, 'no repite «Herramientas manuales»');
+  assert.equal(app.categoriasDe(d).filter((c) => app.claveCategoria(c.nombre) === 'herramientas manuales').length, 1);
+  assert.ok(app.nombresCategorias(d).includes('Climatización y ventilación'));
+  // Las de los productos siguen estando
+  assert.ok(app.nombresCategorias(d).includes('Tornillería'));
+  // Si se borra una, no vuelve
+  app.borrarCategoria(d, 'Gas');
+  assert.equal(app.sembrarCategorias(d), 0);
+  assert.ok(!app.nombresCategorias(d).includes('Gas'));
+  assert.equal(JSON.parse(app.calcularCambios(null, d).cambios.config).categoriasIniciales, true);
+});

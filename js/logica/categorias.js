@@ -3,6 +3,29 @@
  * más las que ya usan productos y estantes, así ninguna se pierde. Renombrar o borrar cambia todos los que la usan. */
 'use strict';
 
+/** Las categorías de una ferretería con las que arranca la lista (las armó Ale; cada una tiene subcategorías de ejemplo). */
+const CATEGORIAS_PREDETERMINADAS = [
+  'Herramientas manuales', 'Herramientas eléctricas', 'Accesorios para herramientas', 'Medición y trazado',
+  'Tornillería y fijaciones', 'Cerrajería y herrajes', 'Electricidad', 'Iluminación', 'Pinturería', 'Sanitaria', 'Gas',
+  'Materiales de construcción', 'Adhesivos y selladores', 'Jardín y exterior', 'Seguridad industrial',
+  'Escaleras y elevación', 'Metales y perfiles', 'Maderas y tableros', 'Limpieza y mantenimiento',
+  'Climatización y ventilación', 'Varios',
+];
+
+/**
+ * Agrega una sola vez las categorías predeterminadas que falten (d.categoriasIniciales queda marcado: si después
+ * se borra o se renombra una, no vuelve). Devuelve cuántas agregó.
+ */
+function sembrarCategorias(d) {
+  if (d.categoriasIniciales) return 0;
+  const hay = new Set(categoriasDe(d).map((c) => claveCategoria(c.nombre)));
+  if (!Array.isArray(d.categorias)) d.categorias = [];
+  let n = 0;
+  for (const c of CATEGORIAS_PREDETERMINADAS) if (!hay.has(claveCategoria(c))) { d.categorias.push(c); n++; }
+  d.categoriasIniciales = true;
+  return n;
+}
+
 /** El nombre limpio (sin espacios de más). */
 const nombreCategoria = (t) => String(t || '').replace(/\s+/g, ' ').trim();
 /** Para comparar sin importar mayúsculas ni tildes: «Tornillería» = «tornilleria». */
