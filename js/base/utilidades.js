@@ -50,7 +50,9 @@ function coincide(texto, busqueda) {
   }
   if (!palabrasAnteriores.length) return true;
   const t = normal(texto);
-  return palabrasAnteriores.every((p) => t.includes(p));
+  // Un lector de códigos con teclado en inglés en un Windows en español escribe «'» en vez de «-»
+  // («C4-0001» llega como «C4'0001»): la palabra con apóstrofo también vale con guion.
+  return palabrasAnteriores.every((p) => t.includes(p) || (p.includes("'") && t.includes(p.replace(/'/g, '-'))));
 }
 
 let db;

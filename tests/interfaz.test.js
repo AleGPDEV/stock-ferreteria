@@ -57,6 +57,11 @@ test('buscadores: por palabras sueltas, en cualquier orden, sin tildes ni mayús
   assert.equal(coincide(t, '8 tornillo'), true);           // otro orden
   assert.equal(coincide('Llave térmica Sica', 'TERMICA llave'), true); // tildes y mayúsculas
   assert.equal(coincide('Llave termica', 'térmica'), true);
+  // Lector con teclado en inglés: «C4-0001» llega como «C4'0001»
+  assert.equal(coincide("C4-0001 Pinza universal", "C4'0001"), true);
+  assert.equal(coincide("C4-0001 Pinza universal", "c4'0001 pinza"), true);
+  assert.equal(coincide("C4-0002 Pinza universal", "C4'0001"), false);
+  assert.equal(coincide("Llave D'Agostino", "d'agostino"), true);
   assert.equal(coincide(t, 'tornillo 12'), false);         // una palabra que no está
   assert.equal(coincide(t, '  tornillo    caja  '), true); // espacios de más
   assert.equal(coincide(t, ''), true);                     // búsqueda vacía: todo
