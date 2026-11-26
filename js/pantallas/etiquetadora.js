@@ -5,7 +5,7 @@
 /* Los ajustes de la impresora de etiquetas se guardan en los datos (db.ajustesEtiquetas): quedan puestos de una
  * vez para siempre, en todas las computadoras y también al restaurar una copia. Antes estaban en el
  * almacenamiento del navegador (localStorage): la primera vez se pasan de ahí. */
-const AJUSTES_ETIQUETADORA = { rollo: '50x40', directo: true, impresora: '', separacion: 2, oscuridad: 8, correrX: 0, correrY: 0, girar: false, cabezal: 0 };
+const AJUSTES_ETIQUETADORA = { rollo: '70x40', directo: true, impresora: '', separacion: 2, oscuridad: 8, correrX: 0, correrY: 0, girar: false, cabezal: 0 };
 const puedeEtiquetadora = () => typeof window !== 'undefined' && !!(window.almacen && window.almacen.imprimirEtiquetadora) && typeof EtiquetaTSPL !== 'undefined';
 /** Los de antes, guardados en este navegador (para pasarlos a los datos la primera vez). */
 function ajustesEtiquetasViejos() {

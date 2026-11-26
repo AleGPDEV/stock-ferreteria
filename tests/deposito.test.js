@@ -90,3 +90,18 @@ test('ficha de producto: el estante se elige de la lista (y se conserva uno viej
   assert.deepEqual(v[0].opciones, [{ valor: 'Galpón fondo', texto: 'Galpón fondo (no está en la lista)', elegido: true }]);
   assert.ok(!app.opcionesEstanteProducto(d, '').some((x) => x.opciones.some((o) => o.elegido)), 'sin estante');
 });
+
+test('el rollo pasa a 70 × 40 una sola vez (y 70 × 40 está en la lista de medidas)', () => {
+  assert.deepEqual(app.MEDIDAS_ROLLO[0], [70, 40]);
+  const d = app.baseVacia();
+  d.ajustesEtiquetas = { rollo: '50x40', impresora: 'Xprinter', oscuridad: 10 };
+  assert.equal(app.rolloA7040(d), true);
+  assert.equal(d.ajustesEtiquetas.rollo, '70x40');
+  assert.equal(d.ajustesEtiquetas.oscuridad, 10, 'lo demás queda igual');
+  d.ajustesEtiquetas.rollo = '50x25'; // después eligió otra
+  assert.equal(app.rolloA7040(d), false);
+  assert.equal(d.ajustesEtiquetas.rollo, '50x25');
+  const nueva = app.baseVacia();
+  assert.equal(app.rolloA7040(nueva), true);
+  assert.equal(nueva.ajustesEtiquetas, undefined);
+});
