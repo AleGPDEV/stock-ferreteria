@@ -557,7 +557,7 @@ function parseNum(v) {
 }
 
 // ---------- Datos ----------
-const AJUSTES_BASE = { equipo: '', medida: [50, 40], separacion: 2, oscuridad: 8, correrX: 0, correrY: 0, girar: false, cabezal: 0, impresora: null };
+const AJUSTES_BASE = { equipo: '', medida: [70, 40], separacion: 2, oscuridad: 8, correrX: 0, correrY: 0, girar: false, cabezal: 0, impresora: null };
 let datos = { items: [], recordar: {}, estantes: [], ultimoNum: 0, ajustes: { ...AJUSTES_BASE } };
 try { const g = JSON.parse(localStorage.getItem(CLAVE) || 'null'); if (g && Array.isArray(g.items)) datos = Object.assign(datos, g, { ajustes: { ...AJUSTES_BASE, ...(g.ajustes || {}) } }); } catch (e) { /* sin almacenamiento */ }
 delete datos.catalogo; // el inventario en Excel de versiones anteriores: ahora los datos vienen de la PC
@@ -565,6 +565,8 @@ function guardar() {
   try { localStorage.setItem(CLAVE, JSON.stringify(datos)); } catch (e) { toast('No se pudo guardar la lista en el celular (lo cargado ya está en la PC).'); }
 }
 const aj = () => datos.ajustes;
+// Una sola vez: la etiqueta pasa a 70 × 40 mm, la que usa el negocio (si después se elige otra, queda esa)
+if (!datos.rollo7040) { datos.rollo7040 = true; datos.ajustes.medida = [70, 40]; guardar(); }
 const medida = () => ({ ancho: aj().medida[0], alto: aj().medida[1] });
 
 // ---------- Estantes: SOLO los del programa de la PC ----------
@@ -1741,7 +1743,7 @@ function pintar() {
 
 // ---------- Ajustes ----------
 const opcImpresion = (a) => ({ separacion: a.separacion, oscuridad: a.oscuridad, correrX: a.correrX || 0, correrY: a.correrY || 0, girar: !!a.girar, cabezal: a.cabezal || 0 });
-const MEDIDAS = [[50, 40], [50, 25], [40, 30], [50, 30], [58, 40], [60, 40], [100, 50], [100, 100], [100, 150]];
+const MEDIDAS = [[70, 40], [50, 40], [50, 25], [40, 30], [50, 30], [58, 40], [60, 40], [100, 50], [100, 100], [100, 150]];
 function abrirAjustes() {
   $('#aj-equipo').value = aj().equipo;
   $('#aj-medida').innerHTML = MEDIDAS.map(([a, h]) => `<option value="${a}x${h}">${a} × ${h} mm</option>`).join('') + '<option value="otra">Otra medida…</option>';

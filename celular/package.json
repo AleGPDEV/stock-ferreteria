@@ -1,6 +1,6 @@
 {
   "name": "etiquetador-celular",
-  "version": "1.10.1",
+  "version": "1.10.2",
   "private": true,
   "description": "App Android para cargar productos y contar el stock directo en el programa de la PC (WiFi) e imprimir etiquetas por Bluetooth (Grupo Muros)",
   "scripts": {

@@ -51,6 +51,11 @@ function entrar(u) {
     sembrarSubcategorias(db);
     guardar();
   }
+  // Las etiquetas del rollo pasan a 70 × 40 mm una sola vez (si no había ajustes, se guardan los de ahora con esa medida)
+  if (rolloA7040(db)) {
+    if (!db.ajustesEtiquetas) db.ajustesEtiquetas = { ...ajustesEtiquetadora(), rollo: '70x40' };
+    guardar();
+  }
   $('#login').hidden = true;
   aplicarPermisos();
   if (!esAdmin()) $('#ventas-fecha').value = isoLocal();

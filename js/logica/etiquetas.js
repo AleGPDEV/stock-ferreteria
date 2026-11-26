@@ -31,8 +31,19 @@ function medidaEtiquetaHoja(porHoja) {
   return { cols, filas, celdaAncho: r(celdaAncho), celdaAlto: r(celdaAlto), ancho: r(ancho), alto: r(alto), k: Math.round(k * 100) / 100 };
 }
 /* Medidas de rollo de las impresoras de etiquetas (ancho × alto de una etiqueta, en mm). 50 × 25 es la de siempre. */
-const MEDIDAS_ROLLO = [[50, 40], [50, 25], [40, 30], [50, 30], [58, 40], [60, 40], [100, 50], [100, 100], [100, 150]];
+const MEDIDAS_ROLLO = [[70, 40], [50, 40], [50, 25], [40, 30], [50, 30], [58, 40], [60, 40], [100, 50], [100, 100], [100, 150]];
 /** Medida válida de rollo (ancho hasta 108 mm, el máximo de las impresoras de 4 pulgadas). */
+/**
+ * Una sola vez: la medida del rollo pasa a 70 × 40 mm, la etiqueta que usa el negocio (antes venía 50 × 40).
+ * Queda marcado en los datos (d.rollo7040), así si después se elige otra medida no se vuelve a cambiar.
+ * Devuelve true si cambió algo (hay que guardar).
+ */
+function rolloA7040(d) {
+  if (d.rollo7040) return false;
+  d.rollo7040 = true;
+  if (d.ajustesEtiquetas && typeof d.ajustesEtiquetas === 'object') d.ajustesEtiquetas.rollo = '70x40';
+  return true;
+}
 function medidaRollo(ancho, alto) {
   const a = Math.round(Number(ancho)), h = Math.round(Number(alto));
   if (!(a >= 20 && a <= 108 && h >= 15 && h <= 300)) return null;
