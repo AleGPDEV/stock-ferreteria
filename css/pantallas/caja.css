@@ -30,6 +30,9 @@
 .ticket { position: sticky; top: calc(16px + env(safe-area-inset-top, 0px)); }
 .ticket-linea { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding-block: 8px; border-top: 1px solid var(--line); }
 .ticket-linea:first-child { border-top: 0; }
+/* Renglón sin registrar: no es un producto del programa (no descuenta stock) */
+.chip-libre { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; vertical-align: 2px;
+  background: var(--warn-bg); color: var(--warn); white-space: nowrap; }
 .ticket-linea .nom { font-weight: 500; font-size: 16px; overflow-wrap: anywhere; }
 .ticket-linea .sub-t { font-family: var(--f-num); font-size: 18px; font-weight: 700; text-align: right; }
 .ticket-linea .ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; grid-column: 1 / -1; font-size: 14px; color: var(--muted); }

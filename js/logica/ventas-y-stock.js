@@ -52,8 +52,15 @@ function registrar(d, m) {
 /** Monto recibido que no tiene sentido (por ejemplo, un código de barras escrito en ese campo). */
 const recibidoRaro = (recibido, total) => recibido > total + 100000 && recibido > total * 10;
 
+/* Productos sin registrar: algo que se vende y no está cargado en el programa (no tiene código, o el código no
+ * está). Es un renglón del ticket con { libre: true, nombre, precio, cantidad, moneda, codigo? }: sale en el ticket
+ * y en la venta, pero no crea un producto ni mueve stock. El nombre es opcional. */
+const NOMBRE_SIN_REGISTRAR = 'Producto sin registrar';
+const nombreLibre = (it) => String((it && it.nombre) || '').trim().slice(0, 80) || NOMBRE_SIN_REGISTRAR;
+
 /**
  * Cobra un ticket: valida stock, precios y descuento, descuenta cada línea y guarda la venta.
+ * Los renglones «sin registrar» (it.libre) se cobran sin producto y sin tocar el stock.
  * opc.sinStock: vender aunque no alcance el stock (queda en negativo; se confirma antes en la pantalla).
  * opc.topeDescuento: descuento máximo sin autorización; opc.autorizo: administrador que autorizó uno mayor.
  */
@@ -61,7 +68,10 @@ function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0, opc
   if (!items.length) return { error: 'El ticket está vacío.' };
   // Validar todo antes de tocar el stock
   const porProducto = {};
-  for (const it of items) porProducto[it.productoId] = (porProducto[it.productoId] || 0) + Number(it.cantidad);
+  for (const it of items) {
+    if (it.libre) { if (!(Number(it.cantidad) > 0)) return { error: `Revisá la cantidad de ${nombreLibre(it)}.` }; continue; }
+    porProducto[it.productoId] = (porProducto[it.productoId] || 0) + Number(it.cantidad);
+  }
   const faltan = [];
   for (const [id, q] of Object.entries(porProducto)) {
     const p = d.productos.find((x) => x.id === id);
@@ -71,8 +81,8 @@ function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0, opc
   }
   for (const it of items) {
     if (!(Number(it.precio) > 0)) {
-      const p = d.productos.find((x) => x.id === it.productoId);
-      return { error: `${p.nombre} no tiene precio. Poné un precio mayor a 0.` };
+      const p = it.libre ? null : d.productos.find((x) => x.id === it.productoId);
+      return { error: `${p ? p.nombre : nombreLibre(it)} no tiene precio. Poné un precio mayor a 0.` };
     }
   }
   if (faltan.length && !opc.sinStock) {
@@ -80,7 +90,7 @@ function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0, opc
     return { error: `No alcanza el stock de ${f.nombre}: hay ${n(f.hay)} ${f.unidad}.`, faltan };
   }
   // Un ticket es todo en pesos o todo en dólares (los productos en dólares se cobran en dólares)
-  const monedas = new Set(items.map((it) => (esUSD(d.productos.find((x) => x.id === it.productoId)) ? 'USD' : 'UYU')));
+  const monedas = new Set(items.map((it) => (it.libre ? (it.moneda === 'USD' ? 'USD' : 'UYU') : esUSD(d.productos.find((x) => x.id === it.productoId)) ? 'USD' : 'UYU')));
   if (monedas.size > 1) return { error: 'El ticket tiene productos en pesos y en dólares. Cobralos en dos ventas: primero unos y después los otros.' };
   const moneda = monedas.has('USD') ? 'USD' : 'UYU';
   const cotizacion = Number(opc.cotizacion) || 0;
@@ -106,6 +116,9 @@ function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0, opc
     numero: d.numVenta,
     fecha: fecha || new Date().toISOString(),
     items: items.map((it) => {
+      if (it.libre) {
+        return { productoId: '', libre: true, codigo: String(it.codigo || '').trim(), nombre: nombreLibre(it), unidad: 'unidad', cantidad: red(it.cantidad), precio: Number(it.precio), costo: 0, subtotal: red(it.cantidad * it.precio) };
+      }
       const p = d.productos.find((x) => x.id === it.productoId);
       return { productoId: p.id, codigo: p.codigo, nombre: p.nombre, unidad: p.unidad, cantidad: red(it.cantidad), precio: it.precio, costo: p.costo, subtotal: red(it.cantidad * it.precio) };
     }),
@@ -124,6 +137,7 @@ function cobrar(d, items, medio, recibido, cliente, fecha, descuentoPct = 0, opc
     anulada: false,
   };
   for (const it of venta.items) {
+    if (it.libre) continue; // no es un producto del programa: no hay stock que descontar
     const sinStock = faltan.some((f) => f.id === it.productoId);
     registrar(d, { tipo: 'salida', productoId: it.productoId, cantidad: it.cantidad, precioUnit: it.precio, nota: `Venta N.º ${venta.numero}${sinStock ? ' (vendido sin stock)' : ''}`, ventaId: venta.id, fecha: venta.fecha, permitirNegativo: true });
   }

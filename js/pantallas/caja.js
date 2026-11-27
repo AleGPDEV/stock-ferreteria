@@ -5,7 +5,7 @@
 /* ---------- Caja ---------- */
 
 const CANTIDAD_MAX = 9999;
-let ticket = []; // { productoId, cantidad, precio }
+let ticket = []; // { productoId, cantidad, precio } o, sin registrar, { libre: true, nombre, precio, cantidad, moneda, codigo }
 
 const topeDescuentoEmpleado = () => {
   const x = Number((db.negocio || {}).descuentoMaxEmpleado);
@@ -90,7 +90,11 @@ function medioActual() { return ($('input[name="medio"]:checked') || {}).value |
 function descuentoActual() { const x = Number($('#caja-desc').value); return x > 0 && x <= 100 ? x : 0; }
 function subtotalTicket() { return red2(ticket.reduce((s, it) => s + it.cantidad * it.precio, 0)); }
 /** El ticket es todo en una moneda: la del primer producto. */
-function monedaTicket() { const p = ticket.length ? producto(ticket[0].productoId) : null; return esUSD(p) ? 'USD' : 'UYU'; }
+function monedaTicket() {
+  const it = ticket[0];
+  if (it && it.libre) return it.moneda === 'USD' ? 'USD' : 'UYU';
+  return esUSD(it ? producto(it.productoId) : null) ? 'USD' : 'UYU';
+}
 const $t = (x) => $m(x, monedaTicket());
 function totalTicket() { const s = subtotalTicket(); return red2(s - red2(s * descuentoActual() / 100)); }
 
@@ -110,6 +114,32 @@ function agregarAlTicket(id, cant = 1) {
   else ticket.push({ productoId: id, cantidad: cant, precio: p.precio });
   $('#caja-err').textContent = '';
   renderTicket();
+}
+
+/* ---------- Producto sin registrar ---------- */
+let libreCodigo = '';
+function abrirLibre(nombre = '', codigo = '') {
+  libreCodigo = codigo;
+  $('#lib-nombre').value = nombre;
+  $('#lib-precio').value = '';
+  $('#lib-cant').value = '1';
+  $('#lib-err').textContent = '';
+  $('#lib-precio-txt').textContent = monedaTicket() === 'USD' ? 'Precio (en dólares, como el resto del ticket)' : 'Precio';
+  $('#lib-sub').textContent = codigo
+    ? `El código ${codigo} no está cargado. Se cobra igual: sale en el ticket, pero no se agrega a Productos ni descuenta stock.`
+    : 'Sale en el ticket, pero no se agrega a Productos ni descuenta stock.';
+  $('#dlg-libre').showModal();
+  (nombre ? $('#lib-precio') : $('#lib-nombre')).focus();
+}
+/** Agrega un renglón sin registrar al ticket. Devuelve un error (texto) o ''. */
+function agregarLibre(nombre, precio, cant = 1, codigo = '') {
+  if (!(precio > 0)) return 'Escribí el precio.';
+  if (!(cant > 0)) return 'Escribí la cantidad.';
+  if (cant > CANTIDAD_MAX) return `Revisá la cantidad: ${n(cant)} es demasiado.`;
+  ticket.push({ libre: true, nombre: String(nombre || '').trim(), precio: red2(precio), cantidad: red(cant), moneda: monedaTicket(), codigo: String(codigo || '').trim() });
+  $('#caja-err').textContent = '';
+  renderTicket();
+  return '';
 }
 
 function renderEstadoCaja() {
@@ -213,16 +243,18 @@ function renderResultados() {
         <p>${q ? `No encontré ningún producto con «${esc(texto)}»${filtros ? ' con esos filtros' : ''}.` : (filtros ? 'No hay productos con esos filtros.' : 'Todavía no hay productos cargados.')}</p>
         ${filtros ? '<button class="btn" type="button" data-quitar-filtros>Quitar filtros</button>' : ''}
         ${q || !filtros ? '<button class="btn verde" type="button" data-alta>Agregar como producto nuevo</button>' : ''}
+        ${q ? '<button class="btn" type="button" data-libre>Venderlo sin registrar</button>' : ''}
       </div>`;
 }
 
 function renderTicket() {
-  ticket = ticket.filter((it) => producto(it.productoId));
+  ticket = ticket.filter((it) => it.libre || producto(it.productoId));
   $('#ticket-items').innerHTML = ticket.length
     ? ticket.map((it, i) => {
-      const p = producto(it.productoId);
-      return `<div class="ticket-linea">
-        <span class="nom">${miniatura(p, 'mini tl-foto')}${esc(p.nombre)}</span>
+      // Sin registrar: no hay producto (ni foto ni unidad); se marca para que se vea que no descuenta stock
+      const p = it.libre ? { nombre: nombreLibre(it), unidad: 'unidad' } : producto(it.productoId);
+      return `<div class="ticket-linea${it.libre ? ' libre' : ''}">
+        <span class="nom">${it.libre ? '' : miniatura(p, 'mini tl-foto')}${esc(p.nombre)}${it.libre ? ' <span class="chip-libre" title="No está cargado en Productos: no descuenta stock">Sin registrar</span>' : ''}</span>
         <span class="sub-t">${$t(it.cantidad * it.precio)}</span>
         <div class="ctrl">
           <span class="qty">
@@ -426,6 +458,20 @@ function iniciarAltaRapida() {
     toast(`Listo: el código ${arCodigo} quedó asignado a ${p.nombre}. La próxima vez entra solo.`);
     $('#caja-buscar').focus();
   });
+  // Desde «Código que no conozco» / «Producto nuevo»: venderlo sin cargarlo (con lo que ya se escribió)
+  $('#ar-libre').addEventListener('click', () => {
+    const precio = Number($('#ar-precio').value);
+    const nombre = $('#ar-nombre').value.trim();
+    const codigo = arCodigo || $('#ar-codigo').value.trim().toUpperCase();
+    if (!(precio > 0)) { $('#dlg-rapido').close(); abrirLibre(nombre, codigo); return; }
+    const error = agregarLibre(nombre, precio, 1, codigo);
+    if (error) { $('#ar-err').textContent = error; return; }
+    $('#dlg-rapido').close();
+    $('#caja-buscar').value = '';
+    render();
+    toast(`${nombre || NOMBRE_SIN_REGISTRAR} se agregó a la venta sin registrar.`);
+    $('#caja-buscar').focus();
+  });
   $('#form-rapido').addEventListener('submit', (e) => {
     e.preventDefault();
     const err = (t) => { $('#ar-err').textContent = t; };
@@ -486,6 +532,12 @@ function iniciarCaja() {
   });
   $('#caja-resultados').addEventListener('click', (e) => {
     if (e.target.closest('[data-alta]')) { abrirAltaRapida(buscar.value.trim()); return; }
+    if (e.target.closest('[data-libre]')) {
+      const t = buscar.value.trim();
+      const esCodigo = !!t && !/\s/.test(t) && /\d/.test(t);
+      abrirLibre(esCodigo ? '' : t, esCodigo ? t.toUpperCase() : '');
+      return;
+    }
     if (e.target.closest('[data-quitar-filtros]')) { quitarFiltrosCaja(); return; }
     if (e.target.closest('[data-ver-mas]')) { cajaLimite += PASO_LISTA; renderResultados(); return; }
     const b = e.target.closest('[data-agregar]');
@@ -495,7 +547,10 @@ function iniciarCaja() {
     const t = e.target.closest('button');
     if (!t) return;
     if (t.dataset.quitar != null) { ticket.splice(+t.dataset.quitar, 1); renderTicket(); }
-    if (t.dataset.mas != null) agregarAlTicket(ticket[+t.dataset.mas].productoId, 1);
+    if (t.dataset.mas != null) {
+      const it = ticket[+t.dataset.mas];
+      if (it.libre) { it.cantidad = red(it.cantidad + 1); renderTicket(); } else agregarAlTicket(it.productoId, 1);
+    }
     if (t.dataset.menos != null) {
       const it = ticket[+t.dataset.menos];
       it.cantidad = red(it.cantidad - 1);
@@ -511,9 +566,21 @@ function iniciarCaja() {
     let q = Number(e.target.value);
     if (!(q > 0)) { ticket.splice(+i, 1); renderTicket(); return; }
     if (q > CANTIDAD_MAX) { e.target.value = it.cantidad; toast(`Revisá la cantidad: ${n(q)} es demasiado.`); return; }
-    if (q > p.stock) toast(`Ojo: según el programa hay ${n(p.stock)} ${p.unidad} de ${p.nombre}.`);
+    if (p && q > p.stock) toast(`Ojo: según el programa hay ${n(p.stock)} ${p.unidad} de ${p.nombre}.`);
     it.cantidad = red(q);
     renderTicket();
+  });
+  $('#caja-libre').addEventListener('click', () => abrirLibre());
+  $('#form-libre').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const nombre = $('#lib-nombre').value.trim();
+    const error = agregarLibre(nombre, Number($('#lib-precio').value), Number($('#lib-cant').value || 1), libreCodigo);
+    if (error) { $('#lib-err').textContent = error; return; }
+    $('#dlg-libre').close();
+    if (libreCodigo) $('#caja-buscar').value = '';
+    render();
+    toast(`${nombre || NOMBRE_SIN_REGISTRAR} se agregó a la venta.`);
+    $('#caja-buscar').focus();
   });
   $('#ticket-vaciar').addEventListener('click', () => { ticket = []; $('#caja-recibido').value = ''; $('#caja-desc').value = ''; $('#cliente-det').open = false; renderTicket(); });
   $('#caja-desc').addEventListener('input', renderTicket);

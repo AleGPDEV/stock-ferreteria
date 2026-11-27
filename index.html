@@ -128,6 +128,7 @@
             <div class="filtros-fila">
               <select id="caja-cat" aria-label="Categoría"></select>
               <button class="btn ghost" type="button" id="caja-mas-filtros" aria-expanded="false" aria-controls="caja-filtros-extra">Más filtros</button>
+              <button class="btn" type="button" id="caja-libre" title="Para cobrar algo que no está cargado en el programa: ponés el precio y, si querés, un nombre. Sale en el ticket, pero no se agrega a Productos ni descuenta stock.">Producto sin registrar</button>
             </div>
             <div class="filtros-fila" id="caja-filtros-extra" hidden>
               <label class="f" for="caja-prov">Proveedor<select id="caja-prov"></select></label>
@@ -873,7 +874,21 @@
       <label class="f" for="ar-codigo">Código (opcional)<input id="ar-codigo" type="text" autocomplete="off"></label>
     </div>
     <p class="err dlg-err" id="ar-err" role="alert"></p>
-    <footer class="dlg-f"><button type="button" class="btn" data-cerrar>Cancelar</button><button class="btn verde btn-grande" type="submit">Guardar y agregar a la venta</button></footer>
+    <footer class="dlg-f"><button type="button" class="btn" data-cerrar>Cancelar</button><button type="button" class="btn" id="ar-libre">Vender sin registrar</button><button class="btn verde btn-grande" type="submit">Guardar y agregar a la venta</button></footer>
+  </form>
+</dialog>
+
+<!-- Producto sin registrar: se cobra y sale en el ticket, sin crear el producto ni mover stock -->
+<dialog id="dlg-libre" class="dlg-chico" aria-labelledby="lib-titulo">
+  <form id="form-libre" novalidate>
+    <header class="dlg-h"><h2 id="lib-titulo">Producto sin registrar</h2><p class="sub" id="lib-sub">Sale en el ticket, pero no se agrega a Productos ni descuenta stock.</p></header>
+    <div class="dlg-b campos-col">
+      <label class="f" for="lib-nombre">Nombre (opcional)<input id="lib-nombre" type="text" maxlength="80" autocomplete="off" placeholder="Producto sin registrar"></label>
+      <label class="f" for="lib-precio"><span id="lib-precio-txt">Precio</span><input id="lib-precio" type="number" step="any" min="0" inputmode="decimal" required></label>
+      <label class="f" for="lib-cant">Cantidad<input id="lib-cant" type="number" step="any" min="0" inputmode="decimal" value="1"></label>
+    </div>
+    <p class="err dlg-err" id="lib-err" role="alert"></p>
+    <footer class="dlg-f"><button type="button" class="btn" data-cerrar>Cancelar</button><button class="btn verde btn-grande" type="submit">Agregar a la venta</button></footer>
   </form>
 </dialog>
 
