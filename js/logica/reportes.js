@@ -11,7 +11,7 @@ function gananciaBruta(ventas) {
     v.items.forEach((it) => {
       const neto = it.subtotal * factor;
       if (it.costo > 0) ganancia += neto - it.cantidad * it.costo;
-      else { vendidoSinCosto += neto; sinCosto.add(it.productoId); }
+      else { vendidoSinCosto += neto; sinCosto.add(it.libre ? CLAVE_SIN_REGISTRAR : it.productoId); }
     });
   });
   return { ganancia: red2(ganancia), vendidoSinCosto: red2(vendidoSinCosto), sinCosto: sinCosto.size };
@@ -24,6 +24,9 @@ function totalCompras(movs) {
 }
 
 /* ---------- Análisis de ventas (sin pantalla, para poder probarlo) ---------- */
+
+/** Los renglones «sin registrar» se suman juntos en un solo renglón de los reportes. */
+const CLAVE_SIN_REGISTRAR = '__sin-registrar';
 
 const SIN_CAT = 'Sin categoría';
 /** Una venta en dólares pasada a pesos con la cotización de ese día (para sumarla en los reportes). En pesos, queda igual. */
@@ -61,10 +64,11 @@ function analisisVentas(d, desde, hasta) {
     r.porHoraCant[hora] = (r.porHoraCant[hora] || 0) + 1;
     const factor = v.subtotal > 0 ? v.total / v.subtotal : 1; // reparte el descuento entre los productos
     v.items.forEach((it) => {
-      const p = prods.get(it.productoId);
+      const p = it.libre ? null : prods.get(it.productoId);
       const neto = it.subtotal * factor;
       const costo = it.costo > 0 ? it.cantidad * it.costo : null;
-      const pr = r.porProducto[it.productoId] || (r.porProducto[it.productoId] = { id: it.productoId, nombre: it.nombre, codigo: it.codigo || (p && p.codigo) || '', unidad: it.unidad, categoria: (p && p.categoria) || SIN_CAT, cant: 0, vendido: 0, costo: 0, vendidoConCosto: 0 });
+      const clave = it.libre ? CLAVE_SIN_REGISTRAR : it.productoId;
+      const pr = r.porProducto[clave] || (r.porProducto[clave] = { id: clave, nombre: it.libre ? 'Productos sin registrar' : it.nombre, codigo: it.libre ? '' : it.codigo || (p && p.codigo) || '', unidad: it.unidad, categoria: (p && p.categoria) || SIN_CAT, cant: 0, vendido: 0, costo: 0, vendidoConCosto: 0 });
       pr.cant += it.cantidad; pr.vendido += neto;
       if (costo != null) { pr.costo += costo; pr.vendidoConCosto += neto; }
       const c = r.porCategoria[pr.categoria] || (r.porCategoria[pr.categoria] = { categoria: pr.categoria, vendido: 0, costo: 0, vendidoConCosto: 0 });
