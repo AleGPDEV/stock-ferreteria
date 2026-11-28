@@ -266,3 +266,20 @@ test('«Revisado ✓»: le saca la marca de revisar a un producto que cargó un 
   assert.equal(app.marcarRevisado(d, 'b'), null);
   assert.equal(app.marcarRevisado(d, 'no-existe'), null);
 });
+
+test('ordenar productos por precio o stock, y precio muy bajo', () => {
+  const ps = [
+    { nombre: 'Cinta', precio: 1, stock: 5 },
+    { nombre: 'Arandela', precio: 120, stock: -2 },
+    { nombre: 'Broca', precio: 0, stock: 40 },
+    { nombre: 'Disco', precio: 1, stock: 5, moneda: 'USD' },
+  ];
+  const nombres = (l) => l.map((p) => p.nombre);
+  assert.deepEqual(nombres(app.ordenarProductos(ps)), ['Arandela', 'Broca', 'Cinta', 'Disco']);
+  assert.deepEqual(nombres(app.ordenarProductos(ps, 'precio-asc')), ['Broca', 'Cinta', 'Disco', 'Arandela']);
+  assert.deepEqual(nombres(app.ordenarProductos(ps, 'precio-desc')), ['Arandela', 'Cinta', 'Disco', 'Broca']);
+  assert.deepEqual(nombres(app.ordenarProductos(ps, 'stock-asc')), ['Arandela', 'Cinta', 'Disco', 'Broca']);
+  assert.deepEqual(nombres(app.ordenarProductos(ps, 'stock-desc')), ['Broca', 'Cinta', 'Disco', 'Arandela']);
+  assert.deepEqual(nombres(ps), ['Cinta', 'Arandela', 'Broca', 'Disco'], 'no toca la lista original');
+  assert.deepEqual(ps.map(app.precioMuyBajo), [true, false, false, false]);
+});

@@ -29,12 +29,12 @@ function renderProductos() {
   const [cat, subcat] = selCat.value.split(SEP_SUBCAT);
   const est = $('#prod-estado').value;
   const estante = selEst.value;
-  const lista = db.productos
+  const filtrados = db.productos
     .filter((p) => !q || coincide(`${textoCodigos(p)} ${p.nombre} ${p.ubicacion} ${nombreProv(p.proveedorId)} ${p.categoria || ''} ${p.subcategoria || ''}`, q))
     .filter((p) => !cat || (claveCategoria(p.categoria) === claveCategoria(cat) && (!subcat || claveCategoria(p.subcategoria) === claveCategoria(subcat))))
     .filter((p) => enEstante(p, estante))
-    .filter((p) => !est || (est === 'reponer' ? estado(p) !== 'ok' : est === 'sincosto' ? !(p.costo > 0) : est === 'sinprecio' ? !(p.precio > 0) : est === 'sinfoto' ? !tieneFoto(p) : est === 'bajocosto' ? precioBajoCosto(p) : est === 'revisar' ? !!p.revisar : estado(p) === est))
-    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+    .filter((p) => !est || (est === 'reponer' ? estado(p) !== 'ok' : est === 'sincosto' ? !(p.costo > 0) : est === 'sinprecio' ? !(p.precio > 0) : est === 'sinfoto' ? !tieneFoto(p) : est === 'bajocosto' ? precioBajoCosto(p) : est === 'revisar' ? !!p.revisar : est === 'preciobajo' ? precioMuyBajo(p) : estado(p) === est));
+  const lista = ordenarProductos(filtrados, $('#prod-orden').value);
 
   $('#prod-sub').textContent = `${db.productos.length} productos cargados${lista.length !== db.productos.length ? ` · mostrando ${lista.length}` : ''}.`;
   const visibles = lista.slice(0, 300);
@@ -178,7 +178,7 @@ function iniciarProductos() {
     if ($('#dlg-prod').open) pintarCategoriasFicha(categoriaComoEnLista(db, $('#p-categoria').value), $('#p-subcategoria').value);
   });
   $('#btn-nuevo-prod').addEventListener('click', () => abrirProducto());
-  ['#prod-cat', '#prod-estante', '#prod-estado'].forEach((s) => $(s).addEventListener('input', renderProductos));
+  ['#prod-cat', '#prod-estante', '#prod-estado', '#prod-orden'].forEach((s) => $(s).addEventListener('input', renderProductos));
   alDejarDeEscribir($('#prod-buscar'), renderProductos);
   ['#p-costo', '#p-precio'].forEach((s) => $(s).addEventListener('input', actualizarMargen));
   $('#p-moneda').addEventListener('change', etiquetasMoneda);

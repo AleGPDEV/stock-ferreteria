@@ -196,8 +196,10 @@ html.con-inv body { overflow: hidden; }
 .inv-herr > *, .inv-cuerpo > * { width: 100%; max-width: 640px; margin-left: auto; margin-right: auto; }
 .segmento { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-2); }
 .segmento button { flex: 1; min-height: 40px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-weight: 600; font-size: 14.5px; cursor: pointer; }
+.inv-orden { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; font-weight: 600; }
+.inv-orden select { flex: 1; min-width: 0; min-height: 42px; padding: 6px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); font: inherit; font-weight: 600; }
 .segmento button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(20, 24, 28, .14); }
-.filtros { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.filtros { display: flex; flex-wrap: wrap; gap: 8px; }
 .filtros::-webkit-scrollbar { display: none; }
 .filtros button { flex: none; min-height: 36px; padding: 4px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); color: var(--fg);
   font-weight: 600; font-size: 14px; white-space: nowrap; cursor: pointer; }
@@ -216,6 +218,7 @@ html.con-inv body { overflow: hidden; }
 .grupo .g-n { margin-left: auto; display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .inv-lista { list-style: none; margin: 0; padding: 0; }
 .inv-lista li { display: flex; align-items: stretch; border-top: 1px solid var(--line-2); }
+.inv-plana li:first-child { border-top: 0; }
 .inv-prod { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 10px 4px 10px 16px; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .inv-prod:active, .inv-foto:active { background: var(--surface-2); }
 .inv-prod .nom { font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -421,7 +424,17 @@ html.escaneando body > :not(#visor) { visibility: hidden !important; }
     <div class="segmento" role="group" aria-label="Agrupar">
       <button type="button" data-agrupar="categoria" aria-pressed="true">Por categoría</button>
       <button type="button" data-agrupar="estante" aria-pressed="false">Por estante</button>
+      <button type="button" data-agrupar="nada" aria-pressed="false">Sin agrupar</button>
     </div>
+    <label class="inv-orden" for="inv-orden">Ordenar
+      <select id="inv-orden">
+        <option value="nombre">Por nombre (A a Z)</option>
+        <option value="precio-asc">Precio: de menor a mayor</option>
+        <option value="precio-desc">Precio: de mayor a menor</option>
+        <option value="stock-asc">Stock: de menor a mayor</option>
+        <option value="stock-desc">Stock: de mayor a menor</option>
+      </select>
+    </label>
     <div class="filtros" id="inv-filtros" role="group" aria-label="Mostrar"></div>
   </div>
   <div class="inv-cuerpo" id="inv-cuerpo">
@@ -1568,9 +1581,21 @@ const FILTROS_INV = [
   ['sin-categoria', 'Sin categoría', (p) => !p.categoria, 'Todos los productos tienen categoría.'],
   ['revisar', 'A revisar', (p) => !!p.revisar, 'No hay productos para revisar.'],
   ['sin-precio', 'Sin precio', (p) => !(Number(p.precio) > 0), 'Todos los productos tienen precio.'],
+  ['precio-bajo', 'Precio hasta $10', (p) => p.moneda !== 'USD' && Number(p.precio) > 0 && Number(p.precio) <= 10, 'Ningún producto tiene precio de $10 o menos.'],
+  ['sin-stock', 'Sin stock', (p) => p.stock != null && p.stock !== '' && Number(p.stock) <= 0, 'Todos los productos tienen stock.'],
   ['bajo', 'Stock bajo', (p) => Number(p.minimo) > 0 && Number(p.stock) <= Number(p.minimo), 'Ningún producto está por debajo del mínimo.'],
 ];
-const inv = { datos: null, cargando: false, error: '', agrupar: datos.invAgrupar === 'estante' ? 'estante' : 'categoria', filtro: 'todos', q: '',
+const ORDENES_INV = ['nombre', 'precio-asc', 'precio-desc', 'stock-asc', 'stock-desc'];
+/** Ordena por nombre, precio o stock (a igual valor, por nombre). Sin precio o sin stock cuentan como 0. */
+function ordenarInv(lista, orden) {
+  const porNombre = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { numeric: true, sensitivity: 'base' });
+  const [campo, sentido] = orden.split('-');
+  if (campo !== 'precio' && campo !== 'stock') return lista.slice().sort(porNombre);
+  const signo = sentido === 'desc' ? -1 : 1;
+  return lista.slice().sort((a, b) => signo * ((Number(a[campo]) || 0) - (Number(b[campo]) || 0)) || porNombre(a, b));
+}
+const inv = { datos: null, cargando: false, error: '', agrupar: ['estante', 'nada'].includes(datos.invAgrupar) ? datos.invAgrupar : 'categoria',
+  orden: ORDENES_INV.includes(datos.invOrden) ? datos.invOrden : 'nombre', filtro: 'todos', q: '',
   abiertos: new Set(), fotoNueva: new Set(), visibles: [], todoAbierto: false };
 let volverAInv = false;
 let fotoInvDe = null;
@@ -1633,17 +1658,19 @@ function pintarInv() {
     .filter(([k]) => k === 'todos' || k === inv.filtro || cuenta[k] > 0)
     .map(([k, t]) => `<button type="button" data-filtro="${k}" aria-pressed="${k === inv.filtro}">${t}<b>${numero.format(cuenta[k])}</b></button>`).join('');
   const [, , filtro, vacio] = FILTROS_INV.find(([k]) => k === inv.filtro) || FILTROS_INV[0];
-  const lista = buscados.filter((p) => filtro(p) || (inv.filtro === 'sin-foto' && inv.fotoNueva.has(p.codigo)));
+  const lista = ordenarInv(buscados.filter((p) => filtro(p) || (inv.filtro === 'sin-foto' && inv.fotoNueva.has(p.codigo))), inv.orden);
+  $('#inv-orden').value = inv.orden;
   inv.visibles = lista;
   if (!lista.length) {
     $('#inv-grupos').innerHTML = `<p class="vacio">${pal.length ? 'Ningún producto coincide con la búsqueda.' : esc(vacio || 'No hay productos en el programa.')}</p>`;
     return;
   }
   const porEstante = inv.agrupar === 'estante';
+  const sinAgrupar = inv.agrupar === 'nada';
   const catEstante = new Map((d.estantes || []).map((e) => [e.codigo, e.categoria || '']));
   const grupos = new Map();
   lista.forEach((p, i) => {
-    const k = (porEstante ? p.ubicacion : p.categoria) || '';
+    const k = sinAgrupar ? '*' : (porEstante ? p.ubicacion : p.categoria) || '';
     if (!grupos.has(k)) grupos.set(k, []);
     grupos.get(k).push(i);
   });
@@ -1652,7 +1679,8 @@ function pintarInv() {
   const fila = (i) => {
     const p = lista[i];
     const cat = p.categoria ? esc(p.categoria) + (p.subcategoria ? ' › ' + esc(p.subcategoria) : '') : '';
-    const otro = porEstante ? cat : (p.subcategoria ? esc(p.subcategoria) + ' · ' : '') + (p.ubicacion ? `Estante ${esc(p.ubicacion)}` : 'Sin estante');
+    const estTxt = p.ubicacion ? `Estante ${esc(p.ubicacion)}` : 'Sin estante';
+    const otro = sinAgrupar ? [cat, estTxt].filter(Boolean).join(' · ') : porEstante ? cat : (p.subcategoria ? esc(p.subcategoria) + ' · ' : '') + estTxt;
     const precio = Number(p.precio) > 0 ? $m(p.precio, p.moneda) : 'Sin precio';
     const hay = p.stock == null || p.stock === '' ? '' : `Hay ${numero.format(p.stock)}${p.unidad && p.unidad !== 'unidad' ? ' ' + esc(p.unidad) : ''}`;
     const chips = (!p.foto ? '<span class="chip warn">Sin foto</span>' : inv.fotoNueva.has(p.codigo) ? '<span class="chip ok">Foto nueva</span>' : '')
@@ -1662,6 +1690,11 @@ function pintarInv() {
       + (chips ? `<span class="meta">${chips}</span>` : '') + `</button>`
       + `<button type="button" class="inv-foto" data-foto-inv="${i}" aria-label="${p.foto ? 'Sacar otra foto' : 'Sacar foto'}: ${esc(p.nombre)}">📷</button></li>`;
   };
+  // Sin agrupar: una sola lista, en el orden elegido (para encontrar precios o stocks raros)
+  if (sinAgrupar) {
+    $('#inv-grupos').innerHTML = `<div class="grupo"><ul class="inv-lista inv-plana">${lista.map((p, i) => fila(i)).join('')}</ul></div>`;
+    return;
+  }
   $('#inv-grupos').innerHTML = claves.map((k) => {
     const idx = grupos.get(k);
     const faltan = idx.filter((i) => !lista[i].foto).length;
@@ -1831,6 +1864,12 @@ $('#inv-buscar').addEventListener('input', () => { inv.q = $('#inv-buscar').valu
 document.querySelectorAll('[data-agrupar]').forEach((b) => b.addEventListener('click', () => {
   inv.agrupar = b.dataset.agrupar; datos.invAgrupar = inv.agrupar; guardar(); pintarInv(); $('#inv-cuerpo').scrollTop = 0;
 }));
+$('#inv-orden').addEventListener('change', () => {
+  inv.orden = $('#inv-orden').value;
+  // Ordenar por precio o stock sirve más en una sola lista: se pasa a «Sin agrupar» (se puede volver a agrupar)
+  if (inv.orden !== 'nombre' && inv.agrupar !== 'nada') { inv.agrupar = 'nada'; datos.invAgrupar = 'nada'; }
+  datos.invOrden = inv.orden; guardar(); pintarInv(); $('#inv-cuerpo').scrollTop = 0;
+});
 $('#inv-filtros').addEventListener('click', (e) => {
   const b = e.target.closest('[data-filtro]');
   if (!b) return;
