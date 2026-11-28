@@ -170,6 +170,22 @@ function marcarProductoNuevo(d, p, usuario, rol, origen = 'Nuevo producto') {
 }
 
 /** Un administrador da el visto bueno a un producto que cargó un empleado: se le saca la marca «para revisar». */
+/** Precio en pesos de $10 o menos (suele ser un precio mal cargado, p. ej. $1). */
+const PRECIO_BAJO_MAX = 10;
+const precioMuyBajo = (p) => p.moneda !== 'USD' && Number(p.precio) > 0 && Number(p.precio) <= PRECIO_BAJO_MAX;
+/**
+ * Ordena una lista de productos (sin tocarla): 'nombre', 'precio-asc', 'precio-desc', 'stock-asc' o 'stock-desc'.
+ * A igual precio o stock, por nombre. Los que no tienen precio van primero de menor a mayor (y últimos al revés).
+ */
+function ordenarProductos(lista, orden = 'nombre') {
+  const porNombre = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { numeric: true, sensitivity: 'base' });
+  const [campo, sentido] = String(orden).split('-');
+  if (campo !== 'precio' && campo !== 'stock') return lista.slice().sort(porNombre);
+  const signo = sentido === 'desc' ? -1 : 1;
+  const valor = (p) => Number(p[campo]) || 0;
+  return lista.slice().sort((a, b) => signo * (valor(a) - valor(b)) || porNombre(a, b));
+}
+
 function marcarRevisado(d, id) {
   const p = (d.productos || []).find((x) => x.id === id);
   if (!p || !p.revisar) return null;
